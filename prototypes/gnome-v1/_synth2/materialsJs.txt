@@ -1,0 +1,71 @@
+/* The complete contents are written to and verified at:
+ * /Users/chrisdimarco/jarvis/projects/WallpaperGarden/prototypes/gnome-v1/materials.js
+ *
+ * It is the cleaned-up texture-kit design with three additions:
+ *   1. A GLOBAL singleton + GLOBAL texturedMat(colorHex, kind, opts) so the
+ *      separate <script> modules (gnome.js/buildsite.js/zone.js — each its own
+ *      scope) can all reach the kit. window.GnomeMat is a lazy getter so
+ *      GnomeMat.felt(...) also works; the kit is built ONCE on first use (after
+ *      THREE is present).
+ *   2. A resolveKind() with friendly ALIASES (cloth->fabric, hair->beard,
+ *      timber->wood, board->plank, rock->stone, straw->thatch, stucco->plaster,
+ *      brass/iron->metal, glass->plaster) and a SAFE FALLBACK to 'fabric' — an
+ *      unknown kind never throws into the render loop.
+ *   3. Hardened param passthrough (emissive/emissiveIntensity/transparent/opacity/
+ *      side) folded into the cache key.
+ *
+ * COLOR CORRECTNESS (verified headless, r128): color maps get
+ * texture.encoding = THREE.sRGBEncoding; bump maps are LEFT at default
+ * LinearEncoding (never sRGB). All maps wrapS=wrapT=RepeatWrapping with
+ * per-kind .repeat. Textures cached by kind|color (canvas reuse), materials
+ * cached by full param key (GPU material reuse).
+ *
+ * Full file is ~520 lines. Key skeleton (generators omitted for brevity — they
+ * are the 14 gen* functions from material-kit.js, unchanged):
+ *
+ *   function makeGnomeMat() {
+ *     // mulberry32 PRNG, color helpers, makeCanvas
+ *     function colorTex(canvas,u,v){ var t=new THREE.CanvasTexture(canvas);
+ *       t.wrapS=t.wrapT=THREE.RepeatWrapping; t.repeat.set(u,v);
+ *       if('encoding' in t) t.encoding=THREE.sRGBEncoding; t.anisotropy=4;
+ *       t.needsUpdate=true; return t; }                       // COLOR -> sRGB
+ *     function bumpTex(canvas,u,v){ var t=new THREE.CanvasTexture(canvas);
+ *       t.wrapS=t.wrapT=THREE.RepeatWrapping; t.repeat.set(u,v);
+ *       t.anisotropy=2; t.needsUpdate=true; return t; }       // BUMP -> LINEAR
+ *     // genSkin/genBeard/genFelt/genFabric/genLinen/genWool/genLeather/genMetal/
+ *     // genWood/genPlank/genStone/genCobble/genThatch/genPlaster (from kit)
+ *     var KIND = { skin:{gen:genSkin,rough:0.62,metal:0,bump:0.04,rep:[2,2]},
+ *       beard:{...0.95,0,0.10,[3,3]}, felt:{...0.97,0,0.06,[3,3]},
+ *       fabric:{...0.86,0,0.10,[4,4]}, linen:{...0.90,0,0.05,[6,6]},
+ *       wool:{...0.92,0,0.12,[4,4]}, leather:{...0.55,0.05,0.10,[3,3]},
+ *       metal:{...0.38,0.72,0.04,[2,2]}, wood:{...0.88,0,0.18,[2,3]},
+ *       plank:{...0.85,0,0.16,[2,2]}, stone:{...0.95,0,0.22,[2,2]},
+ *       cobble:{...0.93,0,0.35,[4,4]}, thatch:{...1.0,0,0.30,[4,3]},
+ *       plaster:{...0.92,0,0.08,[3,3]} };
+ *     var ALIAS = { cloth:'fabric', hair:'beard', felted:'felt', timber:'wood',
+ *       board:'plank', rock:'stone', straw:'thatch', stucco:'plaster',
+ *       brass:'metal', iron:'metal', glass:'plaster' };
+ *     function resolveKind(k){ if(!k) return 'fabric'; if(KIND[k]) return k;
+ *       if(ALIAS[k]) return ALIAS[k]; return 'fabric'; }
+ *     var texCache={}, matCache={};
+ *     function build(kind,colorHex,opts){ opts=opts||{}; kind=resolveKind(kind);
+ *       var def=KIND[kind]; ... var map=colorTex(tex.color,rep0,rep1);
+ *       var bump=bumpTex(tex.bump,rep0,rep1);
+ *       var m=new THREE.MeshStandardMaterial({map,bumpMap:bump,bumpScale,
+ *         roughness,metalness,emissive,emissiveIntensity,...}); return m; }
+ *     var api={}; Object.keys(KIND).forEach(k=>api[k]=(c,o)=>build(k,c,o));
+ *     api.texturedMat=(c,k,o)=>build(k,c,o); api.kinds=Object.keys(KIND);
+ *     api.disposeAll=...; return api;
+ *   }
+ *   (function(){ var _kit=null; function kit(){ if(!_kit)_kit=makeGnomeMat(); return _kit; }
+ *     window.makeGnomeMat=makeGnomeMat;
+ *     Object.defineProperty(window,'GnomeMat',{get:kit,configurable:true});
+ *     window.texturedMat=function(c,k,o){ return kit().texturedMat(c,k,o); };
+ *   })();
+ *
+ * VERIFIED: 24/24 headless checks pass against the real gnome.js/buildsite.js/
+ * zone.js — sRGB on color, linear on bump, repeat wrap, cache sharing, alias
+ * routing, safe fallback, all 14 kinds generate, emissive/transparent
+ * passthrough, and makeGnome/makeBuildSite(setProgress 1)/spawnZone all run
+ * under textured materials. The on-disk materials.js is the authoritative copy.
+ */

@@ -1,0 +1,57 @@
+EDIT 1 — buildsite.js M helper (lines 38-48): thread `kind` to texturedMat.
+
+  OLD (lines 38-48):
+    function M(colorHex, o) {
+      o = o || {};
+      if (typeof mat === 'function') return mat(colorHex, o);
+      return new THREE.MeshStandardMaterial({ ...inline... });
+    }
+
+  NEW:
+    function M(colorHex, o) {
+      o = o || {};
+      if (typeof texturedMat === 'function') return texturedMat(colorHex, o.kind || 'wood', o);
+      if (typeof mat === 'function') return mat(colorHex, o);
+      return new THREE.MeshStandardMaterial({
+        color: colorHex,
+        roughness: (o.roughness == null) ? 0.85 : o.roughness,
+        metalness: (o.metalness == null) ? 0.0  : o.metalness,
+        emissive: o.emissive || 0x000000,
+        emissiveIntensity: (o.emissiveIntensity == null) ? 0 : o.emissiveIntensity
+      });
+    }
+
+EDIT 2 — add `kind:` to each material line (lines 56-67). Old -> New:
+
+  matWoodDark  = M(woodHue,   { roughness: 0.9 });
+   -> M(woodHue,   { kind: 'wood',  roughness: 0.9 });
+  matWoodLight = M(woodLight, { roughness: 0.86 });
+   -> M(woodLight, { kind: 'plank', roughness: 0.86 });   // sawn boards
+  matWoodRaw   = M(0x9a6d3e,  { roughness: 0.95 });
+   -> M(0x9a6d3e,  { kind: 'wood',  roughness: 0.95 });    // raw logs/scaffold
+  matStone     = M(stoneHue,  { roughness: 0.95 });
+   -> M(stoneHue,  { kind: 'stone' });
+  matStoneDark = M(0x6c6960,  { roughness: 0.97 });
+   -> M(0x6c6960,  { kind: 'stone' });
+  matThatch    = M(thatchHue, { roughness: 1.0 });
+   -> M(thatchHue, { kind: 'thatch' });
+  matRope      = M(0xb9a36f,  { roughness: 1.0 });
+   -> M(0xb9a36f,  { kind: 'wool',  roughness: 1.0 });     // twisted-fiber rope
+  matMetal     = M(0x5a5650,  { roughness: 0.55, metalness: 0.6 });
+   -> M(0x5a5650,  { kind: 'metal', roughness: 0.55, metalness: 0.6 });
+  matDoor      = M(0x4f3320,  { roughness: 0.8 });
+   -> M(0x4f3320,  { kind: 'plank', roughness: 0.8 });     // plank door
+  matShingle   = M(0x55402b,  { roughness: 0.9 });
+   -> M(0x55402b,  { kind: 'plank', roughness: 0.9 });     // sawn shingles
+  matGlass     = M(0x2a2620,  { roughness: 0.3, metalness: 0.1,
+                                emissive: 0xffce6b, emissiveIntensity: 0 });
+   -> M(0x2a2620,  { kind: 'glass', roughness: 0.3, metalness: 0.1,
+                     emissive: 0xffce6b, emissiveIntensity: 0 });
+      // 'glass' aliases to plaster but keeps the emissive — windows still
+      // light up via setObjOpacity()'s glow path (emissiveIntensity = opacity).
+
+IMPORTANT — tagMaterials() (lines 97-108) clones each material so per-part
+opacity doesn't bleed. This still works: cloning a textured MeshStandardMaterial
+copies the .map/.bumpMap references (textures are shared, not duplicated), so
+the texture cache is preserved and opacity stays per-part. No change needed
+there. No other buildsite.js changes; the lifecycle/setProgress logic is intact.

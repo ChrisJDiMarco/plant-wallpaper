@@ -1,0 +1,69 @@
+EDIT 1 — zone.js ZONE_mat (lines 19-32): thread `kind` to texturedMat first.
+
+  OLD (lines 19-32):
+    var ZONE_mat = (typeof mat === 'function')
+      ? mat
+      : function (colorHex, opts) { ...inline... };
+
+  NEW:
+    var ZONE_mat = (typeof texturedMat === 'function')
+      ? function (colorHex, opts) {
+          opts = opts || {};
+          return texturedMat(colorHex, opts.kind || 'plaster', opts);
+        }
+      : (typeof mat === 'function')
+        ? mat
+        : function (colorHex, opts) {
+            opts = opts || {};
+            return new THREE.MeshStandardMaterial({
+              color: new THREE.Color(colorHex),
+              roughness: opts.roughness != null ? opts.roughness : 0.8,
+              metalness: opts.metalness != null ? opts.metalness : 0.0,
+              emissive: new THREE.Color(opts.emissive != null ? opts.emissive : 0x000000),
+              emissiveIntensity: opts.emissiveIntensity != null ? opts.emissiveIntensity : 0,
+              transparent: !!opts.transparent,
+              opacity: opts.opacity != null ? opts.opacity : 1
+            });
+          };
+
+EDIT 2 — add `kind:` to the M{} table in buildZone() (lines 240-254). Old -> New:
+
+  plazaStone: ZONE_mat(0x9b948a, { roughness: 0.92 });
+   -> ZONE_mat(0x9b948a, { kind: 'cobble', roughness: 0.92 });
+  plazaRim:   ZONE_mat(0xc7bda8, { roughness: 0.88 });
+   -> ZONE_mat(0xc7bda8, { kind: 'stone',  roughness: 0.88 });
+  road:       ZONE_mat(0xb89a64, { roughness: 0.95 });
+   -> ZONE_mat(0xb89a64, { kind: 'cobble', roughness: 0.95, repeat: [6, 6] });
+      // higher repeat — roads are long ribbons; more tiles = finer cobbles
+  wall:       ZONE_mat(0xcdb892, { roughness: 0.85 });
+   -> ZONE_mat(0xcdb892, { kind: 'plaster' });
+  wallTower:  ZONE_mat(0xb9a079, { roughness: 0.85 });
+   -> ZONE_mat(0xb9a079, { kind: 'stone' });
+  roof:       ZONE_mat(0x7d4a30, { roughness: 0.8 });
+   -> ZONE_mat(0x7d4a30, { kind: 'thatch' });
+  roofHall:   ZONE_mat(0x6b3f2a, { roughness: 0.8 });
+   -> ZONE_mat(0x6b3f2a, { kind: 'thatch' });
+  door:       ZONE_mat(0x4c2e22, { roughness: 0.85 });
+   -> ZONE_mat(0x4c2e22, { kind: 'plank' });
+  windowLit:  ZONE_mat(0xffd778, { emissive: 0xffbd55, emissiveIntensity: 0.9, roughness: 0.4 });
+   -> ZONE_mat(0xffd778, { kind: 'plaster', emissive: 0xffbd55, emissiveIntensity: 0.9, roughness: 0.4 });
+  wood:       ZONE_mat(0x74482f, { roughness: 0.9 });
+   -> ZONE_mat(0x74482f, { kind: 'wood' });
+  barrel:     ZONE_mat(0x6b4a2c, { roughness: 0.88 });
+   -> ZONE_mat(0x6b4a2c, { kind: 'plank' });
+  hoop:       ZONE_mat(0x3a2a1c, { roughness: 0.7, metalness: 0.2 });
+   -> ZONE_mat(0x3a2a1c, { kind: 'metal', roughness: 0.7, metalness: 0.2 });
+  canvas:     ZONE_mat(0xd8c28d, { roughness: 0.9 });
+   -> ZONE_mat(0xd8c28d, { kind: 'linen' });               // awning cloth
+  sign:       ZONE_mat(0x8a6b45, { roughness: 0.88 });
+   -> ZONE_mat(0x8a6b45, { kind: 'plank' });
+  lanternGlow: ZONE_mat(0xffd46a, { emissive: 0xffbd55, emissiveIntensity: 1.1, transparent: true, opacity: 0.85, roughness: 0.3 });
+   -> ZONE_mat(0xffd46a, { kind: 'plaster', emissive: 0xffbd55, emissiveIntensity: 1.1, transparent: true, opacity: 0.85, roughness: 0.3 });
+
+LEAVE UNCHANGED — makeZoneOutline() (lines 402-419) builds raw
+MeshStandardMaterial/LineBasicMaterial directly with AdditiveBlending for the
+glowing drawn boundary; those must stay untextured. makeShadowCatcher() uses
+ShadowMaterial — untouched. windowLit/lanternGlow keep emissive so the lit-glow
+look survives the texture (the plaster map only tints the albedo).
+
+No other zone.js changes.

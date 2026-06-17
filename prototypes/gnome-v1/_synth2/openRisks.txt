@@ -1,0 +1,64 @@
+TEXTURE SEAMS: the 14 generators paint with edge-spanning strokes/cells, so a
+RepeatWrapping tile may show a faint seam where the canvas wraps. At the modest
+per-kind repeats and dusk lighting this is largely hidden, and bump relief masks
+it further. If a seam is visible on a large flat surface (plaster walls, cobble
+road), lower that material's repeat (fewer, larger tiles) or raise it a lot
+(many tiny tiles average out). The cobble road edit already bumps repeat to
+[6,6] for this reason. None of the generators are guaranteed perfectly toroidal;
+fixing that would need mirrored-repeat or wrap-aware drawing — out of scope for
+this pass, flag only.
+
+sRGB / ENCODING: VERIFIED correct — color maps get THREE.sRGBEncoding, bump maps
+stay LinearEncoding (default). The single most common failure here would be
+setting sRGB on the bump map (washes out / wrong relief) or NOT setting it on the
+color map (muddy, dark albedo). Both are handled in colorTex()/bumpTex()
+respectively. Because index.html sets renderer.outputEncoding = sRGBEncoding +
+ACESFilmic, the pipeline is consistent. WATCH: if anyone later swaps a bump
+canvas in as a `map`, it would be treated as linear color and look flat/dark —
+keep color in .map, height in .bumpMap.
+
+PERF / TEXTURE COUNT: textures are cached by kind|color and materials by full
+param key, so the live texture count is bounded by (distinct kinds) x (distinct
+colors) x (distinct repeats), NOT by mesh count. With ~14 kinds and a handful of
+palette colors per kind (gnomes share hat/tunic palettes; build-sites jitter
+wood/stone/thatch hues per seed via pick()), expect on the order of 40-80 unique
+128px canvas textures total — trivial GPU memory (~a few MB). The ONE thing that
+can blow this up: buildsite.js jitters woodHue/stoneHue/thatchHue PER SITE via
+pick(), so each of N build sites with a distinct seed can mint its own
+wood/stone/thatch textures. With the prototype's small site count this is fine;
+if site count grows large, quantize those jittered hues to a small fixed palette
+before they reach M() so the cache coalesces them.
+
+tagMaterials() CLONE INTERACTION (buildsite.js): tagMaterials clones each
+material so per-part opacity in the build lifecycle doesn't bleed. Cloning a
+textured MeshStandardMaterial copies .map/.bumpMap by REFERENCE (textures stay
+shared), so the texture cache is preserved and the lifecycle opacity still works.
+No action needed, but note: the cloned materials are NOT in matCache, so
+GnomeMat.disposeAll() will not free them — if you ever hot-reload sites, dispose
+the site's cloned materials separately. Not a concern for a static wallpaper.
+
+BUMP STRENGTH: bumpScale defaults are tuned per kind (cobble 0.35, stone 0.22,
+thatch 0.30 are the strongest; skin 0.04, metal 0.04 the subtlest). On very small
+meshes (eye-scale, buckle) bump can look noisy; if so, pass { bumpScale: 0 } on
+that specific call. Bump is also UV/repeat-dependent — a high repeat with high
+bumpScale can shimmer at grazing angles; the anisotropy=2 on bump maps mitigates
+this.
+
+EMISSIVE-WITH-TEXTURE: windowLit / lanternGlow / matGlass keep emissive so they
+glow, but they now also carry a plaster albedo map. The emissive is a flat color
+add (no emissiveMap), so the glow reads correctly; the map only tints the
+non-emissive base. If a lit window looks too "papered," drop its bumpScale to 0
+and/or raise emissiveIntensity. The build-site window glow path
+(setObjOpacity -> emissiveIntensity = opacity) is unaffected.
+
+CANVAS COST AT STARTUP: 14 kinds x (1-2 colors) x 2 canvases (color+bump) are
+generated lazily on first texturedMat() call. Some generators do thousands of
+canvas ops (felt 5200 strokes, stone/cobble 2600). First-frame generation is a
+one-time ~tens-of-ms hitch, acceptable for a wallpaper that loads once. If
+first-paint latency matters, pre-warm by calling texturedMat for the known
+palette right after the kit loads.
+
+NON-RISK confirmations: no CapsuleGeometry introduced (kit creates zero
+geometry); detail.js needs no edits (its texturedMat->mat->inline chain
+auto-upgrades); makeZoneOutline/makeShadowCatcher untouched (additive glow +
+ShadowMaterial must stay untextured); all real builders verified to run.

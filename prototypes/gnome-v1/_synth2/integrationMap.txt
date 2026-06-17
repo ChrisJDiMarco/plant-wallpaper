@@ -1,0 +1,77 @@
+LOAD ORDER (index.html <head>/<body> script tags) — materials.js FIRST so the
+global texturedMat exists before any builder runs; detail.js AFTER the builders:
+
+  <script src=".../three r128 .min.js"></script>
+  <script src=".../OrbitControls.js"></script>
+  <script src="materials.js"></script>   <-- ADD (new), BEFORE gnome.js
+  <script src="gnome.js"></script>
+  <script src="pose.js"></script>
+  <script src="buildsite.js"></script>
+  <script src="zone.js"></script>
+  <script src="detail.js"></script>      <-- ADD, AFTER buildsite.js/zone.js
+  <script> (inline village IIFE) </script>
+
+WHY materials.js first: gnome.js/buildsite.js/zone.js each capture
+`typeof texturedMat === 'function'` at the time their material tables run (inside
+makeGnome/makeBuildSite/buildZone, i.e. at call time, not parse time), so as long
+as materials.js executed first, window.texturedMat is defined. The kit itself is
+built LAZILY on the first texturedMat() call (after THREE + OrbitControls are
+loaded), so there is no THREE-not-ready hazard.
+
+LIGHTING CODE goes in buildVillage(): replace line 42 (exposure 0.95 -> 1.12),
+line 48 (fog -> Fog(0x4a2f50,520,1300)), and the light block at lines 64-73 with
+the lightingCode block. `moon`, `fill`, `fireLight` keep their identifiers (the
+animate() loop references fireLight.intensity and fireGlow — both still valid);
+`rim` is added. moon.shadow.* setup is preserved so shadows keep working.
+
+CALL SITES for the detail helpers:
+
+1) addGnomeDetail — in spawnGnome() (index.html ~line 124), right after
+   `const g = makeGnome({...})`, add:
+     addGnomeDetail(g.parts, {
+       tunicColor: tunicColors[i % tunicColors.length],
+       hatColor:   gnomeColors[i % gnomeColors.length],
+       beardColor: 0xf2f2ee,
+       pouch: role === 'carry'
+     });
+   It parents detail to the named bones, so poseGnome() animates it for free.
+   Adds ~19 meshes (22 with pouch) per gnome — within the 15-25 target.
+
+2) addHouseDetail (build sites) — in the bsIdx.forEach loop (index.html ~line
+   105-116), the site advances over time, so gate the trim on a finished build.
+   Inside the loop, after creating `site`, set a flag; in animate()'s buildSites
+   loop, when bs.progress first reaches >= 0.999 and !bs.detailed, call:
+     addHouseDetail(bs.site.group, bs.site.type, {});   // defaults match W22/D18/RAD11/WALL_H12
+     bs.detailed = true;
+   (Calling it at spawn time would float trim over the unbuilt shell because the
+   sites START mid-lifecycle and grow to 1. addHouseDetail is idempotent, so the
+   one-shot guard is just to avoid re-running.) For a cabin pass type 'cabin',
+   for a roundhouse pass 'roundhouse' — both already exercised headless.
+
+3) addHouseDetail (static zone houses, optional) — zone.js makeHouse() builds
+   finished cottages/halls/towers immediately, so they CAN take trim at spawn.
+   This is optional polish; if you want it, in buildZone()'s makeHouse loop pass
+   the per-type dims, e.g. for a tower:
+     addHouseDetail(houseGroup, 'tower', { RAD: s*0.45, WALL_H: s*1.9, ridgeY: s*2.35 });
+   Skip this if you want to keep the change minimal — the build-site trim is the
+   high-value one.
+
+HOW TO VERIFY:
+  - Headless (already done): a Node harness with a Canvas-2D + THREE r128 shim
+    loaded materials.js -> gnome.js -> pose.js -> buildsite.js -> zone.js ->
+    detail.js and asserted: color map encoding === sRGBEncoding, bump map
+    encoding === LinearEncoding, both wrap Repeat, per-kind repeat applied,
+    identical (color,kind,opts) returns the SAME material (cache), same kind|color
+    shares the source canvas (tex cache), aliases route (cloth->fabric,
+    hair->beard), unknown kind does not throw, all 14 kinds generate map+bumpMap,
+    emissive/transparent pass through, and makeGnome / makeBuildSite.setProgress(1)
+    / addGnomeDetail / addHouseDetail(cabin+roundhouse) / spawnZone all run. Result:
+    24/24 PASS + 23/23 edit-route PASS.
+  - In-browser: open index.html, orbit. Confirm (a) tunic shows woven weave, cap
+    shows felt fuzz, beard shows strand flow, boots show leather grain, plaza/road
+    show cobbles, roofs show thatch, walls show plaster, stone roundhouse shows
+    granite; (b) no black/over-bright surfaces (would indicate a double-sRGB or
+    bump-as-color mistake); (c) lit windows + lanterns + bonfire still glow;
+    (d) shadows still land on the ShadowMaterial ground; (e) build sites animate
+    pile->finished and the gnomes still pose/walk/hammer/cheer with detail riding
+    the bones; (f) framerate steady (texture count is bounded — see openRisks).

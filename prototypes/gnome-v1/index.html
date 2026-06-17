@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Gnome Village — v1 prototype</title>
+<style>
+  html, body { margin: 0; padding: 0; height: 100%; overflow: hidden; background: #14123a; font-family: -apple-system, system-ui, sans-serif; }
+  #stage { position: absolute; inset: 0; }
+  #hint { position: absolute; left: 14px; bottom: 14px; z-index: 5; color: #f3e7d2; font-size: 12px;
+    background: rgba(20,16,40,.42); padding: 6px 11px; border-radius: 999px; pointer-events: none; }
+  #title { position: absolute; left: 16px; top: 14px; z-index: 5; color: #f3e7d2; font-size: 13px; opacity: .85; text-shadow: 0 1px 4px rgba(0,0,0,.4); }
+</style>
+</head>
+<body>
+<div id="stage"></div>
+<div id="title">Gnome Village — v1 prototype · drawn zone · build-up · rigged gnomes</div>
+<div id="hint">drag to orbit · scroll to zoom</div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+<script src="materials.js"></script>
+<script src="gnome.js"></script>
+<script src="pose.js"></script>
+<script src="buildsite.js"></script>
+<script src="zone.js"></script>
+<script src="detail.js"></script>
+<script>
+(function () {
+  function ready() {
+    return typeof THREE !== 'undefined' && typeof makeGnome === 'function' && typeof poseGnome === 'function'
+      && typeof makeBuildSite === 'function' && typeof spawnZone === 'function'
+      && typeof texturedMat === 'function' && typeof addGnomeDetail === 'function';
+  }
+  function start() { if (!ready()) return setTimeout(start, 60); buildVillage(document.getElementById('stage')); }
+
+  function buildVillage(container) {
+    const W = () => container.clientWidth || 680;
+    const H = () => container.clientHeight || 480;
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
+    renderer.setSize(W(), H());
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1.12;
+    if ('outputEncoding' in renderer) renderer.outputEncoding = THREE.sRGBEncoding;
+    container.appendChild(renderer.domElement);
+
+    const scene = new THREE.Scene();
+    scene.background = makeSky();
+    scene.fog = new THREE.Fog(0x4a2f50, 520, 1300);
+
+    const camera = new THREE.PerspectiveCamera(46, W() / H(), 1, 3000);
+    camera.position.set(210, 175, 300);
+
+    let controls = null;
+    if (THREE.OrbitControls) {
+      controls = new THREE.OrbitControls(camera, renderer.domElement);
+      controls.target.set(0, 12, 0);
+      controls.enableDamping = true; controls.dampingFactor = 0.08;
+      controls.minDistance = 120; controls.maxDistance = 620;
+      controls.maxPolarAngle = Math.PI * 0.49;
+      controls.autoRotate = true; controls.autoRotateSpeed = 0.4;
+      controls.update();
+    } else { camera.lookAt(0, 12, 0); }
+
+    // soft cool sky-fill, warm-dark ground bounce
+    scene.add(new THREE.HemisphereLight(0x9bb0ff, 0x241826, 0.32));
+    // KEY (moon) — warm low sun, the shadow caster
+    const moon = new THREE.DirectionalLight(0xffcaa0, 1.45);
+    moon.position.set(-220, 260, 180); moon.castShadow = true;
+    moon.shadow.mapSize.set(2048, 2048);
+    moon.shadow.camera.near = 40; moon.shadow.camera.far = 820;
+    moon.shadow.camera.left = -360; moon.shadow.camera.right = 360;
+    moon.shadow.camera.top = 360; moon.shadow.camera.bottom = -360;
+    moon.shadow.bias = -0.0006; moon.shadow.radius = 4; scene.add(moon);
+    // FILL — cool blue bounce from the opposite side
+    const fill = new THREE.DirectionalLight(0x6f7dff, 0.5); fill.position.set(180, 100, -200); scene.add(fill);
+    // RIM — warm low backlight grazing silhouettes
+    const rim = new THREE.DirectionalLight(0xff9d57, 0.85); rim.position.set(120, 60, -260); scene.add(rim);
+    const fireLight = new THREE.PointLight(0xff7a30, 1.35, 340, 2.2); fireLight.position.set(0, 20, 0); scene.add(fireLight);
+
+    const glowTex = makeGlowTex();
+    const mat = (c, o = {}) => new THREE.MeshStandardMaterial({ color: c, roughness: o.roughness ?? 0.85,
+      metalness: o.metalness ?? 0.0, emissive: o.emissive ?? 0x000000, emissiveIntensity: o.emissiveIntensity ?? 0,
+      transparent: o.transparent ?? false, opacity: o.opacity ?? 1 });
+    const M = { bark: mat(0x5a3f2d), timber: mat(0x6a4329), darkTimber: mat(0x47301d), capRed: mat(0xc0463e, { roughness: 0.8 }) };
+    const glow = (color, size, intensity) => { const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex, color: color,
+      transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, opacity: intensity ?? 0.9 })); s.scale.set(size, size, 1); return s; };
+    const cyl = (rt, rb, h, m, seg) => { const me = new THREE.Mesh(new THREE.CylinderGeometry(rt, rb, h, seg || 18), m); me.castShadow = true; return me; };
+    const cone = (r, h, m, seg) => { const me = new THREE.Mesh(new THREE.ConeGeometry(r, h, seg || 20), m); me.castShadow = true; return me; };
+
+    // ===================== WORLD: the player's drawn zone =====================
+    // An irregular polygon stands in for the region the user draws on the desktop.
+    const zonePolygon = [
+      { x: -190, z: -150 }, { x: 60, z: -205 }, { x: 205, z: -55 },
+      { x: 150, z: 165 }, { x: -85, z: 195 }, { x: -210, z: 45 }
+    ];
+    const HOUSE_SCALE = 22;
+    const zoneSeed = 1337;
+    const spawned = spawnZone(zonePolygon, {
+      seed: zoneSeed,
+      build: { houseScale: HOUSE_SCALE },
+      shadow: { size: 1600, opacity: 0.34 },
+      outline: { color: 0x6fe0d0, width: 5 }
+    });
+    scene.add(spawned.group);
+    const description = spawned.description;
+
+    // ---- live build sites (grow from material pile -> finished) ----
+    const buildSites = [];
+    const bsIdx = description.buildSites || [];
+    bsIdx.forEach((idx, k) => {
+      const s = description.sites[idx];
+      const site = makeBuildSite({ type: k % 2 === 0 ? 'cabin' : 'roundhouse', seed: zoneSeed + idx, scale: 1 });
+      site.group.position.set(s.x, 0, s.z);
+      site.group.rotation.y = s.rotation || 0;
+      site.group.scale.setScalar(1.8);
+      scene.add(site.group);
+      // stagger initial progress so a single view shows the whole lifecycle
+      const init = bsIdx.length > 1 ? 0.04 + (k / bsIdx.length) * 0.9 : 0.1;
+      site.setProgress(init);
+      buildSites.push({ site, idx, progress: init, rate: 0.018 + (k % 3) * 0.006, smokeBound: false });
+    });
+
+    // ---- rigged gnomes ----
+    const gnomeColors = [0xb8512f, 0x3f6b9c, 0x6a8f3a, 0xb08a2e, 0x824a8c, 0xb84a6a];
+    const tunicColors = [0x2e6f4e, 0x6a4a86, 0x8a5a2a, 0x356b86, 0x7a3a3a];
+    const gnomes = [];
+    function spawnGnome(action, role, x, z, faceX, faceZ) {
+      const i = gnomes.length;
+      const g = makeGnome({ hatColor: gnomeColors[i % gnomeColors.length], tunicColor: tunicColors[i % tunicColors.length], role });
+      addGnomeDetail(g.parts, {
+        tunicColor: tunicColors[i % tunicColors.length],
+        hatColor: gnomeColors[i % gnomeColors.length],
+        beardColor: 0xf2f2ee,
+        pouch: role === 'carry' || role === 'build'
+      });
+      g.group.position.set(x, 0, z);
+      if (faceX !== undefined) g.group.rotation.y = Math.atan2(faceX - x, faceZ - z);
+      scene.add(g.group);
+      const rec = { group: g.group, parts: g.parts, action, role, phase: i * 1.7 };
+      gnomes.push(rec); return rec;
+    }
+    const plaza = description.plaza;
+    spawnGnome('idle', 'idle', plaza.x - 26, plaza.z + 16, plaza.x, plaza.z);
+    spawnGnome('idle', 'idle', plaza.x + 22, plaza.z - 12, plaza.x, plaza.z);
+    spawnGnome('cheer', 'idle', plaza.x + 4, plaza.z + 30, plaza.x, plaza.z);
+    // one builder hammering at each live build site
+    buildSites.forEach(bs => {
+      const p = bs.site.group.position;
+      const b = spawnGnome('build', 'build', p.x + 16, p.z + 16, p.x, p.z);
+      b.assignedSite = bs;
+    });
+    // two wanderers that travel the spine road
+    const spine = (description.paths && description.paths[0]) || [{ x: plaza.x, z: plaza.z - 40 }, { x: plaza.x, z: plaza.z + 40 }];
+    const wanderers = [ spawnGnome('walk', 'carry', spine[0].x, spine[0].z), spawnGnome('walk', 'carry', spine[Math.floor(spine.length / 2)].x, spine[Math.floor(spine.length / 2)].z) ];
+
+    // ===================== ambient diorama dressing (kept) =====================
+    const fire = new THREE.Group();
+    for (let i = 0; i < 4; i++) { const log = cyl(1.4, 1.6, 14, M.bark, 7); log.position.y = 4; log.rotation.z = 0.5; log.rotation.y = i * 0.8; fire.add(log); }
+    const flame = cone(5, 16, mat(0xff9a3c, { emissive: 0xff7a1e, emissiveIntensity: 1.1 }), 12); flame.position.y = 12; fire.add(flame);
+    const flameIn = cone(2.6, 10, mat(0xffe06a, { emissive: 0xffd24d, emissiveIntensity: 1.2 }), 10); flameIn.position.y = 11; fire.add(flameIn);
+    const fireGlow = glow(0xff8a3c, 36, 0.5); fireGlow.position.y = 14; fire.add(fireGlow);
+    fire.position.set(plaza.x, 0, plaza.z); scene.add(fire);
+
+    const pA = new THREE.Vector3(plaza.x - 46, 40, plaza.z + 34), pB = new THREE.Vector3(plaza.x + 46, 40, plaza.z + 34);
+    [pA, pB].forEach(p => { const pole = cyl(0.7, 1, 44, M.bark, 6); pole.position.set(p.x, 22, p.z); pole.castShadow = true; scene.add(pole); });
+    const flagCols = [0xd65a52, 0xe0c06a, 0x5d9bd1, 0x7fae5a, 0xcf7fd1];
+    for (let i = 0; i <= 10; i++) { const tF = i / 10; const x = pA.x + (pB.x - pA.x) * tF; const y = 40 - Math.sin(tF * Math.PI) * 9;
+      const fl = new THREE.Mesh(new THREE.ConeGeometry(2.4, 5, 3), mat(flagCols[i % flagCols.length])); fl.position.set(x, y - 3, pA.z); fl.rotation.x = Math.PI; scene.add(fl); }
+
+    const ffCount = 70, ffGeo = new THREE.BufferGeometry(), ffPos = new Float32Array(ffCount * 3), ffPhase = [];
+    for (let i = 0; i < ffCount; i++) { ffPos[i * 3] = (Math.random() - 0.5) * 440; ffPos[i * 3 + 1] = 8 + Math.random() * 80;
+      ffPos[i * 3 + 2] = (Math.random() - 0.5) * 440; ffPhase.push(Math.random() * Math.PI * 2); }
+    ffGeo.setAttribute('position', new THREE.BufferAttribute(ffPos, 3));
+    const ff = new THREE.Points(ffGeo, new THREE.PointsMaterial({ map: glowTex, color: 0xffe79a, size: 3.2, transparent: true,
+      blending: THREE.AdditiveBlending, depthWrite: false, sizeAttenuation: true })); scene.add(ff);
+
+    const smoke = [];
+    for (let i = 0; i < 7; i++) { const s = glow(0xb9b3a8, 14, 0.18); s.position.set(9999, 0, 9999);
+      s.userData.base = 0; s.userData.off = Math.random() * 10; s.visible = false; scene.add(s); smoke.push(s); }
+    let smokeSite = null;
+
+    // ===================== animate =====================
+    window.__dbg = { scene, camera, controls, renderer, gnomes, buildSites, description };
+    const clock = new THREE.Clock();
+    let prevT = 0;
+    function animate() {
+      requestAnimationFrame(animate);
+      const t = clock.getElapsedTime();
+      const dt = Math.min(0.05, Math.max(0, t - prevT)); prevT = t;
+
+      fireLight.intensity = 1.15 + Math.sin(t * 9) * 0.16 + Math.sin(t * 23) * 0.06;
+      fireGlow.scale.setScalar(36 + Math.sin(t * 7) * 3); flame.scale.y = 1 + Math.sin(t * 11) * 0.12;
+
+      const fp = ff.geometry.attributes.position.array;
+      for (let i = 0; i < ffCount; i++) { fp[i * 3 + 1] += Math.sin(t * 1.3 + ffPhase[i]) * 0.05; fp[i * 3] += Math.cos(t * 0.7 + ffPhase[i]) * 0.06; }
+      ff.geometry.attributes.position.needsUpdate = true;
+
+      // pose every gnome
+      gnomes.forEach(rec => poseGnome(rec.parts, t + rec.phase, rec.action, {}));
+
+      // wanderers ping-pong along the spine road
+      wanderers.forEach((w, i) => {
+        if (spine.length < 2) return;
+        const u = Math.sin(t * 0.06 + i * Math.PI) * 0.5 + 0.5;
+        const fi = Math.min(spine.length - 2, Math.floor(u * (spine.length - 1)));
+        const a = spine[fi], b = spine[fi + 1];
+        w.group.position.set(a.x, 0, a.z);
+        w.group.rotation.y = Math.atan2(b.x - a.x, b.z - a.z);
+      });
+
+      // builders advance their site; finished -> cheer + smoke
+      buildSites.forEach(bs => {
+        if (bs.progress < 1) { bs.progress = Math.min(1, bs.progress + bs.rate * dt); bs.site.setProgress(bs.progress); }
+        if (bs.progress >= 0.999 && !bs.detailed) {
+          bs.detailed = true;
+          if (typeof addHouseDetail === 'function') addHouseDetail(bs.site.group, bs.site.type, {});
+        }
+        if (bs.progress >= 1 && !bs.smokeBound && !smokeSite) {
+          bs.smokeBound = true; smokeSite = bs.site;
+          const wp = new THREE.Vector3(); bs.site.smokeAnchor.getWorldPosition(wp);
+          smoke.forEach((s, i) => { s.visible = true; s.userData.base = wp.y + i * 7; s.position.x = wp.x; s.position.z = wp.z; });
+        }
+      });
+      gnomes.forEach(rec => { if (rec.assignedSite && rec.assignedSite.progress >= 1) rec.action = 'cheer'; });
+
+      if (smokeSite) smoke.forEach((s, i) => { const yy = ((t * 8 + s.userData.off + i * 7) % 56);
+        s.position.y = s.userData.base + yy; s.material.opacity = 0.2 * (1 - yy / 56); s.scale.setScalar(14 + yy * 0.5); });
+
+      if (controls) controls.update();
+      renderer.render(scene, camera);
+    }
+    animate();
+
+    window.addEventListener('resize', () => { camera.aspect = W() / H(); camera.updateProjectionMatrix(); renderer.setSize(W(), H()); });
+  }
+
+  function makeSky() {
+    const c = document.createElement('canvas'); c.width = 8; c.height = 256;
+    const ctx = c.getContext('2d'); const g = ctx.createLinearGradient(0, 0, 0, 256);
+    g.addColorStop(0, '#15123a'); g.addColorStop(0.45, '#3a2a5c'); g.addColorStop(0.78, '#8b4f6a'); g.addColorStop(1, '#d98a52');
+    ctx.fillStyle = g; ctx.fillRect(0, 0, 8, 256); return new THREE.CanvasTexture(c); }
+  function makeGlowTex() {
+    const c = document.createElement('canvas'); c.width = c.height = 128; const ctx = c.getContext('2d');
+    const g = ctx.createRadialGradient(64, 64, 0, 64, 64, 64);
+    g.addColorStop(0, 'rgba(255,255,255,1)'); g.addColorStop(0.28, 'rgba(255,255,255,0.55)'); g.addColorStop(1, 'rgba(255,255,255,0)');
+    ctx.fillStyle = g; ctx.fillRect(0, 0, 128, 128); return new THREE.CanvasTexture(c); }
+
+  start();
+})();
+</script>
+</body>
+</html>

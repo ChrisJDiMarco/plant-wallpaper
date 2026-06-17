@@ -1,0 +1,62 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "cat-preview",
+      "runtimeExecutable": "python3",
+      "runtimeArgs": [
+        "-m",
+        "http.server",
+        "8741",
+        "--directory",
+        "Sources/PlantWallpaper/WebAssets/cat"
+      ],
+      "port": 8741
+    },
+    {
+      "name": "cat-preview-3",
+      "runtimeExecutable": "python3",
+      "runtimeArgs": [
+        "-m",
+        "http.server",
+        "8744",
+        "--directory",
+        "Sources/PlantWallpaper/WebAssets/cat"
+      ],
+      "port": 8744
+    },
+    {
+      "name": "cat-nocache",
+      "runtimeExecutable": "python3",
+      "runtimeArgs": [
+        "-c",
+        "import http.server,socketserver,os\nos.chdir('Sources/PlantWallpaper/WebAssets/cat')\nclass H(http.server.SimpleHTTPRequestHandler):\n def end_headers(self):\n  self.send_header('Cache-Control','no-store, no-cache, must-revalidate, max-age=0')\n  self.send_header('Pragma','no-cache')\n  http.server.SimpleHTTPRequestHandler.end_headers(self)\nsocketserver.TCPServer(('',8742),H).serve_forever()"
+      ],
+      "port": 8742
+    },
+    {
+      "name": "gnome-v1-preview",
+      "runtimeExecutable": "python3",
+      "runtimeArgs": [
+        "-m",
+        "http.server",
+        "8745",
+        "--directory",
+        "prototypes/gnome-v1"
+      ],
+      "port": 8745
+    },
+    {
+      "name": "gnome-app-webassets",
+      "runtimeExecutable": "python3",
+      "runtimeArgs": [
+        "-m",
+        "http.server",
+        "8746",
+        "--directory",
+        "Sources/PlantWallpaper/WebAssets"
+      ],
+      "port": 8746
+    }
+  ]
+}

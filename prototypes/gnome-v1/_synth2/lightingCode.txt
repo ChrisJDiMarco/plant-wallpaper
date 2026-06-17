@@ -1,0 +1,47 @@
+/* ============================================================================
+ * DUSK LIGHTING RIG — drop-in replacement for index.html buildVillage().
+ * REPLACE the exposure line (currently line 42) AND the whole light block
+ * (currently lines 64-73, the HemisphereLight + moon + fill + fireLight). KEEP
+ * scene.background = makeSky() as-is. The moon's shadow setup is preserved
+ * verbatim so the PCFSoft shadow map keeps working — `moon` stays the
+ * shadow-casting key light, just retuned warmer/stronger for dusk.
+ *
+ * --- exposure: change line 42 from 0.95 to 1.12 ---
+ *   renderer.toneMappingExposure = 1.12;
+ *
+ * --- fog: change line 48 to the deeper dusk plum + longer range ---
+ *   scene.fog = new THREE.Fog(0x4a2f50, 520, 1300);
+ *
+ * --- lights: replace the entire block at lines 64-73 with this ---
+ */
+    // soft cool sky-fill, warm-dark ground bounce
+    scene.add(new THREE.HemisphereLight(0x9bb0ff, 0x241826, 0.32));
+
+    // KEY (was `moon`) — warm low sun, the shadow caster. Shadow cfg unchanged.
+    const moon = new THREE.DirectionalLight(0xffcaa0, 1.45);
+    moon.position.set(-220, 260, 180); moon.castShadow = true;
+    moon.shadow.mapSize.set(2048, 2048);
+    moon.shadow.camera.near = 40; moon.shadow.camera.far = 820;
+    moon.shadow.camera.left = -360; moon.shadow.camera.right = 360;
+    moon.shadow.camera.top = 360; moon.shadow.camera.bottom = -360;
+    moon.shadow.bias = -0.0006; moon.shadow.radius = 4; scene.add(moon);
+
+    // FILL — cool blue bounce from the opposite side (no shadow)
+    const fill = new THREE.DirectionalLight(0x6f7dff, 0.5);
+    fill.position.set(180, 100, -200); scene.add(fill);
+
+    // RIM — warm low backlight grazing silhouettes (no shadow)
+    const rim = new THREE.DirectionalLight(0xff9d57, 0.85);
+    rim.position.set(120, 60, -260); scene.add(rim);
+
+    // FIRE — hotter, punchier bonfire point light (the existing animate() loop
+    // already drives fireLight.intensity; base value below is its new center)
+    const fireLight = new THREE.PointLight(0xff7a30, 1.35, 340, 2.2);
+    fireLight.position.set(0, 20, 0); scene.add(fireLight);
+/* ----------------------------------------------------------------------------
+ * NOTE: zone outline opacity — the atmosphere design suggests bumping the
+ * spawnZone outline to 0.50 so it reads against the deeper fog. zone.js's
+ * makeZoneOutline already defaults the ribbon opacity to 0.5, so no change is
+ * required unless you previously overrode it. (The fireLight animate() line
+ * `fireLight.intensity = 1.15 + ...` can be left as-is or rebased to 1.35.)
+ * ==========================================================================*/

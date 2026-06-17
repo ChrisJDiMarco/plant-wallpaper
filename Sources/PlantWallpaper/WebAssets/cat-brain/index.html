@@ -1,0 +1,218 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Cat Neural Temperament Map</title>
+  <style>
+    html,
+    body {
+      width: 100%;
+      height: 100%;
+      margin: 0;
+      overflow: hidden;
+      background: transparent;
+      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", sans-serif;
+    }
+
+    #stage {
+      position: relative;
+      width: 100%;
+      height: 100%;
+      display: grid;
+      place-items: center;
+      isolation: isolate;
+    }
+
+    #halo {
+      position: absolute;
+      width: min(82vw, 82vh);
+      aspect-ratio: 1;
+      border-radius: 50%;
+      background:
+        radial-gradient(circle at 50% 41%, rgba(118, 94, 255, 0.30), transparent 32%),
+        radial-gradient(circle at 50% 54%, rgba(48, 202, 142, 0.20), transparent 44%),
+        radial-gradient(circle at 52% 72%, rgba(255, 184, 88, 0.15), transparent 52%);
+      filter: blur(12px);
+      opacity: 0.92;
+      transform: translateY(1%);
+      z-index: 0;
+    }
+
+    #catHead {
+      position: absolute;
+      width: min(86vw, 86vh);
+      max-width: 540px;
+      max-height: 540px;
+      object-fit: contain;
+      opacity: 0.92;
+      filter:
+        drop-shadow(0 18px 35px rgba(15, 23, 42, 0.22))
+        drop-shadow(0 0 30px rgba(102, 87, 255, 0.14));
+      z-index: 1;
+    }
+
+    #brainCanvas {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      z-index: 2;
+    }
+
+    #brainFallback {
+      position: absolute;
+      top: 20%;
+      left: 50%;
+      width: min(44vw, 210px);
+      aspect-ratio: 1.28;
+      transform: translateX(-50%);
+      z-index: 3;
+      border-radius: 999px;
+      opacity: 0.92;
+      pointer-events: none;
+    }
+
+    #brainFallback[hidden] {
+      display: none;
+    }
+
+    .fallback-brain {
+      position: absolute;
+      inset: 20% 6% 18%;
+      border-radius: 48% 52% 46% 54% / 58% 58% 42% 42%;
+      background:
+        radial-gradient(circle at 30% 38%, rgba(255, 219, 230, 0.92), transparent 16%),
+        radial-gradient(circle at 68% 38%, rgba(255, 219, 230, 0.92), transparent 16%),
+        linear-gradient(90deg, rgba(239, 129, 170, 0.88), rgba(147, 118, 255, 0.82), rgba(72, 216, 141, 0.74));
+      box-shadow:
+        0 0 34px rgba(240, 103, 255, 0.32),
+        inset 0 0 26px rgba(255, 255, 255, 0.32);
+      animation: fallbackFloat 3.6s ease-in-out infinite;
+    }
+
+    .fallback-brain::before,
+    .fallback-brain::after {
+      content: "";
+      position: absolute;
+      inset: 16% 12%;
+      border-radius: 50%;
+      border: 2px solid rgba(255, 255, 255, 0.42);
+      border-left-color: rgba(73, 216, 141, 0.88);
+      border-right-color: rgba(81, 168, 255, 0.88);
+      animation: fallbackPulse 2.2s ease-in-out infinite;
+    }
+
+    .fallback-brain::after {
+      inset: 28% 20%;
+      border-top-color: rgba(255, 179, 76, 0.88);
+      animation-delay: -0.8s;
+    }
+
+    #brainFallback span {
+      position: absolute;
+      left: 50%;
+      bottom: 2px;
+      transform: translateX(-50%);
+      width: max-content;
+      max-width: 220px;
+      padding: 5px 9px;
+      border-radius: 999px;
+      background: rgba(15, 23, 42, 0.36);
+      color: rgba(255, 255, 255, 0.76);
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.02em;
+      backdrop-filter: blur(12px);
+    }
+
+    #legend {
+      position: absolute;
+      left: 22px;
+      right: 22px;
+      bottom: 18px;
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 8px;
+      z-index: 4;
+      pointer-events: none;
+    }
+
+    .node {
+      border: 1px solid rgba(255, 255, 255, 0.52);
+      border-radius: 14px;
+      padding: 8px 10px;
+      background: rgba(255, 255, 255, 0.16);
+      box-shadow: 0 10px 25px rgba(15, 23, 42, 0.16);
+      color: rgba(255, 255, 255, 0.92);
+      backdrop-filter: blur(18px);
+    }
+
+    .node strong {
+      display: block;
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.02em;
+    }
+
+    .node span {
+      display: block;
+      margin-top: 2px;
+      font-size: 10px;
+      color: rgba(255, 255, 255, 0.68);
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      #halo {
+        filter: blur(18px);
+      }
+
+      .fallback-brain,
+      .fallback-brain::before,
+      .fallback-brain::after {
+        animation: none;
+      }
+    }
+
+    @keyframes fallbackFloat {
+      0%,
+      100% {
+        transform: translateY(0) scale(1);
+      }
+      50% {
+        transform: translateY(-5px) scale(1.025);
+      }
+    }
+
+    @keyframes fallbackPulse {
+      0%,
+      100% {
+        opacity: 0.44;
+        transform: scale(0.92);
+      }
+      50% {
+        opacity: 0.94;
+        transform: scale(1.05);
+      }
+    }
+  </style>
+</head>
+<body>
+  <div id="stage">
+    <div id="halo"></div>
+    <img id="catHead" src="cat-head-neural.png" alt="">
+    <canvas id="brainCanvas"></canvas>
+    <div id="brainFallback" hidden aria-hidden="true">
+      <div class="fallback-brain"></div>
+      <span data-message>Neural map loading</span>
+    </div>
+    <div id="legend" aria-hidden="true">
+      <div class="node"><strong>Activity</strong><span>motor cortex</span></div>
+      <div class="node"><strong>Curiosity</strong><span>attention loop</span></div>
+      <div class="node"><strong>Play</strong><span>pounce circuit</span></div>
+    </div>
+  </div>
+  <script src="../cat/three.min.js"></script>
+  <script src="main.js"></script>
+</body>
+</html>

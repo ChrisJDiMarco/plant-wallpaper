@@ -1,0 +1,19 @@
+/* No new detail-geometry code needed — the existing
+ * /Users/chrisdimarco/jarvis/projects/WallpaperGarden/prototypes/gnome-v1/detail.js
+ * already implements addGnomeDetail(parts, opts) and addHouseDetail(group, type,
+ * opts) exactly as specified, and its material resolver chain is
+ *   texturedMat(color, kind, opts)  ->  mat(color, opts)  ->  inline
+ * Once materials.js publishes the GLOBAL texturedMat, detail.js AUTOMATICALLY
+ * upgrades to textured materials with ZERO edits — every _detailMat() call
+ * already passes a semantic `kind` ('leather','wood','metal','cloth','hair',
+ * 'thatch','stone'), and those route through the new ALIAS table
+ * (cloth->fabric, hair->beard) or land on a real kind directly.
+ *
+ * VERIFIED headless: with the global texturedMat present, addGnomeDetail() and
+ * addHouseDetail() (cabin + roundhouse, on a finished setProgress(1) site) both
+ * run clean and set their __detailed idempotency flag. Keep detail.js as-is.
+ *
+ * The only thing required is the LOAD ORDER + the two call sites, both covered
+ * in integrationMap. detail.js stays a separate file; it is NOT folded into
+ * materials.js (keeps texture-kit and detail-geometry concerns separated, and
+ * detail.js was already independently verified). */

@@ -1,0 +1,57 @@
+EDIT 1 — gnome.js _M helper (lines 50-63): thread a `kind` to the global
+texturedMat, then fall back to mat(), then inline. Replace the body (lines 53-63):
+
+  OLD:
+    function _M(color, o) {
+      o = o || {};
+      if (typeof mat === 'function') return mat(color, o);
+      return new THREE.MeshStandardMaterial({
+        color: color,
+        roughness: o.roughness !== undefined ? o.roughness : 0.85,
+        metalness: o.metalness !== undefined ? o.metalness : 0.0,
+        emissive: o.emissive !== undefined ? o.emissive : 0x000000,
+        emissiveIntensity: o.emissiveIntensity !== undefined ? o.emissiveIntensity : 0.0
+      });
+    }
+
+  NEW:
+    function _M(color, o) {
+      o = o || {};
+      if (typeof texturedMat === 'function') return texturedMat(color, o.kind || 'fabric', o);
+      if (typeof mat === 'function') return mat(color, o);
+      return new THREE.MeshStandardMaterial({
+        color: color,
+        roughness: o.roughness !== undefined ? o.roughness : 0.85,
+        metalness: o.metalness !== undefined ? o.metalness : 0.0,
+        emissive: o.emissive !== undefined ? o.emissive : 0x000000,
+        emissiveIntensity: o.emissiveIntensity !== undefined ? o.emissiveIntensity : 0.0
+      });
+    }
+
+EDIT 2 — add a `kind:` to each shared-material line (lines 66-80). Old -> New:
+
+  _M(SKIN,        { roughness: 0.6 })   -> _M(SKIN,   { kind:'skin',  roughness:0.6 })
+  _M(SKIN_D,      { roughness: 0.6 })   -> _M(SKIN_D, { kind:'skin',  roughness:0.6 })
+  _M(NOSE,        { roughness: 0.55 })  -> _M(NOSE,   { kind:'skin',  roughness:0.55 })
+  _M(BEARD,       { roughness: 0.95 })  -> _M(BEARD,  { kind:'beard' })
+  _M(BEARD_D,     { roughness: 0.96 })  -> _M(BEARD_D,{ kind:'beard' })
+  _M(BROW,        { roughness: 0.95 })  -> _M(BROW,   { kind:'beard' })
+  _M(shirtColor,  { roughness: 0.9 })   -> _M(shirtColor, { kind:'linen' })
+  _M(tunicColor,  { roughness: 0.85 })  -> _M(tunicColor, { kind:'fabric' })
+  _M(_darken(tunicColor,0.8), {roughness:0.86}) -> _M(_darken(tunicColor,0.8), { kind:'fabric' })
+  _M(hatColor,    { roughness: 0.9 })   -> _M(hatColor,   { kind:'felt' })
+  _M(_darken(hatColor,0.82), {roughness:0.92})  -> _M(_darken(hatColor,0.82), { kind:'felt' })
+  _M(LEATHER,     { roughness: 0.7 })   -> _M(LEATHER,    { kind:'leather' })
+  _M(LEATHER_D,   { roughness: 0.7 })   -> _M(LEATHER_D,  { kind:'leather' })
+  _M(BUCKLE, {roughness:0.35, metalness:0.7}) -> _M(BUCKLE, { kind:'metal', roughness:0.35, metalness:0.7 })
+  _M(TROUSER,     { roughness: 0.9 })   -> _M(TROUSER,    { kind:'wool' })
+
+LEAVE UNCHANGED (lines 81-83) — matEye / matWhite / matCatch. They stay as
+_M(...) and harmlessly default to the 'fabric' kind at sub-pixel eye scale; the
+catchlight keeps its emissive passthrough. No need to texture them.
+
+Mapping summary requested in the task:
+  matTunic -> fabric, matHat -> felt, matLeather -> leather, matTrouser -> wool,
+  matBeard -> beard, matSkin -> skin, matShirt -> linen, matBuckle -> metal.
+
+No rig/geometry/pose changes. Mesh budget unchanged (textures don't add meshes).
