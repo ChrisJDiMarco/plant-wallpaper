@@ -15,3 +15,7 @@ tmp/
 *.xcworkspace
 .swiftpm/
 Package.resolved
+
+# Local release config (signing identity + notary profile names — not secret,
+# but kept out of the public repo so forks supply their own)
+scripts/.release.env
