@@ -3932,10 +3932,11 @@ final class GardenStatusMenu: NSObject {
         alert.informativeText = """
         To fully clean up Plant Wallpaper data, quit the app, remove the app from Applications, then delete the local app data folder if you no longer want gardens, journals, generated wallpapers, custom plant assets, or time-lapse frames.
 
-        Use Privacy & Storage Settings first if you only want to delete time-lapse frames or inspect disk usage.
+        Leaving? Tap “Restore Original Wallpaper” to put your previous desktop wallpaper back. Use Privacy & Storage Settings first if you only want to delete time-lapse frames or inspect disk usage.
         """
         alert.alertStyle = .informational
         alert.addButton(withTitle: "Reveal App Data")
+        alert.addButton(withTitle: "Restore Original Wallpaper")
         alert.addButton(withTitle: "Privacy & Storage")
         alert.addButton(withTitle: "Close")
         NSApplication.shared.activate(ignoringOtherApps: true)
@@ -3943,6 +3944,8 @@ final class GardenStatusMenu: NSObject {
         case .alertFirstButtonReturn:
             openGardenData()
         case .alertSecondButtonReturn:
+            restorePreviousWallpaper()
+        case .alertThirdButtonReturn:
             openPrivacyStorageSettings()
         default:
             break
@@ -4471,9 +4474,14 @@ final class GardenStatusMenu: NSObject {
     @objc private func openAIAPIKeySettings() {
         let alert = NSAlert()
         alert.messageText = "OpenAI API Key"
-        alert.informativeText = "The key is stored in macOS Keychain and used only to create or update AI wallpapers and custom plant PNG assets."
+        alert.informativeText = """
+        AI wallpapers and custom plant assets use your own OpenAI account — a paid OpenAI Platform key (separate from ChatGPT), billed per image. Updating a wallpaper sends that scene's image to OpenAI.
+
+        No key yet? Tap “Get a Key…” to open platform.openai.com/api-keys, create one, then paste it below. It's stored only in your Mac's Keychain.
+        """
         alert.alertStyle = .informational
         alert.addButton(withTitle: "Save")
+        alert.addButton(withTitle: "Get a Key...")
         alert.addButton(withTitle: "Remove Key")
         alert.addButton(withTitle: "Cancel")
 
@@ -4490,6 +4498,13 @@ final class GardenStatusMenu: NSObject {
                 showError(title: "Could not save API key", message: error.localizedDescription)
             }
         case .alertSecondButtonReturn:
+            // "Get a Key..." opens the OpenAI key page, then re-presents this
+            // dialog so the user can paste the key they just created.
+            if let url = URL(string: "https://platform.openai.com/api-keys") {
+                NSWorkspace.shared.open(url)
+            }
+            openAIAPIKeySettings()
+        case .alertThirdButtonReturn:
             OpenAIAPIKeyStore.delete()
         default:
             return
@@ -5143,6 +5158,16 @@ final class GardenStatusMenu: NSObject {
     }
 
     @objc private func resetGarden() {
+        let alert = NSAlert()
+        alert.messageText = "Reset this scene's garden?"
+        alert.informativeText = "All plants in the active scene are replaced with the default garden. This cannot be undone."
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: "Reset Garden")
+        alert.addButton(withTitle: "Cancel")
+        guard alert.runModal() == .alertFirstButtonReturn else {
+            return
+        }
+
         store.resetGarden(screenCount: targetScreens().count)
         store.removePlantsWithoutDisplayableAssets()
     }

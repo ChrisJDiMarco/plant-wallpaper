@@ -10,6 +10,7 @@ struct GardenWelcomeFeature: Equatable {
 struct GardenWelcomeSlide: Equatable {
     var id: String
     var symbolName: String
+    var artwork: GardenWelcomeArtwork.Kind
     var eyebrow: String
     var title: String
     var body: String
@@ -20,90 +21,132 @@ struct GardenWelcomeSlide: Equatable {
         GardenWelcomeSlide(
             id: "start",
             symbolName: "leaf.fill",
+            artwork: .desktopGarden,
             eyebrow: "The basics",
             title: "Your desktop is a living garden",
-            body: "Plant Wallpaper adds a quiet interactive layer to macOS. Click plants to inspect them, drag them into place, and double-click to water without leaving the desktop.",
+            body: "Plant Wallpaper adds a quiet, living layer over macOS. Click a plant to inspect it, drag plants into place, and double-click a plant to water it.",
             accent: .systemGreen,
             features: [
-                GardenWelcomeFeature(symbolName: "cursorarrow.click", title: "Click to inspect", detail: "Health, hydration, care actions, companion effects, and growth forecasts live in the plant inspector."),
-                GardenWelcomeFeature(symbolName: "hand.draw.fill", title: "Drag to arrange", detail: "Plants, radio companions, and custom objects stay where you place them in each scene."),
-                GardenWelcomeFeature(symbolName: "drop.fill", title: "Water quickly", detail: "Double-click a plant or use Water All, thirsty-only watering, and Smart Care from the leaf menu.")
+                GardenWelcomeFeature(symbolName: "cursorarrow.click", title: "Click to inspect", detail: "Health, hydration, care actions, companion effects, and growth forecasts all open in the plant inspector."),
+                GardenWelcomeFeature(symbolName: "hand.draw.fill", title: "Drag to arrange", detail: "Plants, radio companions, and custom objects stay exactly where you place them in each scene."),
+                GardenWelcomeFeature(symbolName: "plus.viewfinder", title: "Plant anywhere", detail: "Double-click any empty desktop spot to open a Plant Here menu and add plants right where you clicked."),
+                GardenWelcomeFeature(symbolName: "hand.raised.fill", title: "Clicks work everywhere", detail: "Reaching plants over other windows uses macOS Input Monitoring. It only watches mouse clicks, never keystrokes — and it's optional.")
+            ]
+        ),
+        GardenWelcomeSlide(
+            id: "control",
+            symbolName: "lock.fill",
+            artwork: .deskControl,
+            eyebrow: "Everyday control",
+            title: "Use your Mac normally anytime",
+            body: "Want plain Mac clicks back? Click the leaf icon in your menu bar and choose Lock Garden Interactions — it sits right under Pause.",
+            accent: .systemBlue,
+            features: [
+                GardenWelcomeFeature(symbolName: "lock.fill", title: "Lock interactions", detail: "Locking makes every click pass straight through to your desktop and apps. The scene keeps living underneath; unlock to play again."),
+                GardenWelcomeFeature(symbolName: "pause.circle.fill", title: "Pause anytime", detail: "Pause freezes growth and motion so your desktop holds perfectly still whenever you want calm."),
+                GardenWelcomeFeature(symbolName: "arrow.uturn.backward.circle.fill", title: "Your wallpaper is safe", detail: "Your previous desktop wallpaper is saved. Restore it from Settings or Wallpaper & Scenes ▸ Restore Previous Wallpaper."),
+                GardenWelcomeFeature(symbolName: "power", title: "Quit when you like", detail: "Quit from the same menu. The leaf icon is always in your menu bar to bring everything back.")
             ]
         ),
         GardenWelcomeSlide(
             id: "game-loop",
             symbolName: "sparkles",
+            artwork: .gameLoop,
             eyebrow: "Game loop",
             title: "Grow, harvest, focus, repeat",
-            body: "The garden changes over time. Edibles can be harvested, mature plants can yield seeds, and focus sessions give visible growth rewards.",
+            body: "The garden changes over time. Harvest edibles, collect seeds from mature plants, and earn visible growth from focus sessions.",
             accent: .systemMint,
             features: [
-                GardenWelcomeFeature(symbolName: "basket.fill", title: "Harvest crops", detail: "Tomatoes, peppers, herbs, peas, beans, cucumbers, and more can cycle through regrowth."),
-                GardenWelcomeFeature(symbolName: "seedling", title: "Collect seeds", detail: "Pruning and harvesting mature plants can unlock seed planting for a slower from-scratch loop."),
-                GardenWelcomeFeature(symbolName: "timer", title: "Focus sessions", detail: "Start a focus timer from the leaf menu and earn a growth boost for visible garden progress.")
+                GardenWelcomeFeature(symbolName: "basket.fill", title: "Harvest crops", detail: "Tomatoes, peppers, herbs, peas, beans, cucumbers and more cycle through regrowth you can harvest."),
+                GardenWelcomeFeature(symbolName: "seedling", title: "Collect seeds", detail: "Pruning and harvesting mature plants unlocks seeds for a slower, from-scratch planting loop."),
+                GardenWelcomeFeature(symbolName: "timer", title: "Focus sessions", detail: "Start a focus timer from the menu and earn a growth boost for real garden progress."),
+                GardenWelcomeFeature(symbolName: "chart.line.uptrend.xyaxis", title: "Progression Mode", detail: "Opt into a 20-level fantasy arc that upgrades your scene as your garden thrives.")
             ]
         ),
         GardenWelcomeSlide(
             id: "create",
             symbolName: "wand.and.stars",
+            artwork: .create,
             eyebrow: "Creation tools",
-            title: "Make the garden yours with scenes and AI",
-            body: "Switch scenes, create AI wallpapers, update the current wallpaper with a prompt, or generate new plant assets from the Add New rows in plant menus.",
-            accent: .systemPink,
+            title: "Make it yours with scenes and AI",
+            body: "Switch scenes with the menu arrows or the gallery, generate new AI wallpapers, restyle the current one, or create your own plant assets.",
+            accent: .systemPurple,
             features: [
-                GardenWelcomeFeature(symbolName: "photo.on.rectangle.angled", title: "Wallpaper scenes", detail: "Use the scene gallery or left/right arrows in the menu to move through built-in and custom scenes."),
-                GardenWelcomeFeature(symbolName: "paintbrush.pointed.fill", title: "Custom assets", detail: "Generate transparent PNG plants or room objects with the app's chroma-key cutout pipeline."),
-                GardenWelcomeFeature(symbolName: "bed.double.fill", title: "Room Studio", detail: "Switch from Garden mode to Room Studio to decorate bedrooms, hangout rooms, and media spaces.")
+                GardenWelcomeFeature(symbolName: "photo.on.rectangle.angled", title: "Wallpaper scenes", detail: "Move through built-in and custom scenes with the left/right arrows or the scene gallery."),
+                GardenWelcomeFeature(symbolName: "wand.and.stars", title: "AI wallpapers", detail: "Create a wallpaper from a prompt, or Update Current Wallpaper to restyle it. Roll back from Wallpaper Versions."),
+                GardenWelcomeFeature(symbolName: "paintbrush.pointed.fill", title: "Custom assets", detail: "Generate transparent PNG plants or room objects with the built-in chroma-key cutout pipeline."),
+                GardenWelcomeFeature(symbolName: "key.fill", title: "Bring your own AI key", detail: "AI features use your own OpenAI key — a paid OpenAI account, billed per image. Add it once; it's stored in your Keychain.")
+            ]
+        ),
+        GardenWelcomeSlide(
+            id: "worlds",
+            symbolName: "bed.double.fill",
+            artwork: .worlds,
+            eyebrow: "More worlds",
+            title: "Room Studio and alien worlds",
+            body: "Switch the whole experience from Garden to Room Studio or Alien/UFO using the Mode menu. Room Studio and Alien are Pro features.",
+            accent: .systemIndigo,
+            features: [
+                GardenWelcomeFeature(symbolName: "bed.double.fill", title: "Room Studio", detail: "Decorate cozy bedrooms, loft hangouts, and media dens with placeable objects instead of plants."),
+                GardenWelcomeFeature(symbolName: "sparkles", title: "Alien gardens", detail: "Grow otherworldly species inside glowing domes, terrariums, and orbital sanctuaries."),
+                GardenWelcomeFeature(symbolName: "crown.fill", title: "Free vs Pro", detail: "Check exactly what's included on the Pricing & Pro screen in the menu before you start.")
             ]
         ),
         GardenWelcomeSlide(
             id: "companions",
             symbolName: "cat.fill",
+            artwork: .companions,
             eyebrow: "Ambient life",
-            title: "Companions, sound, and tiny societies",
-            body: "The desktop can host the 3D cat, realistic bug layers, environmental soundscapes, radio companions, and little gnome tribes that live in painted habitat zones.",
+            title: "Companions, sound, and societies",
+            body: "Your desktop can host a 3D cat, realistic bugs, environmental soundscapes, radio companions, and gnome tribes in painted habitat zones.",
             accent: .systemOrange,
             features: [
-                GardenWelcomeFeature(symbolName: "cat.fill", title: "3D cat companion", detail: "The cat watches the cursor, swats, climbs, rests near the Dock, and opens a chat panel when clicked."),
+                GardenWelcomeFeature(symbolName: "cat.fill", title: "3D cat companion", detail: "The cat watches your cursor, swats, climbs, and rests near the Dock. Click it to chat (toggle off in Settings)."),
                 GardenWelcomeFeature(symbolName: "radio.fill", title: "Radio companions", detail: "Place music objects, assign Filtermusic streams, and click them to play or stop a station."),
-                GardenWelcomeFeature(symbolName: "figure.2.and.child.holdinghands", title: "Gnome tribes", detail: "Paint a habitat zone from Garden Tools and tiny builders, bards, climbers, and scouts will settle there.")
+                GardenWelcomeFeature(symbolName: "figure.2.and.child.holdinghands", title: "Gnome tribes", detail: "Paint a habitat zone in Garden Tools and tiny builders, bards, and scouts settle in to live there."),
+                GardenWelcomeFeature(symbolName: "sparkles.rectangle.stack.fill", title: "Jarvis Assistant", detail: "Ask the built-in assistant to tend, plant, or restyle your garden by text or voice.")
             ]
         ),
         GardenWelcomeSlide(
-            id: "automation",
+            id: "living-world",
             symbolName: "sun.max.fill",
+            artwork: .livingWorld,
             eyebrow: "Living world",
-            title: "Weather, time, screensaver, and memories",
-            body: "Plants darken with the day, scenes can follow time-of-day artwork, environmental sounds match the place, and your current garden can appear as a macOS screen saver.",
-            accent: .systemBlue,
+            title: "Weather, time, and keepsakes",
+            body: "Plants shift with the day, scenes can follow time-of-day artwork, sounds match the place, and real weather can water your plants.",
+            accent: .systemTeal,
             features: [
-                GardenWelcomeFeature(symbolName: "cloud.rain.fill", title: "Weather-aware", detail: "Real rain can water plants, trigger rain audio, and create rare post-rain moments."),
-                GardenWelcomeFeature(symbolName: "moon.stars.fill", title: "Time-aware scenes", detail: "Plants and scenes can shift through daylight, golden hour, night, and manual darkening."),
-                GardenWelcomeFeature(symbolName: "film.stack.fill", title: "Keepsakes", detail: "Save snapshots, share cards, time-lapses, and use the screen saver to show the live garden.")
+                GardenWelcomeFeature(symbolName: "cloud.rain.fill", title: "Weather-aware", detail: "Real rain can water plants, play rain audio, and trigger rare post-rain rainbow moments."),
+                GardenWelcomeFeature(symbolName: "moon.stars.fill", title: "Time-aware scenes", detail: "Plants and scenes shift through daylight, golden hour, night, and manual darkening."),
+                GardenWelcomeFeature(symbolName: "film.stack.fill", title: "Keepsakes & screen saver", detail: "Save snapshots, share cards, and time-lapses — and optionally set your live garden as a macOS screen saver.")
             ]
         ),
         GardenWelcomeSlide(
-            id: "control",
+            id: "control-center",
             symbolName: "slider.horizontal.3",
+            artwork: .controlCenter,
             eyebrow: "Control center",
-            title: "Tune comfort, privacy, performance, and storage",
-            body: "Settings is the command center: Cozy Mode, Performance Mode, time-lapse storage, OpenAI transparency, radio behavior, screensaver status, and cleanup tools live there.",
-            accent: .systemPurple,
+            title: "Comfort, privacy, and storage",
+            body: "Settings is your command center: Cozy Mode, Performance Mode, calm options, time-lapse storage, OpenAI transparency, and cleanup tools.",
+            accent: .systemPink,
             features: [
-                GardenWelcomeFeature(symbolName: "leaf.arrow.triangle.circlepath", title: "Cozy or lively", detail: "Use Cozy Mode, Calm Desktop, rare moments, wildlife, and animation settings to choose the vibe."),
-                GardenWelcomeFeature(symbolName: "lock.fill", title: "Lock interactions", detail: "Lock the garden when you want normal macOS clicks while the wallpaper keeps living underneath."),
-                GardenWelcomeFeature(symbolName: "externaldrive.fill", title: "Storage and privacy", detail: "Manage generated assets, time-lapse frames, app data, OpenAI usage notes, and cleanup shortcuts.")
+                GardenWelcomeFeature(symbolName: "leaf.arrow.triangle.circlepath", title: "Cozy or lively", detail: "Use Cozy Mode, Calm Desktop, rare moments, and wildlife settings to choose the vibe."),
+                GardenWelcomeFeature(symbolName: "externaldrive.fill", title: "Storage & privacy", detail: "Manage generated assets, time-lapse frames, app data, and see exactly how your OpenAI key is used."),
+                GardenWelcomeFeature(symbolName: "questionmark.circle", title: "Replay this tour", detail: "Reopen this welcome tour anytime from Help & Data, or ask the Jarvis Assistant to open it.")
             ]
         )
     ]
 }
 
 /// One-time first-run welcome tour. The modal is intentionally broader than
-/// gesture help: it orients new users to the app's living desktop, game loop,
-/// AI tools, room mode, companions, sound, settings, and storage controls.
+/// gesture help: it orients new users to the app's living desktop, everyday
+/// controls (lock, pause, restore wallpaper), the game loop, AI tools, room and
+/// alien modes, companions, sound, the living world, and settings — each slide
+/// paired with a crafted illustration.
 @MainActor
 final class GardenWelcomeController {
     private static let hasShownDefaultsKey = "PlantWallpaper.hasShownWelcome"
+    private static let bannerSize = NSSize(width: 512, height: 168)
 
     private let store: GardenStore
     private let defaults: UserDefaults
@@ -138,7 +181,7 @@ final class GardenWelcomeController {
 
         currentSlideIndex = 0
         let panel = NSPanel(
-            contentRect: NSRect(x: 0, y: 0, width: 820, height: 640),
+            contentRect: NSRect(x: 0, y: 0, width: 860, height: 736),
             styleMask: [.titled, .closable, .fullSizeContentView],
             backing: .buffered,
             defer: false
@@ -147,7 +190,7 @@ final class GardenWelcomeController {
         panel.titlebarAppearsTransparent = true
         panel.isMovableByWindowBackground = true
         panel.isFloatingPanel = true
-        panel.minSize = NSSize(width: 760, height: 580)
+        panel.minSize = NSSize(width: 820, height: 680)
 
         let effectView = NSVisualEffectView()
         effectView.material = .hudWindow
@@ -158,8 +201,8 @@ final class GardenWelcomeController {
         let root = NSStackView()
         root.orientation = .vertical
         root.alignment = .leading
-        root.spacing = 22
-        root.edgeInsets = NSEdgeInsets(top: 34, left: 34, bottom: 26, right: 34)
+        root.spacing = 20
+        root.edgeInsets = NSEdgeInsets(top: 32, left: 34, bottom: 24, right: 34)
         root.translatesAutoresizingMaskIntoConstraints = false
         effectView.addSubview(root)
         NSLayoutConstraint.activate([
@@ -180,13 +223,13 @@ final class GardenWelcomeController {
         let slideHost = NSStackView()
         slideHost.orientation = .vertical
         slideHost.alignment = .leading
-        slideHost.spacing = 18
+        slideHost.spacing = 16
         slideHost.translatesAutoresizingMaskIntoConstraints = false
-        slideHost.widthAnchor.constraint(greaterThanOrEqualToConstant: 510).isActive = true
+        slideHost.widthAnchor.constraint(greaterThanOrEqualToConstant: 512).isActive = true
         body.addArrangedSubview(slideHost)
         self.slideHost = slideHost
         root.addArrangedSubview(body)
-        body.heightAnchor.constraint(greaterThanOrEqualToConstant: 420).isActive = true
+        body.heightAnchor.constraint(greaterThanOrEqualToConstant: 500).isActive = true
 
         root.addArrangedSubview(footerView())
         refreshSlide()
@@ -201,16 +244,16 @@ final class GardenWelcomeController {
         let icon = NSImageView()
         icon.image = Bundle.appResources.image(forResource: "AppIcon") ?? NSImage(systemSymbolName: "leaf.fill", accessibilityDescription: "Plant Wallpaper")
         icon.imageScaling = .scaleProportionallyUpOrDown
-        icon.widthAnchor.constraint(equalToConstant: 56).isActive = true
-        icon.heightAnchor.constraint(equalToConstant: 56).isActive = true
+        icon.widthAnchor.constraint(equalToConstant: 54).isActive = true
+        icon.heightAnchor.constraint(equalToConstant: 54).isActive = true
 
         let title = NSTextField(labelWithString: "Welcome to Plant Wallpaper")
-        title.font = .systemFont(ofSize: 28, weight: .bold)
+        title.font = .systemFont(ofSize: 27, weight: .bold)
         title.textColor = .labelColor
         title.lineBreakMode = .byWordWrapping
 
-        let subtitle = NSTextField(wrappingLabelWithString: "A living desktop garden, creative wallpaper studio, ambient companion layer, and tiny game loop for macOS.")
-        subtitle.font = .systemFont(ofSize: 14)
+        let subtitle = NSTextField(wrappingLabelWithString: "A living desktop garden, wallpaper studio, and ambient companion layer for macOS. It all lives in the leaf icon in your menu bar — click it anytime for scenes, settings, and help.")
+        subtitle.font = .systemFont(ofSize: 13)
         subtitle.textColor = .secondaryLabelColor
         subtitle.maximumNumberOfLines = 2
 
@@ -223,7 +266,7 @@ final class GardenWelcomeController {
         header.orientation = .horizontal
         header.alignment = .centerY
         header.spacing = 14
-        header.widthAnchor.constraint(greaterThanOrEqualToConstant: 720).isActive = true
+        header.widthAnchor.constraint(greaterThanOrEqualToConstant: 760).isActive = true
         return header
     }
 
@@ -231,8 +274,8 @@ final class GardenWelcomeController {
         let stack = NSStackView()
         stack.orientation = .vertical
         stack.alignment = .leading
-        stack.spacing = 8
-        stack.widthAnchor.constraint(equalToConstant: 190).isActive = true
+        stack.spacing = 6
+        stack.widthAnchor.constraint(equalToConstant: 196).isActive = true
 
         sidebarButtons = GardenWelcomeSlide.catalog.enumerated().map { index, slide in
             let button = NSButton(title: slide.eyebrow, target: self, action: #selector(selectSlide(_:)))
@@ -243,18 +286,18 @@ final class GardenWelcomeController {
             button.image = NSImage(systemSymbolName: slide.symbolName, accessibilityDescription: slide.eyebrow)
             button.imagePosition = .imageLeading
             button.contentTintColor = .secondaryLabelColor
-            button.heightAnchor.constraint(equalToConstant: 34).isActive = true
+            button.heightAnchor.constraint(equalToConstant: 32).isActive = true
             stack.addArrangedSubview(button)
             return button
         }
 
-        let hint = NSTextField(wrappingLabelWithString: "You can replay this later from Settings or Help & Data.")
+        let hint = NSTextField(wrappingLabelWithString: "Replay this later from the menu's Help & Data ▸ Show Welcome Tour.")
         hint.font = .systemFont(ofSize: 11)
         hint.textColor = .tertiaryLabelColor
         hint.maximumNumberOfLines = 3
         stack.addArrangedSubview(NSView.spacer(height: 4))
         stack.addArrangedSubview(hint)
-        hint.widthAnchor.constraint(lessThanOrEqualToConstant: 170).isActive = true
+        hint.widthAnchor.constraint(lessThanOrEqualToConstant: 176).isActive = true
 
         return stack
     }
@@ -297,7 +340,7 @@ final class GardenWelcomeController {
         footer.orientation = .horizontal
         footer.alignment = .centerY
         footer.spacing = 12
-        footer.widthAnchor.constraint(greaterThanOrEqualToConstant: 740).isActive = true
+        footer.widthAnchor.constraint(greaterThanOrEqualToConstant: 780).isActive = true
         return footer
     }
 
@@ -311,11 +354,11 @@ final class GardenWelcomeController {
             view.removeFromSuperview()
         }
 
-        let hero = slideHeroView(slide)
-        slideHost.addArrangedSubview(hero)
+        slideHost.addArrangedSubview(bannerView(slide))
+        slideHost.addArrangedSubview(slideTextView(slide))
 
         let grid = NSGridView(views: slide.features.map(featureRow))
-        grid.rowSpacing = 10
+        grid.rowSpacing = 9
         grid.columnSpacing = 0
         grid.translatesAutoresizingMaskIntoConstraints = false
         slideHost.addArrangedSubview(grid)
@@ -334,47 +377,46 @@ final class GardenWelcomeController {
         }
     }
 
-    private func slideHeroView(_ slide: GardenWelcomeSlide) -> NSView {
-        let icon = NSImageView()
-        icon.image = NSImage(systemSymbolName: slide.symbolName, accessibilityDescription: slide.title)?
-            .withSymbolConfiguration(.init(pointSize: 40, weight: .semibold))
-        icon.contentTintColor = slide.accent
-        icon.widthAnchor.constraint(equalToConstant: 58).isActive = true
-        icon.heightAnchor.constraint(equalToConstant: 58).isActive = true
+    private func bannerView(_ slide: GardenWelcomeSlide) -> NSView {
+        let banner = NSImageView()
+        banner.image = GardenWelcomeArtwork.image(for: slide.artwork, size: Self.bannerSize)
+        banner.imageScaling = .scaleProportionallyUpOrDown
+        banner.setAccessibilityLabel("\(slide.title) illustration")
+        banner.translatesAutoresizingMaskIntoConstraints = false
+        banner.widthAnchor.constraint(equalToConstant: Self.bannerSize.width).isActive = true
+        banner.heightAnchor.constraint(equalToConstant: Self.bannerSize.height).isActive = true
+        return banner
+    }
 
+    private func slideTextView(_ slide: GardenWelcomeSlide) -> NSView {
         let eyebrow = NSTextField(labelWithString: slide.eyebrow.uppercased())
         eyebrow.font = .systemFont(ofSize: 11, weight: .bold)
         eyebrow.textColor = slide.accent
 
         let title = NSTextField(wrappingLabelWithString: slide.title)
-        title.font = .systemFont(ofSize: 26, weight: .bold)
+        title.font = .systemFont(ofSize: 23, weight: .bold)
         title.textColor = .labelColor
         title.maximumNumberOfLines = 2
 
         let body = NSTextField(wrappingLabelWithString: slide.body)
-        body.font = .systemFont(ofSize: 14)
+        body.font = .systemFont(ofSize: 13.5)
         body.textColor = .secondaryLabelColor
-        body.maximumNumberOfLines = 4
-        body.widthAnchor.constraint(lessThanOrEqualToConstant: 500).isActive = true
+        body.maximumNumberOfLines = 3
+        body.widthAnchor.constraint(lessThanOrEqualToConstant: 512).isActive = true
 
         let textStack = NSStackView(views: [eyebrow, title, body])
         textStack.orientation = .vertical
         textStack.alignment = .leading
-        textStack.spacing = 7
-
-        let stack = NSStackView(views: [icon, textStack])
-        stack.orientation = .horizontal
-        stack.alignment = .top
-        stack.spacing = 16
-        return stack
+        textStack.spacing = 5
+        return textStack
     }
 
     private func featureRow(_ feature: GardenWelcomeFeature) -> [NSView] {
         let icon = NSImageView()
         icon.image = NSImage(systemSymbolName: feature.symbolName, accessibilityDescription: feature.title)?
-            .withSymbolConfiguration(.init(pointSize: 18, weight: .medium))
+            .withSymbolConfiguration(.init(pointSize: 17, weight: .medium))
         icon.contentTintColor = .secondaryLabelColor
-        icon.widthAnchor.constraint(equalToConstant: 32).isActive = true
+        icon.widthAnchor.constraint(equalToConstant: 30).isActive = true
 
         let title = NSTextField(labelWithString: feature.title)
         title.font = .systemFont(ofSize: 13, weight: .semibold)
@@ -383,12 +425,12 @@ final class GardenWelcomeController {
         detail.font = .systemFont(ofSize: 12)
         detail.textColor = .secondaryLabelColor
         detail.maximumNumberOfLines = 2
-        detail.widthAnchor.constraint(lessThanOrEqualToConstant: 455).isActive = true
+        detail.widthAnchor.constraint(lessThanOrEqualToConstant: 470).isActive = true
 
         let textStack = NSStackView(views: [title, detail])
         textStack.orientation = .vertical
         textStack.alignment = .leading
-        textStack.spacing = 2
+        textStack.spacing = 1
 
         return [icon, textStack]
     }

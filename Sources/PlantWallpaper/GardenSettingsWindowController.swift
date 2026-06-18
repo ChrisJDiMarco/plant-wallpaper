@@ -2793,7 +2793,7 @@ final class GardenSettingsWindowController: NSWindowController, NSTextFieldDeleg
         if FileManager.default.fileExists(atPath: screenSaverURL.path) {
             return "Installed - open macOS settings to use Plant Wallpaper as your screen saver."
         }
-        return "Not installed - rebuild or copy Plant Wallpaper.saver to ~/Library/Screen Savers."
+        return "Not set up yet - this optional extra needs the Plant Wallpaper screen saver in your Library/Screen Savers folder, then pick it in System Settings ▸ Screen Saver."
     }
 
     private static func directoryByteCount(at directoryURL: URL) -> Int64 {

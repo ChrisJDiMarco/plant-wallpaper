@@ -1075,6 +1075,27 @@ struct GardenStoreSceneSwitchingTests {
         #expect(store.state.compositionVersion == GardenComposition.currentVersion)
     }
 
+    @Test("switching to a brand-new garden scene starts empty, not pre-planted")
+    func switchingToBrandNewGardenSceneStartsEmpty() throws {
+        let fixture = try TemporaryWallpaperFixture()
+        defer { fixture.cleanup() }
+
+        // No save file exists for the destination scene, so it opens fresh.
+        // Opening a scene the operator has never set up must not dump the
+        // starter garden into it - it is a blank canvas to compose by hand.
+        let store = GardenStore(
+            state: GardenState.defaultGarden(screenCount: 1),
+            persistence: GardenPersistence(directoryURL: fixture.directoryURL),
+            activeSceneKey: "empty-conservatory-hall"
+        )
+        store.switchGardenScene(to: "rooftop-seed-house", screenCount: 1)
+
+        #expect(store.state.plants.isEmpty)
+        // Already at the current composition version, so the upgrade backfill
+        // never repopulates the empty scene.
+        #expect(store.state.compositionVersion == GardenComposition.currentVersion)
+    }
+
     @Test("setting the same selected plant does not repost changes")
     func settingSameSelectedPlantDoesNotRepostChanges() throws {
         let fixture = try TemporaryWallpaperFixture()

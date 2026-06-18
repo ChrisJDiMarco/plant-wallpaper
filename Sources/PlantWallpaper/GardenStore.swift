@@ -1202,15 +1202,17 @@ final class GardenStore: NSObject {
         screenCount: Int,
         experienceMode: GardenExperienceMode = .garden
     ) -> GardenState {
-        if let sceneKey,
-           GardenWallpaperScene.scene(forKey: sceneKey)?.experienceMode != .garden {
-            return GardenState()
-        }
-        guard experienceMode == .garden else {
-            return GardenState(settings: .default.updating(experienceMode: experienceMode))
-        }
-
-        return GardenState.defaultGarden(screenCount: max(1, screenCount))
+        // A scene the operator opens for the first time always starts as a
+        // blank canvas - in every mode - so switching scenes never dumps the
+        // starter garden into the new one. The day-one starter garden is seeded
+        // separately in AppDelegate.loadInitialState, so a brand-new install
+        // still opens onto a planted desktop. A fresh GardenState already carries
+        // the current compositionVersion, which keeps the composition-upgrade
+        // backfill from repopulating it.
+        let resolvedMode = sceneKey
+            .flatMap { GardenWallpaperScene.scene(forKey: $0)?.experienceMode }
+            ?? experienceMode
+        return GardenState(settings: .default.updating(experienceMode: resolvedMode))
     }
 
     private func replaceState(_ nextState: GardenState, shouldSave: Bool, selectedPlantID nextSelectedPlantID: UUID?) {
