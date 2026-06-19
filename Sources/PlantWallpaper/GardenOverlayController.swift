@@ -131,6 +131,37 @@ final class GardenOverlayController {
         startPointerRoutingTimer()
     }
 
+    func shutdown() {
+        NotificationCenter.default.removeObserver(self)
+        pointerRoutingTimer?.invalidate()
+        pointerRoutingTimer = nil
+        if let globalMouseDownMonitor {
+            NSEvent.removeMonitor(globalMouseDownMonitor)
+            self.globalMouseDownMonitor = nil
+        }
+        if let globalMouseDraggedMonitor {
+            NSEvent.removeMonitor(globalMouseDraggedMonitor)
+            self.globalMouseDraggedMonitor = nil
+        }
+        if let globalMouseUpMonitor {
+            NSEvent.removeMonitor(globalMouseUpMonitor)
+            self.globalMouseUpMonitor = nil
+        }
+        if let globalMouseMovedMonitor {
+            NSEvent.removeMonitor(globalMouseMovedMonitor)
+            self.globalMouseMovedMonitor = nil
+        }
+        if let eventTapRunLoopSource {
+            CFRunLoopRemoveSource(CFRunLoopGetMain(), eventTapRunLoopSource, .commonModes)
+            self.eventTapRunLoopSource = nil
+        }
+        if let eventTap {
+            CGEvent.tapEnable(tap: eventTap, enable: false)
+            CFMachPortInvalidate(eventTap)
+            self.eventTap = nil
+        }
+    }
+
     func show() {
         rebuildWindows()
     }
@@ -713,12 +744,13 @@ final class GardenOverlayController {
     private func startPointerRoutingTimer() {
         pointerRoutingTimer?.invalidate()
         pointerRoutingTimer = Timer.scheduledTimer(
-            timeInterval: GardenPointerRoutingCadence.refreshInterval,
-            target: self,
-            selector: #selector(pointerRoutingTimerFired),
-            userInfo: nil,
+            withTimeInterval: GardenPointerRoutingCadence.refreshInterval,
             repeats: true
-        )
+        ) { [weak self] _ in
+            MainActor.assumeIsolated {
+                self?.pointerRoutingTimerFired()
+            }
+        }
         pointerRoutingTimer?.tolerance = GardenPointerRoutingCadence.refreshInterval * 0.35
     }
 
@@ -800,7 +832,7 @@ final class GardenOverlayController {
         }
     }
 
-    @objc private func pointerRoutingTimerFired() {
+    private func pointerRoutingTimerFired() {
         let screenPoint = NSEvent.mouseLocation
         let isLeftMouseDown = CGEventSource.buttonState(.hidSystemState, button: .left)
         if GardenPointerRoutingCadence.shouldUpdateMouseRouting(

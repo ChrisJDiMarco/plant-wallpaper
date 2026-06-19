@@ -1156,10 +1156,8 @@ final class GardenStatusMenu: NSObject {
             submenu.addItem(menuItem(title: "Prune Selected", symbol: "scissors", action: #selector(pruneSelected)))
             submenu.addItem(menuItem(title: "Nourish Selected", symbol: "sparkles", action: #selector(nourishSelected)))
             submenu.addItem(menuItem(title: "Remove Selected", symbol: "trash", action: #selector(removeSelected)))
-            submenu.addItem(menuItem(title: "Smart Arrange Garden", symbol: "rectangle.3.group", action: #selector(arrangeGarden)))
         case .roomStudio:
             submenu.addItem(menuItem(title: "Remove Selected Object", symbol: "trash", action: #selector(removeSelected)))
-            submenu.addItem(menuItem(title: "Smart Arrange Room", symbol: "rectangle.3.group", action: #selector(arrangeGarden)))
         case .alienUFO:
             ambientWildlifeItem.target = self
             ambientWildlifeItem.action = #selector(toggleAmbientWildlife)
@@ -1169,7 +1167,6 @@ final class GardenStatusMenu: NSObject {
             submenu.addItem(menuItem(title: "Prune Selected Alien Plant", symbol: "scissors", action: #selector(pruneSelected)))
             submenu.addItem(menuItem(title: "Nourish Selected Alien Plant", symbol: "sparkles", action: #selector(nourishSelected)))
             submenu.addItem(menuItem(title: "Remove Selected Alien Plant", symbol: "trash", action: #selector(removeSelected)))
-            submenu.addItem(menuItem(title: "Smart Arrange Alien Garden", symbol: "rectangle.3.group", action: #selector(arrangeGarden)))
         }
 
         return submenuItem(title: title, symbol: "slider.horizontal.3", submenu: submenu)

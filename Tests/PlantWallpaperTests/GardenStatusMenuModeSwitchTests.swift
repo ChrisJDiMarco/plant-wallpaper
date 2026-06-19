@@ -44,7 +44,7 @@ struct GardenStatusMenuModeSwitchTests {
         #expect(fixture.menu.submenuTitlesForSelfTest(named: "Add Games & Tech Here").contains("Add New Games & Tech..."))
         #expect(fixture.menu.submenuTitlesForSelfTest(named: "Add Games & Tech Here").contains("Retro Console Stack"))
         #expect(!fixture.menu.submenuTitlesForSelfTest(named: "Room Studio Tools").contains("Add Wall Decor Here"))
-        #expect(fixture.menu.submenuTitlesForSelfTest(named: "Room Studio Tools").contains("Smart Arrange Room"))
+        #expect(!fixture.menu.submenuTitlesForSelfTest(named: "Room Studio Tools").contains("Smart Arrange Room"))
         #expect(fixture.menu.primaryWallpaperSceneTitlesForSelfTest().contains("Modern Bedroom Canvas"))
         #expect(!fixture.menu.primaryWallpaperSceneTitlesForSelfTest().contains("Empty Conservatory Hall"))
     }

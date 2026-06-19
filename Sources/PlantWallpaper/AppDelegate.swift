@@ -172,6 +172,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationWillTerminate(_ notification: Notification) {
         store?.save()
+        overlayController?.shutdown()
         NotificationCenter.default.removeObserver(self)
         simulationTimer?.invalidate()
         displayTimer?.invalidate()
