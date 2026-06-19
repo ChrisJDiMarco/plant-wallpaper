@@ -55,8 +55,7 @@ extension GardenCanvasView {
             return
         }
 
-        let centerline = soilBrushStrokePath(for: points)
-        let coveragePath = soilCoveragePath(for: points, centerline: centerline)
+        let coveragePath = soilCoveragePath(for: points)
         let bbox = soilExpandedBounds(for: coveragePath, points: points)
         guard bbox.width > 1, bbox.height > 1,
               let context = NSGraphicsContext.current?.cgContext else {
@@ -70,12 +69,13 @@ extension GardenCanvasView {
         context.clip()
 
         drawSoilBasePlane(in: bbox, context: context, alphaScale: mode.alphaScale)
-        drawSoilCompactedBrushBands(
-            centerline: centerline,
+        drawSoilMoundedRelief(
             seed: seed,
+            in: bbox,
+            detailScale: mode.detailScale,
             alphaScale: mode.alphaScale
         )
-        drawSoilCracksAndFibers(
+        drawSoilSurfaceMottling(
             seed: seed,
             in: bbox,
             detailScale: mode.detailScale,
@@ -93,17 +93,18 @@ extension GardenCanvasView {
             detailScale: mode.detailScale,
             alphaScale: mode.alphaScale
         )
+        drawSoilPebbles(
+            seed: seed,
+            in: bbox,
+            detailScale: mode.detailScale,
+            alphaScale: mode.alphaScale
+        )
         context.restoreGState()
 
         drawSoilOverspray(
             points: points,
             seed: seed,
             detailScale: mode.detailScale,
-            alphaScale: mode.alphaScale
-        )
-        drawSoilEdgeRelief(
-            coveragePath,
-            context: context,
             alphaScale: mode.alphaScale
         )
     }
@@ -175,35 +176,32 @@ extension GardenCanvasView {
         }
     }
 
-    private func drawSoilCompactedBrushBands(
-        centerline: NSBezierPath,
+    private func drawSoilMoundedRelief(
         seed: Int,
+        in bbox: NSRect,
+        detailScale: CGFloat,
         alphaScale: CGFloat
     ) {
-        let bandCount = 6
-        for index in 0..<bandCount {
-            let widthNoise = soilSignedNoise(seed: seed, index: index, salt: 313)
-            let toneNoise = soilSignedNoise(seed: seed, index: index, salt: 977)
-            let width = soilBrushRadius * (1.92 - CGFloat(index) * 0.23 + widthNoise * 0.045)
-            centerline.lineWidth = max(2, width)
-            centerline.lineJoinStyle = .round
-            centerline.lineCapStyle = .round
-            if index.isMultiple(of: 2) {
-                color(
-                    red: 52 + toneNoise * 8,
-                    green: 36 + toneNoise * 5,
-                    blue: 23 + toneNoise * 4,
-                    alpha: (0.10 + CGFloat(index) * 0.018) * alphaScale
-                ).setStroke()
-            } else {
-                color(
-                    red: 130 + toneNoise * 18,
-                    green: 98 + toneNoise * 10,
-                    blue: 60 + toneNoise * 8,
-                    alpha: (0.075 + CGFloat(index) * 0.012) * alphaScale
-                ).setStroke()
-            }
-            centerline.stroke()
+        let moundCount = Int(min(28, max(8, bbox.width * bbox.height / 5_500) * detailScale))
+        for index in 0..<moundCount {
+            let width = soilBrushRadius * (0.92 + soilUnitNoise(seed: seed, index: index, salt: 1_107) * 1.75)
+            let height = width * (0.30 + soilUnitNoise(seed: seed, index: index, salt: 1_123) * 0.32)
+            let center = NSPoint(
+                x: bbox.minX + soilUnitNoise(seed: seed, index: index, salt: 1_139) * bbox.width,
+                y: bbox.minY + soilUnitNoise(seed: seed, index: index, salt: 1_153) * bbox.height
+            )
+            let rect = NSRect(
+                x: center.x - width / 2,
+                y: center.y - height / 2,
+                width: width,
+                height: height
+            )
+            let path = NSBezierPath(ovalIn: rect)
+            NSGradient(colors: [
+                color(red: 30, green: 20, blue: 12, alpha: 0.22 * alphaScale),
+                color(red: 88, green: 61, blue: 37, alpha: 0.10 * alphaScale),
+                color(red: 178, green: 138, blue: 86, alpha: 0.16 * alphaScale)
+            ])?.draw(in: path, angle: -48)
         }
     }
 
@@ -370,40 +368,75 @@ extension GardenCanvasView {
         }
     }
 
-    private func drawSoilCracksAndFibers(
+    private func drawSoilSurfaceMottling(
         seed: Int,
         in bbox: NSRect,
         detailScale: CGFloat,
         alphaScale: CGFloat
     ) {
-        let count = Int(22 * detailScale)
-        guard count > 0 else {
-            return
-        }
-
+        let count = Int(min(340, max(70, bbox.width * bbox.height / 105) * detailScale))
         for index in 0..<count {
-            let x = bbox.minX + soilUnitNoise(seed: seed, index: index, salt: 8_011) * bbox.width
-            let y = bbox.minY + soilUnitNoise(seed: seed, index: index, salt: 8_019) * bbox.height
-            let length = 8 + soilUnitNoise(seed: seed, index: index, salt: 8_029) * soilBrushRadius * 0.7
-            let angle = soilSignedNoise(seed: seed, index: index, salt: 8_037) * .pi
-            let path = NSBezierPath()
-            path.move(to: NSPoint(x: x, y: y))
-            let bend = soilSignedNoise(seed: seed, index: index, salt: 8_041) * length * 0.38
-            let end = NSPoint(x: x + cos(angle) * length, y: y + sin(angle) * length)
-            let control = NSPoint(
-                x: x + cos(angle + .pi / 2) * bend + cos(angle) * length * 0.46,
-                y: y + sin(angle + .pi / 2) * bend + sin(angle) * length * 0.46
+            let size = 2.0 + pow(soilUnitNoise(seed: seed, index: index, salt: 8_029), 1.8) * 11.0
+            let stretch = 0.42 + soilUnitNoise(seed: seed, index: index, salt: 8_037) * 0.76
+            let rect = NSRect(
+                x: bbox.minX + soilUnitNoise(seed: seed, index: index, salt: 8_011) * bbox.width - size / 2,
+                y: bbox.minY + soilUnitNoise(seed: seed, index: index, salt: 8_019) * bbox.height - size * stretch / 2,
+                width: size,
+                height: size * stretch
             )
-            path.curve(to: end, controlPoint1: control, controlPoint2: control)
-            path.lineCapStyle = .round
-            path.lineWidth = 0.7 + soilUnitNoise(seed: seed, index: index, salt: 8_047) * 1.4
-
-            if index.isMultiple(of: 3) {
-                color(red: 189, green: 154, blue: 97, alpha: 0.18 * alphaScale).setStroke()
+            let tone = soilUnitNoise(seed: seed, index: index, salt: 8_047)
+            if tone < 0.38 {
+                color(red: 42, green: 29, blue: 18, alpha: 0.12 * alphaScale).setFill()
+            } else if tone < 0.74 {
+                color(red: 96, green: 69, blue: 43, alpha: 0.11 * alphaScale).setFill()
             } else {
-                color(red: 28, green: 19, blue: 12, alpha: 0.23 * alphaScale).setStroke()
+                color(red: 171, green: 133, blue: 82, alpha: 0.12 * alphaScale).setFill()
             }
-            path.stroke()
+            NSBezierPath(ovalIn: rect).fill()
+        }
+    }
+
+    private func drawSoilPebbles(
+        seed: Int,
+        in bbox: NSRect,
+        detailScale: CGFloat,
+        alphaScale: CGFloat
+    ) {
+        let area = max(1, bbox.width * bbox.height)
+        let count = Int(min(95, max(14, area / 2_700) * detailScale))
+        for index in 0..<count {
+            let size = 2.2 + soilUnitNoise(seed: seed, index: index, salt: 11_031) * 7.2
+            let rect = NSRect(
+                x: bbox.minX + soilUnitNoise(seed: seed, index: index, salt: 11_011) * bbox.width - size / 2,
+                y: bbox.minY + soilUnitNoise(seed: seed, index: index, salt: 11_021) * bbox.height - size / 2,
+                width: size,
+                height: size * (0.62 + soilUnitNoise(seed: seed, index: index, salt: 11_041) * 0.46)
+            )
+
+            guard let context = NSGraphicsContext.current?.cgContext else {
+                continue
+            }
+            context.saveGState()
+            context.translateBy(x: rect.midX, y: rect.midY)
+            context.rotate(by: soilSignedNoise(seed: seed, index: index, salt: 11_053) * .pi)
+            let localRect = NSRect(x: -rect.width / 2, y: -rect.height / 2, width: rect.width, height: rect.height)
+            let pebble = NSBezierPath(ovalIn: localRect)
+            let shadow = NSShadow()
+            shadow.shadowColor = color(red: 16, green: 11, blue: 7, alpha: 0.18 * alphaScale)
+            shadow.shadowBlurRadius = 1.5
+            shadow.shadowOffset = NSSize(width: 0.8, height: 1.0)
+            shadow.set()
+            let tone = soilUnitNoise(seed: seed, index: index, salt: 11_061)
+            if tone < 0.44 {
+                color(red: 66, green: 54, blue: 43, alpha: 0.42 * alphaScale).setFill()
+            } else {
+                color(red: 120, green: 103, blue: 79, alpha: 0.36 * alphaScale).setFill()
+            }
+            pebble.fill()
+            NSShadow().set()
+            color(red: 207, green: 182, blue: 133, alpha: 0.12 * alphaScale).setFill()
+            NSBezierPath(ovalIn: localRect.insetBy(dx: localRect.width * 0.22, dy: localRect.height * 0.28).offsetBy(dx: -localRect.width * 0.12, dy: -localRect.height * 0.14)).fill()
+            context.restoreGState()
         }
     }
 
@@ -435,32 +468,6 @@ extension GardenCanvasView {
                 .setFill()
             NSBezierPath(ovalIn: rect).fill()
         }
-    }
-
-    private func drawSoilEdgeRelief(
-        _ coveragePath: CGPath,
-        context: CGContext,
-        alphaScale: CGFloat
-    ) {
-        context.saveGState()
-        context.addPath(coveragePath)
-        context.setLineWidth(2.2)
-        context.setStrokeColor(color(red: 32, green: 21, blue: 13, alpha: 0.38 * alphaScale).cgColor)
-        context.setShadow(
-            offset: CGSize(width: 1.8, height: 2.0),
-            blur: 3.4,
-            color: color(red: 14, green: 9, blue: 5, alpha: 0.22 * alphaScale).cgColor
-        )
-        context.strokePath()
-        context.restoreGState()
-
-        context.saveGState()
-        context.translateBy(x: -1.1, y: -1.2)
-        context.addPath(coveragePath)
-        context.setLineWidth(1.15)
-        context.setStrokeColor(color(red: 190, green: 149, blue: 93, alpha: 0.23 * alphaScale).cgColor)
-        context.strokePath()
-        context.restoreGState()
     }
 
     private func soilGrainColor(seed: Int, index: Int, alpha: CGFloat) -> NSColor {
@@ -620,7 +627,13 @@ extension GardenCanvasView {
     func soilPatchMaterialStatsForSelfTest(
         _ patch: SoilPatch,
         backingScale: CGFloat = 1
-    ) -> (alphaPixelCount: Int, colorBucketCount: Int, alphaBucketCount: Int, alphaBounds: NSRect)? {
+    ) -> (
+        alphaPixelCount: Int,
+        colorBucketCount: Int,
+        alphaBucketCount: Int,
+        alphaBounds: NSRect,
+        centerlineContrast: CGFloat
+    )? {
         let pixelsWide = max(1, Int((bounds.width * backingScale).rounded()))
         let pixelsHigh = max(1, Int((bounds.height * backingScale).rounded()))
         guard let rep = NSBitmapImageRep(
@@ -655,6 +668,18 @@ extension GardenCanvasView {
         var alphaPixelCount = 0
         var colorBuckets = Set<Int>()
         var alphaBuckets = Set<Int>()
+        func luma(at point: NSPoint) -> CGFloat? {
+            let x = min(pixelsWide - 1, max(0, Int((point.x * backingScale).rounded())))
+            let y = min(pixelsHigh - 1, max(0, Int((point.y * backingScale).rounded())))
+            guard let color = rep.colorAt(x: x, y: y),
+                  color.alphaComponent > 0.05 else {
+                return nil
+            }
+            return color.redComponent * 0.2126
+                + color.greenComponent * 0.7152
+                + color.blueComponent * 0.0722
+        }
+
         for y in 0..<pixelsHigh {
             for x in 0..<pixelsWide {
                 guard let color = rep.colorAt(x: x, y: y),
@@ -679,13 +704,49 @@ extension GardenCanvasView {
             return nil
         }
 
+        let viewPoints = patch.points.map { point in
+            NSPoint(x: bounds.width * CGFloat(point.x), y: bounds.height * CGFloat(point.y))
+        }
+        var contrastTotal: CGFloat = 0
+        var contrastSamples: CGFloat = 0
+        if viewPoints.count >= 3 {
+            for index in 1..<(viewPoints.count - 1) {
+                let previous = viewPoints[index - 1]
+                let current = viewPoints[index]
+                let next = viewPoints[index + 1]
+                let dx = next.x - previous.x
+                let dy = next.y - previous.y
+                let distance = max(1, hypot(dx, dy))
+                let normal = NSPoint(x: -dy / distance, y: dx / distance)
+                let offset = soilBrushRadius * 0.42
+                guard let center = luma(at: current) else {
+                    continue
+                }
+                let left = luma(at: NSPoint(x: current.x + normal.x * offset, y: current.y + normal.y * offset))
+                let right = luma(at: NSPoint(x: current.x - normal.x * offset, y: current.y - normal.y * offset))
+                let sideSamples = [left, right].compactMap { $0 }
+                guard !sideSamples.isEmpty else {
+                    continue
+                }
+                let sideAverage = sideSamples.reduce(0, +) / CGFloat(sideSamples.count)
+                contrastTotal += max(0, sideAverage - center)
+                contrastSamples += 1
+            }
+        }
+
         let alphaBounds = NSRect(
             x: CGFloat(minX) / backingScale,
             y: CGFloat(minY) / backingScale,
             width: CGFloat(maxX - minX + 1) / backingScale,
             height: CGFloat(maxY - minY + 1) / backingScale
         )
-        return (alphaPixelCount, colorBuckets.count, alphaBuckets.count, alphaBounds)
+        return (
+            alphaPixelCount,
+            colorBuckets.count,
+            alphaBuckets.count,
+            alphaBounds,
+            contrastSamples > 0 ? contrastTotal / contrastSamples : 0
+        )
     }
 
     // MARK: - Palette

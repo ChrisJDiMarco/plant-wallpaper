@@ -30,6 +30,37 @@ struct GardenCanvasSoilBrushTests {
         #expect(stats.alphaBucketCount > 8)
         #expect(stats.alphaBounds.width > 180)
         #expect(stats.alphaBounds.height > 90)
+        #expect(stats.centerlineContrast < 0.09)
+    }
+
+    @Test("messy soil strokes do not leave visible drawing lines")
+    func messySoilStrokesDoNotLeaveVisibleDrawingLines() throws {
+        let patch = SoilPatch(
+            id: UUID(uuidString: "55555555-7777-4444-9999-555555555555")!,
+            screenIndex: 0,
+            points: [
+                GardenPoint(x: 0.24, y: 0.64),
+                GardenPoint(x: 0.46, y: 0.52),
+                GardenPoint(x: 0.72, y: 0.59),
+                GardenPoint(x: 0.55, y: 0.73),
+                GardenPoint(x: 0.30, y: 0.57),
+                GardenPoint(x: 0.66, y: 0.50),
+                GardenPoint(x: 0.78, y: 0.75),
+                GardenPoint(x: 0.38, y: 0.81),
+                GardenPoint(x: 0.22, y: 0.68),
+                GardenPoint(x: 0.70, y: 0.64),
+                GardenPoint(x: 0.50, y: 0.52),
+                GardenPoint(x: 0.34, y: 0.78)
+            ],
+            soilSeed: 97_531
+        )
+        let canvasView = canvas(soilPatches: [patch])
+
+        let stats = try #require(canvasView.soilPatchMaterialStatsForSelfTest(patch, backingScale: 1))
+
+        #expect(stats.colorBucketCount > 24)
+        #expect(stats.alphaBucketCount > 8)
+        #expect(stats.centerlineContrast < 0.07)
     }
 
     @Test("plant sinking follows the sprayed soil footprint")
