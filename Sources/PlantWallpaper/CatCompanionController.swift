@@ -53,6 +53,56 @@ struct CatCompanionClickSnapshot: Equatable {
     }
 }
 
+private enum CatCompanionScriptEvent: Sendable {
+    case bugCaught(bugID: String, screenIndex: Int?)
+    case catMemoryJSON(String)
+}
+
+private final class CatCompanionScriptMessageHandler: NSObject, WKScriptMessageHandler {
+    private weak var controller: CatCompanionController?
+
+    init(controller: CatCompanionController) {
+        self.controller = controller
+        super.init()
+    }
+
+    func userContentController(
+        _ userContentController: WKUserContentController,
+        didReceive message: WKScriptMessage
+    ) {
+        guard message.name == "catEvent",
+              let body = message.body as? [String: Any],
+              let type = body["type"] as? String,
+              let event = Self.event(from: body, type: type) else {
+            return
+        }
+
+        Task { @MainActor [weak controller] in
+            controller?.handleCatScriptEvent(event)
+        }
+    }
+
+    private static func event(from body: [String: Any], type: String) -> CatCompanionScriptEvent? {
+        switch type {
+        case "bugCaught":
+            guard let bugID = body["bugID"] as? String else {
+                return nil
+            }
+            return .bugCaught(bugID: bugID, screenIndex: body["screenIndex"] as? Int)
+        case "catMemory":
+            guard let memory = body["memory"] as? [String: Any],
+                  JSONSerialization.isValidJSONObject(memory),
+                  let data = try? JSONSerialization.data(withJSONObject: memory),
+                  let json = String(data: data, encoding: .utf8) else {
+                return nil
+            }
+            return .catMemoryJSON(json)
+        default:
+            return nil
+        }
+    }
+}
+
 /// Desktop-level click-through window hosting the cat. Sits above the garden
 /// canvas and transparent interaction regions so the cat walks in front of
 /// plants even while the user edits the garden.
@@ -496,7 +546,7 @@ final class CatCompanionController: NSObject {
 
     private func makeWebView(frame: NSRect) -> WKWebView {
         let configuration = WKWebViewConfiguration()
-        configuration.userContentController.add(self, name: "catEvent")
+        configuration.userContentController.add(CatCompanionScriptMessageHandler(controller: self), name: "catEvent")
         configuration.mediaTypesRequiringUserActionForPlayback = []
         let webView = WKWebView(frame: frame, configuration: configuration)
         // Private but long-stable WebKit API; the only way to get a fully
@@ -1038,14 +1088,26 @@ extension CatCompanionController {
     }
 
     /// Persists the cat's inner state so it resumes its emotional life next launch.
-    private func storeCatMemory(_ memory: [String: Any]) {
-        guard JSONSerialization.isValidJSONObject(memory),
-              let data = try? JSONSerialization.data(withJSONObject: memory),
-              let json = String(data: data, encoding: .utf8) else {
-            return
-        }
+    private func storeCatMemoryJSON(_ json: String) {
         let defaults = UserDefaults(suiteName: Self.appDefaultsSuiteName) ?? .standard
         defaults.set(json, forKey: Self.catMemoryDefaultsKey)
+    }
+
+    fileprivate func handleCatScriptEvent(_ event: CatCompanionScriptEvent) {
+        switch event {
+        case let .bugCaught(bugID, screenIndex):
+            var userInfo: [String: Any] = ["bugID": bugID]
+            if let screenIndex {
+                userInfo["screenIndex"] = screenIndex
+            }
+            NotificationCenter.default.post(
+                name: .gardenCatCaughtBug,
+                object: self,
+                userInfo: userInfo
+            )
+        case let .catMemoryJSON(json):
+            storeCatMemoryJSON(json)
+        }
     }
 }
 
@@ -1060,46 +1122,6 @@ extension CatCompanionController: WKNavigationDelegate {
         // Replay the cat's saved drives/mood so it picks up where it left off.
         if let memoryJSON = savedCatMemoryJSON() {
             webView.evaluateJavaScript("window.catBridge && window.catBridge.restoreCatMemory(\(memoryJSON))")
-        }
-    }
-}
-
-extension CatCompanionController: WKScriptMessageHandler {
-    func userContentController(
-        _ userContentController: WKUserContentController,
-        didReceive message: WKScriptMessage
-    ) {
-        guard message.name == "catEvent",
-              let body = message.body as? [String: Any],
-              let type = body["type"] as? String else {
-            return
-        }
-        switch type {
-        case "bugCaught":
-            guard let bugID = body["bugID"] as? String else {
-                return
-            }
-            let screenIndex = body["screenIndex"] as? Int
-            Task { @MainActor in
-                var userInfo: [String: Any] = ["bugID": bugID]
-                if let screenIndex {
-                    userInfo["screenIndex"] = screenIndex
-                }
-                NotificationCenter.default.post(
-                    name: .gardenCatCaughtBug,
-                    object: self,
-                    userInfo: userInfo
-                )
-            }
-        case "catMemory":
-            guard let memory = body["memory"] as? [String: Any] else {
-                return
-            }
-            Task { @MainActor in
-                self.storeCatMemory(memory)
-            }
-        default:
-            break
         }
     }
 }
