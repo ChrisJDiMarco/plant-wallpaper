@@ -125,6 +125,7 @@ final class GardenSettingsWindowController: NSWindowController {
         case wildlifeDensity
         case wildlifeSpeed
         case bugSize
+        case birdCount
         case gnomePopulation
         case gnomeTribeSize
         case gnomeLiveliness
@@ -140,7 +141,7 @@ final class GardenSettingsWindowController: NSWindowController {
 
         var defaultValue: Double {
             switch self {
-            case .growthSpeed, .waterUse, .defaultScale, .wildlifeDensity, .wildlifeSpeed, .bugSize,
+            case .growthSpeed, .waterUse, .defaultScale, .wildlifeDensity, .wildlifeSpeed, .bugSize, .birdCount,
                  .radioCompanionScale, .gnomePopulation, .gnomeTribeSize, .gnomeLiveliness, .gnomeBuildingSpeed,
                  .gnomeCooperation, .gnomePlantInteraction, .gnomeVillageDetail:
                 1.0
@@ -473,7 +474,7 @@ final class GardenSettingsWindowController: NSWindowController {
     }
 
     func wildlifeControlTitlesForSelfTest() -> [String] {
-        ["Show Animated Bugs", "Bug count", "Bug size", "Flight speed", "Open cat chat on click"]
+        ["Show Animated Bugs", "Bug count", "Bug size", "Flight speed", "Bird count", "Open cat chat on click"]
     }
 
     func gnomeControlTitlesForSelfTest() -> [String] {
@@ -1365,6 +1366,17 @@ final class GardenSettingsWindowController: NSWindowController {
                 min: 0.25,
                 max: 3.0,
                 value: { [weak self] in self?.store.state.settings.wildlifeSpeedMultiplier ?? 1 }
+            )
+        ])
+
+        addGroup(title: "Birds", to: stack, rows: [
+            sliderRow(
+                id: .birdCount,
+                title: "Bird count",
+                subtitle: "Controls how many Three.js birds each drawn sky area releases.",
+                min: 0.25,
+                max: 2.0,
+                value: { [weak self] in self?.store.state.settings.birdCountMultiplier ?? 1 }
             )
         ])
 
@@ -2860,6 +2872,8 @@ final class GardenSettingsWindowController: NSWindowController {
                 settings.updating(wildlifeSpeedMultiplier: defaultValue)
             case .bugSize:
                 settings.updating(bugSizeMultiplier: defaultValue)
+            case .birdCount:
+                settings.updating(birdCountMultiplier: defaultValue)
             case .gnomePopulation:
                 settings.updating(gnomeSimulation: settings.gnomeSimulation.updating(populationMultiplier: defaultValue))
             case .gnomeTribeSize:
@@ -2963,6 +2977,7 @@ final class GardenSettingsWindowController: NSWindowController {
             wildlifeDensityMultiplier: min(settings.wildlifeDensityMultiplier, mode == .still ? 0.45 : settings.wildlifeDensityMultiplier),
             wildlifeSpeedMultiplier: min(settings.wildlifeSpeedMultiplier, mode == .still ? 0.65 : settings.wildlifeSpeedMultiplier),
             bugSizeMultiplier: min(settings.bugSizeMultiplier, mode == .still ? 0.85 : settings.bugSizeMultiplier),
+            birdCountMultiplier: min(settings.birdCountMultiplier, mode == .still ? 0.50 : settings.birdCountMultiplier),
             performanceMode: mode
         ))
     }
@@ -3062,6 +3077,7 @@ final class GardenSettingsWindowController: NSWindowController {
             wildlifeDensityMultiplier: min(store.state.settings.wildlifeDensityMultiplier, 0.65),
             wildlifeSpeedMultiplier: min(store.state.settings.wildlifeSpeedMultiplier, 0.80),
             bugSizeMultiplier: min(store.state.settings.bugSizeMultiplier, 0.95),
+            birdCountMultiplier: min(store.state.settings.birdCountMultiplier, 0.75),
             cozyModeEnabled: true,
             performanceMode: .balanced,
             rareMomentsMode: .quiet,
@@ -3076,6 +3092,7 @@ final class GardenSettingsWindowController: NSWindowController {
             wildlifeDensityMultiplier: 0.35,
             wildlifeSpeedMultiplier: 0.55,
             bugSizeMultiplier: 0.75,
+            birdCountMultiplier: 0.50,
             performanceMode: .still,
             rareMomentsMode: .quiet
         ))
@@ -3109,6 +3126,8 @@ final class GardenSettingsWindowController: NSWindowController {
                 settings.updating(wildlifeSpeedMultiplier: sender.doubleValue)
             case .bugSize:
                 settings.updating(bugSizeMultiplier: sender.doubleValue)
+            case .birdCount:
+                settings.updating(birdCountMultiplier: sender.doubleValue)
             case .gnomePopulation:
                 settings.updating(gnomeSimulation: settings.gnomeSimulation.updating(populationMultiplier: sender.doubleValue))
             case .gnomeTribeSize:

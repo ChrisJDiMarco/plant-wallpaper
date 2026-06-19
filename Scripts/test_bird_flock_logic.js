@@ -12,6 +12,8 @@ for (const entry of species) {
   assert(entry.mass > 0, `${entry.name} should expose a mass for flight physics`);
   assert(entry.turnRate > 0, `${entry.name} should expose a turn-rate limit`);
   assert(entry.maxBank > 0, `${entry.name} should expose a bank limit`);
+  assert(entry.flapHz > 0, `${entry.name} should expose a species wingbeat frequency`);
+  assert(entry.wingAspect > 0, `${entry.name} should expose a wing aspect ratio`);
 }
 
 const zone = {
@@ -31,8 +33,12 @@ assert(flock.pointInPolygon({ x: 120, y: 90 }, zone.points), 'inside point shoul
 assert(!flock.pointInPolygon({ x: 20, y: 90 }, zone.points), 'outside point should be outside polygon');
 
 const rebuilt = flock.rebuildBirdsForZones([zone], 500, 300);
-assert(rebuilt.length >= 4, 'zone should create a small flock');
-assert(rebuilt.length <= 18, 'zone should cap flock size');
+assert(rebuilt.length >= 2, 'zone should create a restrained small flock');
+assert(rebuilt.length <= 6, 'default zone should no longer create a crowded flock');
+const quietFlock = flock.rebuildBirdsForZones([zone], 500, 300, { countMultiplier: 0.25 });
+const livelyFlock = flock.rebuildBirdsForZones([zone], 500, 300, { countMultiplier: 2.0 });
+assert(quietFlock.length < rebuilt.length, 'bird count slider should reduce flock size');
+assert(livelyFlock.length > rebuilt.length, 'bird count slider should increase flock size');
 
 const outsideBird = {
   ...flock.createBirdState(zone, 0, 500, 300),
@@ -99,6 +105,19 @@ const glider = {
 };
 flock.stepFlock([glider], [zone], 0.4, { windStrength: 0.5, time: 24 });
 assert(glider.wingPhase < 4.0, 'soaring birds should flap slowly instead of jittering');
+assert(Number.isFinite(glider.liftForce), 'flight model should expose finite lift');
+assert(Number.isFinite(glider.sinkRate), 'flight model should expose finite sink rate');
+
+const hummingbird = {
+  ...flock.createBirdState(zone, 6, 500, 300),
+  speciesIndex: species.findIndex((entry) => entry.name === 'Ruby-throated Hummingbird'),
+  wingPhase: 0,
+  airspeed: 18,
+  heading: 0
+};
+flock.stepFlock([hummingbird], [zone], 0.05, { windStrength: 0.5, time: 26 });
+assert(hummingbird.wingPhase > glider.wingPhase, 'hummingbirds should flap dramatically faster than soaring birds');
+assert(hummingbird.flapHz > glider.flapHz, 'species flap frequency should distinguish hoverers from gliders');
 
 const escapee = {
   ...flock.createBirdState(zone, 5, 500, 300),

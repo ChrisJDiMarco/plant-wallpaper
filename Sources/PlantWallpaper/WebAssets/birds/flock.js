@@ -13,6 +13,8 @@
       size: 1.00,
       speed: 1.00,
       flap: 1.00,
+      flapHz: 5.2,
+      wingAspect: 5.8,
       wingSpan: 34,
       mass: 0.077,
       turnRate: 2.6,
@@ -33,6 +35,8 @@
       size: 0.92,
       speed: 0.96,
       flap: 1.10,
+      flapHz: 6.1,
+      wingAspect: 5.4,
       wingSpan: 30,
       mass: 0.045,
       turnRate: 2.9,
@@ -53,6 +57,8 @@
       size: 1.05,
       speed: 1.02,
       flap: 0.94,
+      flapHz: 4.4,
+      wingAspect: 5.2,
       wingSpan: 40,
       mass: 0.090,
       turnRate: 2.35,
@@ -73,6 +79,8 @@
       size: 0.76,
       speed: 1.12,
       flap: 1.24,
+      flapHz: 9.8,
+      wingAspect: 5.7,
       wingSpan: 23,
       mass: 0.014,
       turnRate: 3.6,
@@ -93,6 +101,8 @@
       size: 0.82,
       speed: 1.42,
       flap: 1.46,
+      flapHz: 7.4,
+      wingAspect: 8.8,
       wingSpan: 34,
       mass: 0.020,
       turnRate: 4.4,
@@ -113,6 +123,8 @@
       size: 1.12,
       speed: 0.82,
       flap: 0.72,
+      flapHz: 4.2,
+      wingAspect: 5.0,
       wingSpan: 45,
       mass: 0.120,
       turnRate: 1.72,
@@ -133,6 +145,8 @@
       size: 0.48,
       speed: 1.54,
       flap: 3.40,
+      flapHz: 42.0,
+      wingAspect: 7.0,
       wingSpan: 10,
       mass: 0.003,
       turnRate: 7.4,
@@ -153,6 +167,8 @@
       size: 1.62,
       speed: 0.92,
       flap: 0.52,
+      flapHz: 1.1,
+      wingAspect: 6.4,
       wingSpan: 125,
       mass: 1.100,
       turnRate: 1.08,
@@ -173,6 +189,8 @@
       size: 1.26,
       speed: 0.98,
       flap: 0.82,
+      flapHz: 3.3,
+      wingAspect: 5.6,
       wingSpan: 95,
       mass: 0.450,
       turnRate: 1.42,
@@ -193,6 +211,8 @@
       size: 0.70,
       speed: 1.08,
       flap: 1.18,
+      flapHz: 11.5,
+      wingAspect: 5.4,
       wingSpan: 22,
       mass: 0.027,
       turnRate: 3.35,
@@ -322,10 +342,11 @@
     return SPECIES.map((species) => ({ ...species }));
   }
 
-  function birdCountForZone(zone, width, height) {
+  function birdCountForZone(zone, width, height, countMultiplier = 1) {
     const area = Math.max(0.001, (zone.bounds.maxX - zone.bounds.minX) * (zone.bounds.maxY - zone.bounds.minY));
     const screenArea = Math.max(1, width * height);
-    return clamp(Math.round(5 + area / screenArea * 28), 4, 18);
+    const density = clamp(countMultiplier, 0.25, 2.0);
+    return clamp(Math.round((1.8 + area / screenArea * 7.0) * density), 1, 10);
   }
 
   function createBirdState(zone, index, width, height) {
@@ -354,6 +375,10 @@
       speciesIndex,
       wingPhase: random() * Math.PI * 2,
       liftPhase: random() * Math.PI * 2,
+      flapHz: species.flapHz,
+      wingStroke: 0,
+      sinkRate: 0,
+      liftForce: 0,
       behaviorPhase: random() * Math.PI * 2,
       orbitBias: random() > 0.5 ? 1 : -1,
       leadership: random(),
@@ -362,10 +387,10 @@
     };
   }
 
-  function rebuildBirdsForZones(zones, width, height) {
+  function rebuildBirdsForZones(zones, width, height, options = {}) {
     const birds = [];
     for (const zone of zones) {
-      const count = birdCountForZone(zone, width, height);
+      const count = birdCountForZone(zone, width, height, options.countMultiplier ?? 1);
       for (let index = 0; index < count; index += 1) {
         birds.push(createBirdState(zone, index, width, height));
       }
@@ -499,24 +524,44 @@
       bird.bank += (bankTarget - (bird.bank || 0)) * clamp(safeDt * 5.2, 0, 1);
 
       const liftRatio = clamp((bird.airspeed - species.minSpeed) / Math.max(1, species.maxSpeed - species.minSpeed), 0, 1);
-      const wingLoading = species.mass / Math.max(1, species.wingSpan);
-      const naturalSink = species.behavior === 'hover' ? 0 : (0.7 + wingLoading * 22);
-      const liftPulse = Math.sin(time * (species.behavior === 'hover' ? 12 : 1.5) + bird.liftPhase) * species.lift;
-      const liftOffset = species.behavior === 'hover'
-        ? liftPulse * 11
-        : (0.42 - liftRatio) * naturalSink + liftPulse * 1.4;
+      const wingAreaProxy = Math.max(1, (species.wingSpan * species.wingSpan) / Math.max(1.2, species.wingAspect || 5.5));
+      const wingLoading = species.mass / wingAreaProxy;
+      const downstroke = Math.max(0, -Math.sin(bird.wingPhase));
+      const upstroke = Math.max(0, Math.sin(bird.wingPhase));
+      const gravity = species.behavior === 'hover' ? 4.5 : 15.5 + wingLoading * 12800;
+      const glideEfficiency = species.behavior === 'soar'
+        ? 1.55
+        : species.behavior === 'glide'
+          ? 1.22
+          : 0.86;
+      const dynamicLift = liftRatio * species.lift * glideEfficiency * 17;
+      const strokeLift = Math.pow(downstroke, 1.55)
+        * species.lift
+        * (species.behavior === 'hover' ? 27 : 9.5)
+        * (0.72 + liftRatio * 0.52);
+      const liftPulse = (downstroke - upstroke * 0.34) * species.lift;
+      const hoverHold = species.behavior === 'hover'
+        ? Math.sin(time * 8.2 + bird.liftPhase) * 6.5
+        : 0;
+      const liftForce = dynamicLift + strokeLift;
+      const liftOffset = gravity - liftForce + hoverHold;
+      bird.sinkRate = liftOffset;
+      bird.liftForce = liftForce;
       bird.vx = Math.cos(bird.heading) * bird.airspeed + wind * 7;
       bird.vy = Math.sin(bird.heading) * bird.airspeed + liftOffset;
 
       bird.x += bird.vx * safeDt;
       bird.y += bird.vy * safeDt;
       bird.age += safeDt;
-      const flapBase = species.behavior === 'soar'
-        ? 0.78
+      const baseFlapHz = species.flapHz || 5.0;
+      const flapHz = species.behavior === 'soar'
+        ? baseFlapHz * (liftRatio > 0.38 ? 0.28 : 0.64)
         : species.behavior === 'glide'
-          ? 1.55
-          : 6.2;
-      bird.wingPhase += safeDt * flapBase * species.flap * (0.7 + bird.airspeed / Math.max(1, species.maxSpeed));
+          ? baseFlapHz * 0.56
+          : baseFlapHz * (0.72 + liftRatio * 0.42);
+      bird.flapHz = flapHz;
+      bird.wingStroke = liftPulse;
+      bird.wingPhase += safeDt * flapHz * Math.PI * 2;
     }
     return birds;
   }

@@ -59,6 +59,7 @@ struct GardenSettingsWindowTests {
 
         #expect(controller.wildlifeControlTitlesForSelfTest().contains("Bug count"))
         #expect(controller.wildlifeControlTitlesForSelfTest().contains("Bug size"))
+        #expect(controller.wildlifeControlTitlesForSelfTest().contains("Bird count"))
         #expect(controller.wildlifeControlTitlesForSelfTest().contains("Open cat chat on click"))
         #expect(controller.gnomeControlTitlesForSelfTest() == [
             "Gnome societies",

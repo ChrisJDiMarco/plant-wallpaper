@@ -48,6 +48,7 @@ final class BirdFlockController: NSObject {
         var lightLevel: Double
         var lightMood: String
         var windStrength: Double
+        var birdCountMultiplier: Double
         var zones: [ZonePayload]
         var plants: [PlantPayload]
     }
@@ -234,6 +235,7 @@ final class BirdFlockController: NSObject {
             lightLevel: Self.lightLevel(for: store.state, sunlight: sunlight),
             lightMood: sunlight.mood.rawValue,
             windStrength: store.state.windStrength,
+            birdCountMultiplier: store.state.settings.birdCountMultiplier,
             zones: store.state.areBirdFlocksHidden ? [] : visibleZones.map(zonePayload),
             plants: store.state.plants
                 .filter { $0.screenIndex == screenIndex }

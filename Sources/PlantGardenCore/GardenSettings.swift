@@ -302,6 +302,7 @@ public struct GardenSettings: Codable, Equatable, Sendable {
     public let wildlifeDensityMultiplier: Double
     public let wildlifeSpeedMultiplier: Double
     public let bugSizeMultiplier: Double
+    public let birdCountMultiplier: Double
     public let gnomeSimulation: GardenGnomeSimulationSettings
     public let musicVolume: Double
     public let radioCompanionScale: Double
@@ -356,6 +357,7 @@ public struct GardenSettings: Codable, Equatable, Sendable {
         wildlifeDensityMultiplier: Double = 1.0,
         wildlifeSpeedMultiplier: Double = 1.0,
         bugSizeMultiplier: Double = 1.0,
+        birdCountMultiplier: Double = 1.0,
         gnomeSimulation: GardenGnomeSimulationSettings = .default,
         musicVolume: Double = 1.0,
         radioCompanionScale: Double = 1.0,
@@ -409,6 +411,7 @@ public struct GardenSettings: Codable, Equatable, Sendable {
         self.wildlifeDensityMultiplier = Self.clamp(wildlifeDensityMultiplier, min: 0.25, max: 3.0)
         self.wildlifeSpeedMultiplier = Self.clamp(wildlifeSpeedMultiplier, min: 0.25, max: 3.0)
         self.bugSizeMultiplier = Self.clamp(bugSizeMultiplier, min: 0.50, max: 2.0)
+        self.birdCountMultiplier = Self.clamp(birdCountMultiplier, min: 0.25, max: 2.0)
         self.gnomeSimulation = gnomeSimulation
         self.musicVolume = Self.clamp(musicVolume, min: 0, max: 1.0)
         self.radioCompanionScale = Self.clamp(radioCompanionScale, min: 0.55, max: 1.70)
@@ -464,6 +467,7 @@ public struct GardenSettings: Codable, Equatable, Sendable {
         case wildlifeDensityMultiplier
         case wildlifeSpeedMultiplier
         case bugSizeMultiplier
+        case birdCountMultiplier
         case gnomeSimulation
         case musicVolume
         case radioCompanionScale
@@ -524,6 +528,7 @@ public struct GardenSettings: Codable, Equatable, Sendable {
             wildlifeDensityMultiplier: try container.decodeIfPresent(Double.self, forKey: .wildlifeDensityMultiplier) ?? 1.0,
             wildlifeSpeedMultiplier: try container.decodeIfPresent(Double.self, forKey: .wildlifeSpeedMultiplier) ?? 1.0,
             bugSizeMultiplier: try container.decodeIfPresent(Double.self, forKey: .bugSizeMultiplier) ?? 1.0,
+            birdCountMultiplier: try container.decodeIfPresent(Double.self, forKey: .birdCountMultiplier) ?? 1.0,
             gnomeSimulation: try container.decodeIfPresent(
                 GardenGnomeSimulationSettings.self,
                 forKey: .gnomeSimulation
@@ -593,6 +598,7 @@ public struct GardenSettings: Codable, Equatable, Sendable {
         wildlifeDensityMultiplier: Double? = nil,
         wildlifeSpeedMultiplier: Double? = nil,
         bugSizeMultiplier: Double? = nil,
+        birdCountMultiplier: Double? = nil,
         gnomeSimulation: GardenGnomeSimulationSettings? = nil,
         musicVolume: Double? = nil,
         radioCompanionScale: Double? = nil,
@@ -647,6 +653,7 @@ public struct GardenSettings: Codable, Equatable, Sendable {
             wildlifeDensityMultiplier: wildlifeDensityMultiplier ?? self.wildlifeDensityMultiplier,
             wildlifeSpeedMultiplier: wildlifeSpeedMultiplier ?? self.wildlifeSpeedMultiplier,
             bugSizeMultiplier: bugSizeMultiplier ?? self.bugSizeMultiplier,
+            birdCountMultiplier: birdCountMultiplier ?? self.birdCountMultiplier,
             gnomeSimulation: gnomeSimulation ?? self.gnomeSimulation,
             musicVolume: musicVolume ?? self.musicVolume,
             radioCompanionScale: radioCompanionScale ?? self.radioCompanionScale,

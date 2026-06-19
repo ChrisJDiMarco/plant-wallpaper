@@ -13,6 +13,7 @@ struct GardenSettingsTests {
             wildlifeDensityMultiplier: 0,
             wildlifeSpeedMultiplier: 7,
             bugSizeMultiplier: 12,
+            birdCountMultiplier: 12,
             gnomeSimulation: GardenGnomeSimulationSettings(
                 populationMultiplier: 12,
                 tribeScaleMultiplier: 9,
@@ -35,6 +36,7 @@ struct GardenSettingsTests {
         #expect(settings.wildlifeDensityMultiplier == 0.25)
         #expect(settings.wildlifeSpeedMultiplier == 3.0)
         #expect(settings.bugSizeMultiplier == 2.0)
+        #expect(settings.birdCountMultiplier == 2.0)
         #expect(settings.musicVolume == 1.0)
         #expect(settings.radioCompanionScale == 1.70)
         #expect(settings.gnomeSimulation.populationMultiplier == 2.5)
@@ -53,6 +55,9 @@ struct GardenSettingsTests {
 
         let tinyBugSettings = GardenSettings(bugSizeMultiplier: 0.1)
         #expect(tinyBugSettings.bugSizeMultiplier == 0.50)
+
+        let tinyBirdSettings = GardenSettings(birdCountMultiplier: 0.1)
+        #expect(tinyBirdSettings.birdCountMultiplier == 0.25)
     }
 
     @Test("ambient sound is opt-in by default")
@@ -89,6 +94,7 @@ struct GardenSettingsTests {
         #expect(settings.radioActivationMode == .singleClick)
         #expect(settings.radioCompanionScale == 1.0)
         #expect(settings.bugSizeMultiplier == 1.0)
+        #expect(settings.birdCountMultiplier == 1.0)
         #expect(settings.gnomeSimulation.isEnabled)
         #expect(settings.gnomeSimulation.populationMultiplier == 1.0)
         #expect(settings.gnomeSimulation.behaviorLiveliness == 1.0)
@@ -174,6 +180,7 @@ struct GardenSettingsTests {
     func comfortPrivacyAndCostControlsRoundTripThroughSettingsUpdates() {
         let settings = GardenSettings.default.updating(
             bugSizeMultiplier: 1.45,
+            birdCountMultiplier: 1.8,
             gnomeSimulation: GardenGnomeSimulationSettings(
                 isEnabled: false,
                 populationMultiplier: 1.7,
@@ -212,6 +219,7 @@ struct GardenSettingsTests {
         #expect(settings.radioActivationMode == .doubleClick)
         #expect(settings.radioCompanionScale == 1.35)
         #expect(settings.bugSizeMultiplier == 1.45)
+        #expect(settings.birdCountMultiplier == 1.8)
         #expect(!settings.gnomeSimulation.isEnabled)
         #expect(settings.gnomeSimulation.populationMultiplier == 1.7)
         #expect(settings.gnomeSimulation.tribeScaleMultiplier == 1.85)
@@ -237,6 +245,7 @@ struct GardenSettingsTests {
     func comfortPrivacyAndCostControlsEncodeAndDecode() throws {
         let settings = GardenSettings.default.updating(
             bugSizeMultiplier: 1.55,
+            birdCountMultiplier: 0.65,
             gnomeSimulation: GardenGnomeSimulationSettings(
                 isEnabled: false,
                 populationMultiplier: 0.7,
@@ -273,6 +282,7 @@ struct GardenSettingsTests {
 
         #expect(decoded == settings)
         #expect(decoded.bugSizeMultiplier == 1.55)
+        #expect(decoded.birdCountMultiplier == 0.65)
         #expect(decoded.gnomeSimulation.populationMultiplier == 0.7)
         #expect(decoded.gnomeSimulation.tribeScaleMultiplier == 0.58)
         #expect(decoded.gnomeSimulation.buildingSpeedMultiplier == 3.2)
