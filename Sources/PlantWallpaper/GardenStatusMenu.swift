@@ -3113,12 +3113,12 @@ final class GardenStatusMenu: NSObject {
         updateDesktopPlantingTarget(at: NSEvent.mouseLocation)
         // Global mouse-moved monitors fire for every pixel of motion. Throttle
         // sampling: the planting target only needs coarse recency, not
-        // per-event precision. The handler runs on the registering (main)
-        // thread, so hopping through a Task per event is unnecessary churn.
+        // per-event precision. AppKit delivers the handler through its event
+        // machinery, which is not necessarily a Swift main-actor executor.
         mouseTrackingMonitor = NSEvent.addGlobalMonitorForEvents(
             matching: [.mouseMoved, .leftMouseDragged, .rightMouseDragged]
         ) { [weak self] _ in
-            MainActor.assumeIsolated {
+            DispatchQueue.main.async {
                 guard let self else {
                     return
                 }

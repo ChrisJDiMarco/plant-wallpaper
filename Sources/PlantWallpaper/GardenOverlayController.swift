@@ -747,7 +747,7 @@ final class GardenOverlayController {
             withTimeInterval: GardenPointerRoutingCadence.refreshInterval,
             repeats: true
         ) { [weak self] _ in
-            MainActor.assumeIsolated {
+            Task { @MainActor in
                 self?.pointerRoutingTimerFired()
             }
         }
