@@ -211,7 +211,7 @@ private final class CatCompanionChatPanel: NSPanel {
 }
 
 @MainActor
-private final class CatCompanionChatViewController: NSViewController, NSTextFieldDelegate {
+private final class CatCompanionChatViewController: NSViewController {
     private let closeHandler: () -> Void
     private let contextProvider: () -> GardenAssistantRuntimeContext?
     private let commandExecutor: (CatCompanionAppAction) -> CatCompanionCommandExecution
@@ -230,6 +230,7 @@ private final class CatCompanionChatViewController: NSViewController, NSTextFiel
     // (largest y) reveals the newest message — the standard chat-log setup.
     private let transcriptDocument = CatCompanionFlippedView()
     private let inputField = NSTextField()
+    private var inputFieldDelegate: MainActorTextFieldDelegate?
     private let voiceButton = NSButton()
 
     init(
@@ -451,7 +452,14 @@ private final class CatCompanionChatViewController: NSViewController, NSTextFiel
         inputField.textColor = CatCompanionChatStyle.ink
         inputField.font = .systemFont(ofSize: 15)
         inputField.focusRingType = .none
-        inputField.delegate = self
+        let inputFieldDelegate = MainActorTextFieldDelegate(
+            handlesCommand: { $0 == #selector(NSResponder.insertNewline(_:)) },
+            doCommand: { [weak self] _ in
+                self?.sendMessage()
+            }
+        )
+        self.inputFieldDelegate = inputFieldDelegate
+        inputField.delegate = inputFieldDelegate
         bar.addSubview(inputField)
 
         configureVoiceButton()
@@ -600,14 +608,6 @@ private final class CatCompanionChatViewController: NSViewController, NSTextFiel
     @objc private func promptClicked(_ sender: NSButton) {
         inputField.stringValue = sender.title
         sendMessage()
-    }
-
-    func control(_ control: NSControl, textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
-        guard commandSelector == #selector(NSResponder.insertNewline(_:)) else {
-            return false
-        }
-        sendMessage()
-        return true
     }
 
     private func appendUserMessage(_ text: String, animated: Bool) {

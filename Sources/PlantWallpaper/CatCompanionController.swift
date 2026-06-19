@@ -172,6 +172,7 @@ final class CatCompanionController: NSObject {
     private var webViews: [WKWebView] = []
     /// Screen for each window, index-aligned with windows/webViews.
     private var screens: [NSScreen] = []
+    private var navigationDelegates: [MainActorWebNavigationDelegate] = []
     private let launchSeed = Int.random(in: 0 ..< 1_000_000_000)
     private var settings = CatCompanionSettings.load()
     private var loadedBuildFingerprint = ""
@@ -501,6 +502,7 @@ final class CatCompanionController: NSObject {
         windows = []
         webViews = []
         screens = []
+        navigationDelegates = []
         lastSentMouse = nil
         lastMouseWebViewIndex = nil
         lastEnvironmentFingerprints = [:]
@@ -555,7 +557,11 @@ final class CatCompanionController: NSObject {
         if #available(macOS 12.0, *) {
             webView.underPageBackgroundColor = .clear
         }
-        webView.navigationDelegate = self
+        let navigationDelegate = MainActorWebNavigationDelegate { [weak self] event in
+            self?.webViewDidFinishNavigation(event.webView)
+        }
+        webView.navigationDelegate = navigationDelegate
+        navigationDelegates.append(navigationDelegate)
         return webView
     }
 
@@ -1109,10 +1115,7 @@ extension CatCompanionController {
             storeCatMemoryJSON(json)
         }
     }
-}
-
-extension CatCompanionController: WKNavigationDelegate {
-    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+    private func webViewDidFinishNavigation(_ webView: WKWebView) {
         guard let index = webViews.firstIndex(of: webView), index < screens.count else {
             return
         }

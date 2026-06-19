@@ -21,6 +21,8 @@ final class GardenProfileWindowController: NSObject {
     private weak var statsHost: NSStackView?
     private var avatarButtons: [NSButton] = []
     private var entitlementsObserver: NSObjectProtocol?
+    private var windowDelegate: MainActorWindowDelegate?
+    private var nameFieldDelegate: MainActorTextFieldDelegate?
 
     private static let memberSinceFormatter: DateFormatter = {
         let formatter = DateFormatter()
@@ -71,7 +73,11 @@ final class GardenProfileWindowController: NSObject {
         panel.isMovableByWindowBackground = true
         panel.isFloatingPanel = true
         panel.minSize = NSSize(width: 520, height: 520)
-        panel.delegate = self
+        let windowDelegate = MainActorWindowDelegate { [weak self] _ in
+            self?.windowWillClose()
+        }
+        self.windowDelegate = windowDelegate
+        panel.delegate = windowDelegate
 
         let effectView = NSVisualEffectView()
         effectView.material = .hudWindow
@@ -143,7 +149,11 @@ final class GardenProfileWindowController: NSObject {
         nameField.isBordered = false
         nameField.drawsBackground = false
         nameField.focusRingType = .none
-        nameField.delegate = self
+        let nameFieldDelegate = MainActorTextFieldDelegate { [weak self] event in
+            self?.controlTextDidEndEditing(event.notification)
+        }
+        self.nameFieldDelegate = nameFieldDelegate
+        nameField.delegate = nameFieldDelegate
         nameField.placeholderString = GardenProfile.defaultDisplayName
         nameField.translatesAutoresizingMaskIntoConstraints = false
         nameField.widthAnchor.constraint(equalToConstant: 360).isActive = true
@@ -376,23 +386,20 @@ final class GardenProfileWindowController: NSObject {
     private func entitlementsDidChange() {
         refreshPlanViews()
     }
-}
-
-extension GardenProfileWindowController: NSTextFieldDelegate {
-    func controlTextDidEndEditing(_ obj: Notification) {
+    private func controlTextDidEndEditing(_ obj: Notification) {
         guard let field = obj.object as? NSTextField, field === nameField else {
             return
         }
         profileStore.displayName = field.stringValue
         field.stringValue = profileStore.displayName
     }
-}
 
-extension GardenProfileWindowController: NSWindowDelegate {
-    func windowWillClose(_ notification: Notification) {
+    private func windowWillClose() {
         if let nameField {
             profileStore.displayName = nameField.stringValue
         }
         window = nil
+        windowDelegate = nil
+        nameFieldDelegate = nil
     }
 }

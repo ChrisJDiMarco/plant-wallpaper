@@ -17,6 +17,7 @@ final class GardenPricingWindowController: NSObject {
     private weak var freeCTAButton: NSButton?
     private weak var proCTAButton: NSButton?
     private var entitlementsObserver: NSObjectProtocol?
+    private var windowDelegate: MainActorWindowDelegate?
 
     private static let cardWidth: CGFloat = 312
     private static let contentWidth: CGFloat = 648
@@ -58,7 +59,11 @@ final class GardenPricingWindowController: NSObject {
         panel.isMovableByWindowBackground = true
         panel.isFloatingPanel = true
         panel.minSize = NSSize(width: 700, height: 540)
-        panel.delegate = self
+        let windowDelegate = MainActorWindowDelegate { [weak self] _ in
+            self?.windowWillClose()
+        }
+        self.windowDelegate = windowDelegate
+        panel.delegate = windowDelegate
 
         let effectView = NSVisualEffectView()
         effectView.material = .hudWindow
@@ -305,10 +310,8 @@ final class GardenPricingWindowController: NSObject {
     private func entitlementsDidChange() {
         refreshPlanState()
     }
-}
-
-extension GardenPricingWindowController: NSWindowDelegate {
-    func windowWillClose(_ notification: Notification) {
+    private func windowWillClose() {
         window = nil
+        windowDelegate = nil
     }
 }

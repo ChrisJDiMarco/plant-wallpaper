@@ -128,6 +128,7 @@ final class GnomeTribeController: NSObject {
     private var lastPayloadFingerprints: [Int: String] = [:]
     private var routineRefreshTimer: Timer?
     private var storeObserver: NSObjectProtocol?
+    private var navigationDelegates: [MainActorWebNavigationDelegate] = []
 
     init(store: GardenStore) {
         self.store = store
@@ -251,7 +252,11 @@ final class GnomeTribeController: NSObject {
         if #available(macOS 12.0, *) {
             webView.underPageBackgroundColor = .clear
         }
-        webView.navigationDelegate = self
+        let navigationDelegate = MainActorWebNavigationDelegate { [weak self] _ in
+            self?.webViewDidFinishNavigation()
+        }
+        webView.navigationDelegate = navigationDelegate
+        navigationDelegates.append(navigationDelegate)
         return webView
     }
 
@@ -281,6 +286,7 @@ final class GnomeTribeController: NSObject {
         windows = []
         webViews = []
         screens = []
+        navigationDelegates = []
         lastPayloadFingerprints = [:]
         stopRoutineRefreshTimer()
     }
@@ -642,10 +648,7 @@ final class GnomeTribeController: NSObject {
         refresh()
     }
 
-}
-
-extension GnomeTribeController: WKNavigationDelegate {
-    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+    private func webViewDidFinishNavigation() {
         refresh(force: true)
     }
 }

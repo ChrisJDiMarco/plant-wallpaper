@@ -368,7 +368,7 @@ final class ElevenLabsMisoVoiceClient: @unchecked Sendable {
 }
 
 @MainActor
-final class MisoVoiceModeAudioController: NSObject, AVAudioPlayerDelegate {
+final class MisoVoiceModeAudioController: NSObject {
     private var recorder: AVAudioRecorder?
     private var player: AVAudioPlayer?
     private(set) var recordingURL: URL?
@@ -423,7 +423,6 @@ final class MisoVoiceModeAudioController: NSObject, AVAudioPlayerDelegate {
     func play(_ audioData: Data) throws {
         stopPlayback()
         let player = try AVAudioPlayer(data: audioData)
-        player.delegate = self
         player.prepareToPlay()
         player.play()
         self.player = player

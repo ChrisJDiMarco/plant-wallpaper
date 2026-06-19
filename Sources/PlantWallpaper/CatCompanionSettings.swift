@@ -140,7 +140,7 @@ private enum CatLabUI {
 /// neural visualizer; the right side edits the same persisted settings that
 /// drive the desktop cat's procedural model and behavior state machine.
 @MainActor
-final class CatCompanionSettingsWindowController: NSWindowController, WKNavigationDelegate {
+final class CatCompanionSettingsWindowController: NSWindowController {
     private var settings = CatCompanionSettings.load()
     private let variantPopup = NSPopUpButton()
     private var sliders: [String: NSSlider] = [:]
@@ -148,6 +148,7 @@ final class CatCompanionSettingsWindowController: NSWindowController, WKNavigati
     private let mouseSwitch = NSSwitch()
     private let purrSwitch = NSSwitch()
     private weak var visualizerWebView: WKWebView?
+    private var visualizerNavigationDelegate: MainActorWebNavigationDelegate?
 
     nonisolated static func neuralVisualizerIndexURL() -> URL? {
         Bundle.appResources.url(
@@ -411,7 +412,11 @@ final class CatCompanionSettingsWindowController: NSWindowController, WKNavigati
         let configuration = WKWebViewConfiguration()
         let webView = WKWebView(frame: .zero, configuration: configuration)
         webView.translatesAutoresizingMaskIntoConstraints = false
-        webView.navigationDelegate = self
+        let navigationDelegate = MainActorWebNavigationDelegate { [weak self] _ in
+            self?.pushVisualizerConfiguration()
+        }
+        webView.navigationDelegate = navigationDelegate
+        visualizerNavigationDelegate = navigationDelegate
         webView.setValue(false, forKey: "drawsBackground")
         if #available(macOS 12.0, *) {
             webView.underPageBackgroundColor = .clear
@@ -771,7 +776,4 @@ final class CatCompanionSettingsWindowController: NSWindowController, WKNavigati
         visualizerWebView?.evaluateJavaScript("window.catBrainBridge && window.catBrainBridge.configure(\(json))")
     }
 
-    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
-        pushVisualizerConfiguration()
-    }
 }

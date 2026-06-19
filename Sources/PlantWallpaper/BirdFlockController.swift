@@ -89,6 +89,7 @@ final class BirdFlockController: NSObject {
     private var lastPayloadFingerprints: [Int: String] = [:]
     private var lightRefreshTimer: Timer?
     private var storeObserver: NSObjectProtocol?
+    private var navigationDelegates: [MainActorWebNavigationDelegate] = []
 
     init(store: GardenStore) {
         self.store = store
@@ -183,7 +184,11 @@ final class BirdFlockController: NSObject {
         if #available(macOS 12.0, *) {
             webView.underPageBackgroundColor = .clear
         }
-        webView.navigationDelegate = self
+        let navigationDelegate = MainActorWebNavigationDelegate { [weak self] _ in
+            self?.webViewDidFinishNavigation()
+        }
+        webView.navigationDelegate = navigationDelegate
+        navigationDelegates.append(navigationDelegate)
         return webView
     }
 
@@ -214,6 +219,7 @@ final class BirdFlockController: NSObject {
         windows = []
         webViews = []
         screens = []
+        navigationDelegates = []
         lastPayloadFingerprints = [:]
         stopLightRefreshTimer()
     }
@@ -329,10 +335,8 @@ final class BirdFlockController: NSObject {
     private func storeDidChange() {
         refresh()
     }
-}
 
-extension BirdFlockController: WKNavigationDelegate {
-    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+    private func webViewDidFinishNavigation() {
         refresh(force: true)
     }
 }

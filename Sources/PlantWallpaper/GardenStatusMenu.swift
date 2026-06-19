@@ -316,6 +316,7 @@ final class GardenStatusMenu: NSObject {
     private var catSettingsWindowController: CatCompanionSettingsWindowController?
     private var welcomeController: GardenWelcomeController?
     private var mouseTrackingMonitor: Any?
+    private var menuDelegate: MainActorMenuDelegate?
     private var notificationObservers: [NSObjectProtocol] = []
     private var lastDesktopPlantingTarget: PlantingTarget?
     private var lastMouseSampleTime = ContinuousClock.now
@@ -411,7 +412,16 @@ final class GardenStatusMenu: NSObject {
         plantCategorySubmenus.removeAll()
         roomCategorySubmenus.removeAll()
         let menu = NSMenu()
-        menu.delegate = self
+        let menuDelegate = MainActorMenuDelegate(
+            willOpen: { [weak self] event in
+                self?.menuWillOpen(event.menu)
+            },
+            didClose: { [weak self] event in
+                self?.menuDidClose(event.menu)
+            }
+        )
+        self.menuDelegate = menuDelegate
+        menu.delegate = menuDelegate
         menu.autoenablesItems = false
         let titleItem = NSMenuItem(title: "Plant Wallpaper", action: nil, keyEquivalent: "")
         titleItem.isEnabled = false
@@ -5232,7 +5242,7 @@ final class GardenStatusMenu: NSObject {
     }
 }
 
-extension GardenStatusMenu: NSMenuDelegate {
+private extension GardenStatusMenu {
     func menuWillOpen(_ menu: NSMenu) {
         isMenuVisible = true
         if lastRenderedExperienceMode != store.state.settings.experienceMode

@@ -3,7 +3,7 @@ import PlantGardenCore
 import ServiceManagement
 
 @MainActor
-final class GardenSettingsWindowController: NSWindowController, NSTextFieldDelegate, NSWindowDelegate {
+final class GardenSettingsWindowController: NSWindowController {
     struct Actions {
         var applyScene: (String) -> Void
         var applySceneWithSettings: (String, GardenSettings?) -> Void
@@ -368,6 +368,8 @@ final class GardenSettingsWindowController: NSWindowController, NSTextFieldDeleg
     private var saveDebounceTimer: Timer?
     private var uiRefreshTimer: Timer?
     private var storeObserver: NSObjectProtocol?
+    private var windowLifecycleDelegate: MainActorWindowDelegate?
+    private var spotifyTextFieldDelegate: MainActorTextFieldDelegate?
     private var renderedMusicSource: GardenMusicSource?
     private var renderedCustomSceneKeys: [String] = []
     private var sceneDetailController: GardenSceneDetailWindowController?
@@ -409,7 +411,11 @@ final class GardenSettingsWindowController: NSWindowController, NSTextFieldDeleg
         window.setFrameAutosaveName("GardenSettingsWindow")
 
         super.init(window: window)
-        window.delegate = self
+        let windowLifecycleDelegate = MainActorWindowDelegate { [weak self] _ in
+            self?.windowWillClose()
+        }
+        self.windowLifecycleDelegate = windowLifecycleDelegate
+        window.delegate = windowLifecycleDelegate
         buildWindow()
         renderSelectedSection()
 
@@ -538,7 +544,7 @@ final class GardenSettingsWindowController: NSWindowController, NSTextFieldDeleg
 
     // MARK: - Window lifecycle
 
-    func windowWillClose(_ notification: Notification) {
+    private func windowWillClose() {
         stopUIRefreshTimer()
         flushPendingSettingsSave()
     }
@@ -2430,7 +2436,11 @@ final class GardenSettingsWindowController: NSWindowController, NSTextFieldDeleg
         textField.font = .systemFont(ofSize: 12)
         textField.target = self
         textField.action = #selector(saveSpotifyLink)
-        textField.delegate = self
+        let spotifyTextFieldDelegate = MainActorTextFieldDelegate { [weak self] event in
+            self?.controlTextDidEndEditing(event.notification)
+        }
+        self.spotifyTextFieldDelegate = spotifyTextFieldDelegate
+        textField.delegate = spotifyTextFieldDelegate
         textField.lineBreakMode = .byTruncatingTail
         spotifyURLTextField = textField
 
@@ -3666,7 +3676,7 @@ final class GardenSettingsWindowController: NSWindowController, NSTextFieldDeleg
         updateSpotifyLink(spotifyURLTextField?.stringValue ?? "")
     }
 
-    func controlTextDidEndEditing(_ obj: Notification) {
+    private func controlTextDidEndEditing(_ obj: Notification) {
         guard let textField = obj.object as? NSTextField,
               textField.identifier?.rawValue == "spotifyLaunchURL" else {
             return

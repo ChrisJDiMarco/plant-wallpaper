@@ -1043,7 +1043,7 @@ private final class GardenAssistantPanel: NSPanel {
 }
 
 @MainActor
-private final class GardenAssistantViewController: NSViewController, NSTextFieldDelegate {
+private final class GardenAssistantViewController: NSViewController {
     private var viewModel = GardenAssistantCommandCenterViewModel()
     private let aiClient = GardenAssistantOpenAIClient()
     private let contextProvider: () -> GardenAssistantRuntimeContext?
@@ -1063,6 +1063,7 @@ private final class GardenAssistantViewController: NSViewController, NSTextField
     private let transcriptStack = NSStackView()
     private let transcriptScrollView = NSScrollView()
     private let inputField = NSTextField()
+    private var inputFieldDelegate: MainActorTextFieldDelegate?
     private let sendButton = NSButton()
     private let stopButton = NSButton()
     private let apiKeyButton = NSButton()
@@ -1287,7 +1288,14 @@ private final class GardenAssistantViewController: NSViewController, NSTextField
         inputField.font = .systemFont(ofSize: 16, weight: .regular)
         inputField.textColor = GardenAssistantStyle.darkText
         inputField.focusRingType = .none
-        inputField.delegate = self
+        let inputFieldDelegate = MainActorTextFieldDelegate(
+            handlesCommand: { $0 == #selector(NSResponder.insertNewline(_:)) },
+            doCommand: { [weak self] _ in
+                self?.sendCommand()
+            }
+        )
+        self.inputFieldDelegate = inputFieldDelegate
+        inputField.delegate = inputFieldDelegate
         bar.addSubview(inputField)
 
         configureSendButton()
@@ -1737,13 +1745,6 @@ private final class GardenAssistantViewController: NSViewController, NSTextField
         render()
     }
 
-    func control(_ control: NSControl, textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
-        guard commandSelector == #selector(NSResponder.insertNewline(_:)) else {
-            return false
-        }
-        sendCommand()
-        return true
-    }
 }
 
 private final class AssistantRoundedView: NSView {

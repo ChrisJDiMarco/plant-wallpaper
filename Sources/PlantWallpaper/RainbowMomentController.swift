@@ -60,6 +60,7 @@ final class RainbowMomentController: NSObject {
     private var lastPayloadFingerprints: [Int: String] = [:]
     private var refreshTimer: Timer?
     private var storeObserver: NSObjectProtocol?
+    private var navigationDelegates: [MainActorWebNavigationDelegate] = []
 
     init(store: GardenStore) {
         self.store = store
@@ -144,7 +145,11 @@ final class RainbowMomentController: NSObject {
         if #available(macOS 12.0, *) {
             webView.underPageBackgroundColor = .clear
         }
-        webView.navigationDelegate = self
+        let navigationDelegate = MainActorWebNavigationDelegate { [weak self] _ in
+            self?.webViewDidFinishNavigation()
+        }
+        webView.navigationDelegate = navigationDelegate
+        navigationDelegates.append(navigationDelegate)
         return webView
     }
 
@@ -174,6 +179,7 @@ final class RainbowMomentController: NSObject {
         windows = []
         webViews = []
         screens = []
+        navigationDelegates = []
         lastPayloadFingerprints = [:]
     }
 
@@ -223,10 +229,8 @@ final class RainbowMomentController: NSObject {
     private func storeDidChange() {
         refresh()
     }
-}
 
-extension RainbowMomentController: WKNavigationDelegate {
-    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+    private func webViewDidFinishNavigation() {
         refresh(force: true)
     }
 }
