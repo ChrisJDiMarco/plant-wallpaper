@@ -338,6 +338,82 @@
     return { ...zone.centroid };
   }
 
+  function zoneSpan(zone) {
+    return Math.max(
+      1,
+      Math.hypot(
+        Math.max(1, zone.bounds.maxX - zone.bounds.minX),
+        Math.max(1, zone.bounds.maxY - zone.bounds.minY)
+      )
+    );
+  }
+
+  function blendPoints(a, b, amount) {
+    return {
+      x: a.x + (b.x - a.x) * amount,
+      y: a.y + (b.y - a.y) * amount
+    };
+  }
+
+  function planNextWaypoint(bird, zone, reason = 'cruise', time = 0) {
+    const species = SPECIES[bird.speciesIndex % SPECIES.length];
+    const mind = bird.mind || {};
+    const decisionIndex = (bird.decisionIndex || 0) + 1;
+    const random = mulberry32(
+      (bird.planSeed || hashString(bird.id || 'bird'))
+      + Math.imul(decisionIndex, 2654435761)
+      + hashString(`${reason}:${species.behavior}`)
+    );
+    const bounds = zone.bounds;
+    const span = zoneSpan(zone);
+    let waypoint = randomPointInZone(zone, random);
+
+    if (reason === 'containment') {
+      waypoint = blendPoints(waypoint, zone.centroid, 0.72 + (mind.caution || 0) * 0.18);
+    } else if (reason === 'edge-avoidance') {
+      waypoint = blendPoints(waypoint, zone.centroid, 0.46 + (mind.caution || 0) * 0.26);
+    } else if (species.behavior === 'soar' || species.behavior === 'glide') {
+      const angle = bird.routePhase + decisionIndex * 1.61803398875 * bird.orbitBias;
+      const radiusX = Math.max(24, (bounds.maxX - bounds.minX) * (0.26 + (mind.boldness || 0) * 0.16));
+      const radiusY = Math.max(16, (bounds.maxY - bounds.minY) * (0.20 + (mind.curiosity || 0) * 0.12));
+      const orbitPoint = {
+        x: zone.centroid.x + Math.cos(angle) * radiusX,
+        y: zone.centroid.y + Math.sin(angle) * radiusY
+      };
+      waypoint = pointInPolygon(orbitPoint, zone.points)
+        ? orbitPoint
+        : blendPoints(orbitPoint, zone.centroid, 0.58);
+    } else if (species.behavior === 'hover') {
+      waypoint = blendPoints(waypoint, zone.centroid, 0.18 + (mind.patience || 0) * 0.28);
+    } else if (species.behavior === 'weave') {
+      const angle = time * 0.42 + bird.routePhase + decisionIndex * 2.39;
+      const weavePoint = {
+        x: zone.centroid.x + Math.cos(angle) * span * 0.18,
+        y: zone.centroid.y + Math.sin(angle * 1.31) * span * 0.11
+      };
+      waypoint = pointInPolygon(weavePoint, zone.points)
+        ? weavePoint
+        : blendPoints(waypoint, zone.centroid, 0.34);
+    }
+
+    if (!pointInPolygon(waypoint, zone.points)) {
+      waypoint = blendPoints(waypoint, zone.centroid, 0.68);
+      if (!pointInPolygon(waypoint, zone.points)) {
+        waypoint = { ...zone.centroid };
+      }
+    }
+
+    bird.waypoint = waypoint;
+    bird.intent = reason;
+    bird.decisionIndex = decisionIndex;
+    bird.decisionCooldown = clamp(
+      0.72 + (mind.patience || 0.5) * 2.4 + random() * 0.95,
+      0.42,
+      species.behavior === 'soar' ? 4.8 : 3.2
+    );
+    return waypoint;
+  }
+
   function speciesCatalog() {
     return SPECIES.map((species) => ({ ...species }));
   }
@@ -350,7 +426,8 @@
   }
 
   function createBirdState(zone, index, width, height) {
-    const random = mulberry32((zone.skySeed || 1) + index * 8191 + hashString(zone.id || 'zone'));
+    const planSeed = (zone.skySeed || 1) + index * 8191 + hashString(zone.id || 'zone');
+    const random = mulberry32(planSeed);
     const point = randomPointInZone(zone, random);
     const speciesIndex = Math.floor(random() * SPECIES.length) % SPECIES.length;
     const species = SPECIES[speciesIndex];
@@ -380,9 +457,31 @@
       sinkRate: 0,
       liftForce: 0,
       behaviorPhase: random() * Math.PI * 2,
+      routePhase: random() * Math.PI * 2,
       orbitBias: random() > 0.5 ? 1 : -1,
       leadership: random(),
       restlessness: random(),
+      planSeed,
+      decisionIndex: 0,
+      decisionCooldown: 0,
+      waypoint: randomPointInZone(zone, mulberry32(planSeed ^ 0x9E3779B9)),
+      intent: 'cruise',
+      intentX: 0,
+      intentY: 0,
+      pathCurvature: 0,
+      planHorizon: 0,
+      liftOffset: 0,
+      mind: {
+        curiosity: random(),
+        caution: random(),
+        patience: random(),
+        boldness: random(),
+        sociality: random(),
+        lookAhead: 0.62 + random() * 1.16,
+        personalSpace: 36 + random() * 38,
+        wingTempo: 0.90 + random() * 0.24,
+        preferredDepth: 0.42 + random() * 0.58
+      },
       age: 0
     };
   }
@@ -411,15 +510,49 @@
         continue;
       }
       const species = SPECIES[bird.speciesIndex % SPECIES.length];
+      const mind = bird.mind || {};
       const point = { x: bird.x, y: bird.y };
+      const lookAheadSeconds = clamp(0.42 + (mind.lookAhead || 1) * 0.56, 0.36, 1.36);
       const futurePoint = {
-        x: bird.x + bird.vx * 0.68,
-        y: bird.y + bird.vy * 0.68
+        x: bird.x + bird.vx * lookAheadSeconds,
+        y: bird.y + bird.vy * lookAheadSeconds
+      };
+      const farFuturePoint = {
+        x: bird.x + bird.vx * lookAheadSeconds * 1.85,
+        y: bird.y + bird.vy * lookAheadSeconds * 1.85
       };
       const inside = pointInPolygon(point, zone.points);
       const futureInside = pointInPolygon(futurePoint, zone.points);
-      let desiredX = bird.vx + wind * 18;
-      let desiredY = bird.vy;
+      const farFutureInside = pointInPolygon(farFuturePoint, zone.points);
+      bird.decisionCooldown = Math.max(0, (bird.decisionCooldown || 0) - safeDt);
+
+      const waypoint = bird.waypoint || planNextWaypoint(bird, zone, 'cruise', time);
+      const waypointDx = waypoint.x - bird.x;
+      const waypointDy = waypoint.y - bird.y;
+      const waypointDistance = length(waypointDx, waypointDy);
+      if (!inside) {
+        planNextWaypoint(bird, zone, 'containment', time);
+      } else if (!farFutureInside || !futureInside) {
+        planNextWaypoint(bird, zone, 'edge-avoidance', time);
+      } else if (
+        waypointDistance < Math.max(24, species.minSpeed * 0.74)
+        || bird.decisionCooldown <= 0
+      ) {
+        planNextWaypoint(bird, zone, 'cruise', time);
+      }
+
+      const target = bird.waypoint || zone.centroid;
+      const targetDx = target.x - bird.x;
+      const targetDy = target.y - bird.y;
+      const routeDistance = Math.max(1, length(targetDx, targetDy));
+      const routeTangent = clamp(routeDistance / zoneSpan(zone), 0.16, 1.0);
+      const tangentStrength = inside
+        ? (0.12 + (mind.curiosity || 0.5) * 0.18) * routeTangent
+        : 0.02;
+      let desiredX = targetDx * (inside ? 0.88 : 4.8) + wind * 18;
+      let desiredY = targetDy * (inside ? 0.78 : 4.2);
+      desiredX += -targetDy * tangentStrength * bird.orbitBias;
+      desiredY += targetDx * tangentStrength * bird.orbitBias;
 
       if (!inside || !futureInside) {
         const containmentUrgency = inside ? 1.85 : 5.2;
@@ -428,9 +561,9 @@
       } else {
         const dx = zone.centroid.x - bird.x;
         const dy = zone.centroid.y - bird.y;
-        const orbit = Math.sin(time * 0.18 + bird.behaviorPhase) * 0.5 + bird.orbitBias;
-        desiredX += dx * 0.42 + -dy * 0.22 * orbit;
-        desiredY += dy * 0.34 + dx * 0.16 * orbit;
+        const orbit = Math.sin(time * 0.18 + bird.behaviorPhase) * 0.38 + bird.orbitBias;
+        desiredX += dx * 0.18 + -dy * 0.09 * orbit;
+        desiredY += dy * 0.16 + dx * 0.07 * orbit;
       }
 
       let neighbors = 0;
@@ -455,7 +588,8 @@
         alignY += other.vy;
         cohesionX += other.x;
         cohesionY += other.y;
-        if (distanceSq < 54 * 54) {
+        const personalSpace = mind.personalSpace || 54;
+        if (distanceSq < personalSpace * personalSpace) {
           closeX -= dx / Math.max(1, distanceSq);
           closeY -= dy / Math.max(1, distanceSq);
         }
@@ -472,35 +606,43 @@
 
       switch (species.behavior) {
       case 'hover':
-        desiredX += Math.sin(time * 4.3 + bird.behaviorPhase) * 34;
-        desiredY += Math.cos(time * 5.1 + bird.behaviorPhase) * 28;
+        desiredX += Math.sin(time * 4.3 + bird.behaviorPhase) * (18 + (mind.curiosity || 0.5) * 24);
+        desiredY += Math.cos(time * 5.1 + bird.behaviorPhase) * (14 + (mind.boldness || 0.5) * 20);
         break;
       case 'soar':
-        desiredX += Math.cos(time * 0.42 + bird.behaviorPhase) * 34;
-        desiredY += Math.sin(time * 0.31 + bird.behaviorPhase) * 18;
+        desiredX += Math.cos(time * 0.42 + bird.behaviorPhase) * 24;
+        desiredY += Math.sin(time * 0.31 + bird.behaviorPhase) * 12;
         break;
       case 'weave':
-        desiredX += Math.sin(time * 2.1 + bird.behaviorPhase) * 62;
-        desiredY += Math.cos(time * 1.7 + bird.behaviorPhase) * 34;
+        desiredX += Math.sin(time * 2.1 + bird.behaviorPhase) * (36 + (mind.restlessness || bird.restlessness) * 28);
+        desiredY += Math.cos(time * 1.7 + bird.behaviorPhase) * 24;
         break;
       case 'bob':
-        desiredY += Math.sin(time * 3.4 + bird.behaviorPhase) * 42;
+        desiredY += Math.sin(time * 3.4 + bird.behaviorPhase) * 30;
         break;
       case 'burst':
-        desiredX += Math.sin(time * 1.9 + bird.behaviorPhase) * 46;
+        desiredX += Math.sin(time * 1.9 + bird.behaviorPhase) * (28 + (mind.boldness || 0.5) * 26);
         break;
       default:
-        desiredX += Math.sin(time * 0.9 + bird.behaviorPhase) * 18;
-        desiredY += Math.cos(time * 0.7 + bird.behaviorPhase) * 13;
+        desiredX += Math.sin(time * 0.9 + bird.behaviorPhase) * 14;
+        desiredY += Math.cos(time * 0.7 + bird.behaviorPhase) * 10;
       }
+
+      const intentBlend = clamp(safeDt * (1.7 + bird.restlessness * 1.8), 0, 1);
+      bird.intentX = (bird.intentX || desiredX) * (1 - intentBlend) + desiredX * intentBlend;
+      bird.intentY = (bird.intentY || desiredY) * (1 - intentBlend) + desiredY * intentBlend;
+      desiredX = bird.intentX;
+      desiredY = bird.intentY;
 
       const desiredHeading = Math.atan2(desiredY, desiredX);
       const turnDelta = signedAngleDelta(bird.heading ?? Math.atan2(bird.vy, bird.vx), desiredHeading);
-      const urgencyMultiplier = !inside ? 7.0 : !futureInside ? 2.4 : 1.0;
+      const urgencyMultiplier = !inside ? 7.0 : !futureInside || !farFutureInside ? 2.15 : 1.0;
       const maxTurn = species.turnRate * turnDt * (1 + bird.restlessness * 0.32) * urgencyMultiplier;
       const limitedTurn = clamp(turnDelta, -maxTurn, maxTurn);
       bird.heading = normalizeAngle((bird.heading ?? desiredHeading) + limitedTurn);
       bird.targetHeading = desiredHeading;
+      bird.pathCurvature = limitedTurn / Math.max(0.001, turnDt);
+      bird.planHorizon = lookAheadSeconds;
 
       const desiredSpeed = clamp(
         length(desiredX, desiredY),
@@ -544,21 +686,29 @@
         ? Math.sin(time * 8.2 + bird.liftPhase) * 6.5
         : 0;
       const liftForce = dynamicLift + strokeLift;
-      const liftOffset = gravity - liftForce + hoverHold;
-      bird.sinkRate = liftOffset;
+      const liftOffset = clamp(gravity - liftForce + hoverHold, -22, 26);
+      bird.liftOffset = approach(bird.liftOffset || 0, liftOffset, 42 * safeDt);
+      bird.sinkRate = bird.liftOffset;
       bird.liftForce = liftForce;
       bird.vx = Math.cos(bird.heading) * bird.airspeed + wind * 7;
-      bird.vy = Math.sin(bird.heading) * bird.airspeed + liftOffset;
+      bird.vy = Math.sin(bird.heading) * bird.airspeed + bird.liftOffset;
 
       bird.x += bird.vx * safeDt;
       bird.y += bird.vy * safeDt;
+      bird.depth = clamp(
+        bird.depth
+          + (((mind.preferredDepth || 0.65) - bird.depth) * safeDt * 0.36)
+          + Math.sin(time * 0.42 + bird.behaviorPhase) * safeDt * 0.018,
+        0.28,
+        1.08
+      );
       bird.age += safeDt;
       const baseFlapHz = species.flapHz || 5.0;
       const flapHz = species.behavior === 'soar'
         ? baseFlapHz * (liftRatio > 0.38 ? 0.28 : 0.64)
         : species.behavior === 'glide'
           ? baseFlapHz * 0.56
-          : baseFlapHz * (0.72 + liftRatio * 0.42);
+          : baseFlapHz * (0.72 + liftRatio * 0.42) * (mind.wingTempo || 1);
       bird.flapHz = flapHz;
       bird.wingStroke = liftPulse;
       bird.wingPhase += safeDt * flapHz * Math.PI * 2;
@@ -577,6 +727,7 @@
     polygonCentroid,
     zoneToPixels,
     randomPointInZone,
+    planNextWaypoint,
     speciesCatalog,
     birdCountForZone,
     createBirdState,

@@ -35,6 +35,17 @@ assert(!flock.pointInPolygon({ x: 20, y: 90 }, zone.points), 'outside point shou
 const rebuilt = flock.rebuildBirdsForZones([zone], 500, 300);
 assert(rebuilt.length >= 2, 'zone should create a restrained small flock');
 assert(rebuilt.length <= 6, 'default zone should no longer create a crowded flock');
+for (const bird of rebuilt) {
+  assert(bird.mind, 'each bird should carry an individual behavior mind');
+  assert(bird.waypoint, 'each bird should start with a planned waypoint');
+  assert(bird.mind.lookAhead > 0, 'bird minds should include look-ahead planning');
+  assert(bird.mind.personalSpace > 0, 'bird minds should include personal-space behavior');
+}
+assert.notDeepStrictEqual(
+  rebuilt[0]?.mind,
+  rebuilt[1]?.mind,
+  'birds in the same zone should not share identical minds'
+);
 const quietFlock = flock.rebuildBirdsForZones([zone], 500, 300, { countMultiplier: 0.25 });
 const livelyFlock = flock.rebuildBirdsForZones([zone], 500, 300, { countMultiplier: 2.0 });
 assert(quietFlock.length < rebuilt.length, 'bird count slider should reduce flock size');
@@ -51,6 +62,9 @@ const beforeDistance = Math.hypot(outsideBird.x - zone.centroid.x, outsideBird.y
 flock.stepFlock([outsideBird], [zone], 0.5, { windStrength: 0.5, time: 10 });
 const afterDistance = Math.hypot(outsideBird.x - zone.centroid.x, outsideBird.y - zone.centroid.y);
 assert(afterDistance < beforeDistance, 'outside bird should steer back toward its sky zone');
+assert.strictEqual(outsideBird.intent, 'containment', 'outside bird should explicitly plan containment');
+assert(outsideBird.planHorizon > 0, 'stepped birds should expose planning horizon');
+assert(Number.isFinite(outsideBird.pathCurvature), 'stepped birds should expose finite path curvature');
 
 const leftBird = {
   ...flock.createBirdState(zone, 1, 500, 300),
@@ -118,6 +132,14 @@ const hummingbird = {
 flock.stepFlock([hummingbird], [zone], 0.05, { windStrength: 0.5, time: 26 });
 assert(hummingbird.wingPhase > glider.wingPhase, 'hummingbirds should flap dramatically faster than soaring birds');
 assert(hummingbird.flapHz > glider.flapHz, 'species flap frequency should distinguish hoverers from gliders');
+
+const planner = flock.createBirdState(zone, 7, 500, 300);
+const oldWaypoint = { ...planner.waypoint };
+planner.decisionCooldown = 0;
+flock.planNextWaypoint(planner, zone, 'edge-avoidance', 32);
+assert.notDeepStrictEqual(planner.waypoint, oldWaypoint, 'planning should be able to choose a new waypoint');
+assert(flock.pointInPolygon(planner.waypoint, zone.points), 'planned waypoints should stay inside the sky zone');
+assert.strictEqual(planner.intent, 'edge-avoidance', 'planner should keep an explicit intent');
 
 const escapee = {
   ...flock.createBirdState(zone, 5, 500, 300),
