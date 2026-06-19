@@ -612,6 +612,12 @@ final class GardenCanvasView: NSView {
         for patch in store.state.soilPatches where patch.screenIndex == screenIndex {
             hasher.combine(patch.id)
             hasher.combine(patch.points.count)
+            hasher.combine(patch.soilSeed)
+            let patchBounds = patch.boundingBox
+            hasher.combine(Int((patchBounds.minX * 10_000).rounded()))
+            hasher.combine(Int((patchBounds.minY * 10_000).rounded()))
+            hasher.combine(Int((patchBounds.maxX * 10_000).rounded()))
+            hasher.combine(Int((patchBounds.maxY * 10_000).rounded()))
         }
         hasher.combine(String(describing: store.state.lightProjection(at: currentDateProvider())))
         hasher.combine(store.state.plantLightOverlay(at: currentDateProvider()).signatureBucket)
