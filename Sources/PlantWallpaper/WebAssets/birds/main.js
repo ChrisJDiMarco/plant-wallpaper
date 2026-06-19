@@ -107,6 +107,57 @@
     return mesh;
   }
 
+  function addBoneBetween(parent, start, end, radius, material, name) {
+    const from = new THREE.Vector3(start.x, start.y, start.z);
+    const to = new THREE.Vector3(end.x, end.y, end.z);
+    const direction = new THREE.Vector3().subVectors(to, from);
+    const length = Math.max(0.001, direction.length());
+    const mesh = new THREE.Mesh(
+      new THREE.CylinderGeometry(radius * 0.72, radius, length, 12),
+      material
+    );
+    mesh.name = name || 'wingBone';
+    mesh.position.copy(from).addScaledVector(direction, 0.5);
+    mesh.quaternion.setFromUnitVectors(
+      new THREE.Vector3(0, 1, 0),
+      direction.clone().normalize()
+    );
+    parent.add(mesh);
+    return mesh;
+  }
+
+  function makeEllipsoid(parent, material, name, transform = {}) {
+    return addMesh(parent, new THREE.SphereGeometry(1, 32, 18), material, {
+      name,
+      ...transform
+    });
+  }
+
+  function makeWingPanelGeometry(points, camber = 0.22, thickness = 0.09) {
+    const top = points.map((point, index) => [
+      point[0],
+      point[1],
+      (point[2] || 0) + camber * Math.sin((index / Math.max(1, points.length - 1)) * Math.PI)
+    ]);
+    const bottom = top.map(([x, y, z]) => [x, y, z - thickness]);
+    const vertices = new Float32Array([...top.flat(), ...bottom.flat()]);
+    const indices = [];
+    for (let index = 1; index < points.length - 1; index += 1) {
+      indices.push(0, index, index + 1);
+      indices.push(points.length, points.length + index + 1, points.length + index);
+    }
+    for (let index = 0; index < points.length; index += 1) {
+      const next = (index + 1) % points.length;
+      indices.push(index, next, points.length + index);
+      indices.push(next, points.length + next, points.length + index);
+    }
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute('position', new THREE.BufferAttribute(vertices, 3));
+    geometry.setIndex(indices);
+    geometry.computeVertexNormals();
+    return geometry;
+  }
+
   function makeFeatherGeometry(length, rootWidth, tipWidth, camber = 0.22, thickness = 0.16) {
     const root = rootWidth * 0.5;
     const mid = rootWidth * 0.34;
@@ -196,21 +247,22 @@
   function makeWing(species, side) {
     const wing = new THREE.Group();
     wing.name = side < 0 ? 'leftWing' : 'rightWing';
-    wing.position.set(2.0, side * 4.0, 0.8);
+    wing.position.set(5.1, side * 3.65, 1.18);
     wing.userData.parts = {};
 
     const darkSpeciesLift = species.body === '#16191d' || species.wing === '#0f1115' ? 0.16 : 0.045;
-    const wingMaterial = makeMaterial(species.wing, { roughness: 0.66, colorLift: darkSpeciesLift, minimumLift: 0.13 });
-    const covertMaterial = makeMaterial(species.accent, {
+    const wingMaterial = makeMaterial(species.wing, { roughness: 0.66, colorLift: darkSpeciesLift, minimumLift: 0.10 });
+    const covertColor = species.id === 'american-robin' ? '#50473c' : species.accent;
+    const covertMaterial = makeMaterial(covertColor, {
       transparent: true,
       opacity: 0.84,
       roughness: 0.58,
-      colorLift: 0.08,
-      minimumLift: 0.12
+      colorLift: species.id === 'american-robin' ? 0.025 : 0.08,
+      minimumLift: species.id === 'american-robin' ? 0.08 : 0.12
     });
     const rimMaterial = makeMaterial('#f4fbff', {
       transparent: true,
-      opacity: 0.12,
+      opacity: species.id === 'american-robin' ? 0.055 : 0.12,
       roughness: 0.36,
       colorLift: 0.08,
       emissiveIntensity: 0.10,
@@ -224,12 +276,19 @@
       emissiveIntensity: 0.18,
       depthWrite: false
     });
-    const boneMaterial = makeMaterial(species.body, { roughness: 0.70, colorLift: darkSpeciesLift, minimumLift: 0.14 });
     const shaftMaterial = makeMaterial('#f1d7a8', {
       transparent: true,
-      opacity: species.body === '#16191d' ? 0.30 : 0.42,
+      opacity: species.id === 'american-robin' ? 0.22 : species.body === '#16191d' ? 0.30 : 0.42,
       roughness: 0.52,
       colorLift: 0.08
+    });
+    const boneMaterial = makeMaterial(species.body, { roughness: 0.70, colorLift: darkSpeciesLift, minimumLift: 0.14 });
+    const jointMaterial = makeMaterial(species.accent, {
+      transparent: true,
+      opacity: 0.72,
+      roughness: 0.58,
+      colorLift: darkSpeciesLift + 0.04,
+      minimumLift: 0.14
     });
 
     const blur = addMesh(
@@ -240,65 +299,113 @@
     );
     wing.userData.parts.blur = blur;
 
-    const surface = addMesh(
-      wing,
-      makeWingSurfaceGeometry(species, side),
-      wingMaterial,
-      { name: 'wingSurface', z: 0.16 }
-    );
-    wing.userData.parts.surface = surface;
+    const shoulderSocket = makeEllipsoid(wing, jointMaterial, 'shoulderSocket', {
+      x: 0.12,
+      y: side * 0.05,
+      z: 0.54,
+      sx: 2.35,
+      sy: 1.05,
+      sz: 0.82
+    });
+    wing.userData.parts.shoulderSocket = shoulderSocket;
 
-    const dorsalSheen = addMesh(
-      wing,
-      makeWingSurfaceGeometry(species, side),
-      rimMaterial,
-      { name: 'dorsalWingSheen', x: -0.6, y: side * 0.35, z: 0.54, sx: 0.88, sy: 0.86, sz: 1 }
-    );
+    const humerus = new THREE.Group();
+    humerus.name = 'humerusJoint';
+    humerus.position.set(0.1, 0, 0.42);
+    humerus.rotation.z = side * 0.11;
+    humerus.rotation.x = side * -0.04;
+    wing.add(humerus);
+    wing.userData.parts.humerus = humerus;
+
+    const elbowPoint = { x: -5.8, y: side * 2.45, z: 0.22 };
+    addBoneBetween(humerus, { x: 0, y: 0, z: 0 }, elbowPoint, 0.32, boneMaterial, 'humerusBone');
+    addMesh(humerus, makeWingPanelGeometry([
+      [0.2, side * -0.15, 0.16],
+      [-2.2, side * 1.65, 0.34],
+      [-5.5, side * 3.0, 0.20],
+      [-6.4, side * 1.3, -0.16],
+      [-2.8, side * 0.20, -0.22]
+    ], 0.28, 0.10), covertMaterial, {
+      name: 'scapularCoverts',
+      z: 0.04
+    });
+    const dorsalSheen = addMesh(humerus, makeWingPanelGeometry([
+      [0.7, side * -0.2, 0.36],
+      [-2.2, side * 1.5, 0.62],
+      [-5.2, side * 2.5, 0.42],
+      [-2.5, side * 0.55, 0.20]
+    ], 0.18, 0.04), rimMaterial, {
+      name: 'dorsalWingSheen',
+      z: 0.28
+    });
     wing.userData.parts.dorsalSheen = dorsalSheen;
 
-    addMesh(
-      wing,
-      new THREE.SphereGeometry(1, 14, 10),
-      boneMaterial,
-      { name: 'shoulder', x: 0.2, y: side * 0.2, z: 0.62, sx: 2.5, sy: 1.15, sz: 0.70 }
-    );
-    addMesh(
-      wing,
-      new THREE.CylinderGeometry(0.28, 0.18, 21.0, 10),
-      shaftMaterial,
-      {
-        name: 'leadingEdgeBone',
-        x: -8.7,
-        y: side * 5.35,
-        z: 0.72,
-        rz: Math.PI / 2 + side * 0.38,
-        sx: 1,
-        sy: 1,
-        sz: 0.72
-      }
-    );
+    const elbow = new THREE.Group();
+    elbow.name = 'elbowJoint';
+    elbow.position.set(elbowPoint.x, elbowPoint.y, elbowPoint.z);
+    elbow.rotation.z = side * 0.06;
+    humerus.add(elbow);
+    wing.userData.parts.elbow = elbow;
+    makeEllipsoid(humerus, jointMaterial, 'elbowKnuckle', {
+      x: elbowPoint.x,
+      y: elbowPoint.y,
+      z: elbowPoint.z,
+      sx: 0.86,
+      sy: 0.56,
+      sz: 0.58
+    });
+
+    const wristPoint = { x: -7.1, y: side * 4.15, z: -0.04 };
+    addBoneBetween(elbow, { x: 0, y: 0, z: 0 }, wristPoint, 0.25, boneMaterial, 'radiusUlna');
+    addMesh(elbow, makeWingPanelGeometry([
+      [-0.3, side * 0.0, 0.14],
+      [-2.8, side * 2.1, 0.30],
+      [-6.6, side * 4.4, 0.05],
+      [-7.6, side * 2.3, -0.25],
+      [-3.0, side * 0.55, -0.22]
+    ], 0.24, 0.08), wingMaterial, {
+      name: 'secondaryWingMembrane',
+      z: 0.04
+    });
 
     const primaries = new THREE.Group();
-    primaries.name = 'primaryFeathers';
+    primaries.name = 'primaryFeatherFan';
     const secondaries = new THREE.Group();
-    secondaries.name = 'secondaryFeathers';
-    wing.add(secondaries, primaries);
+    secondaries.name = 'secondaryFeatherFan';
+    elbow.add(secondaries);
     wing.userData.parts.primaries = primaries;
     wing.userData.parts.secondaries = secondaries;
+
+    const wrist = new THREE.Group();
+    wrist.name = 'wristJoint';
+    wrist.position.set(wristPoint.x, wristPoint.y, wristPoint.z);
+    wrist.rotation.z = side * 0.08;
+    elbow.add(wrist);
+    wrist.add(primaries);
+    wing.userData.parts.wrist = wrist;
+    makeEllipsoid(elbow, jointMaterial, 'wristKnuckle', {
+      x: wristPoint.x,
+      y: wristPoint.y,
+      z: wristPoint.z,
+      sx: 0.66,
+      sy: 0.44,
+      sz: 0.46
+    });
+    addBoneBetween(wrist, { x: 0, y: 0, z: 0 }, { x: -5.2, y: side * 2.5, z: -0.16 }, 0.18, boneMaterial, 'metacarpalHand');
 
     const primaryCount = species.behavior === 'soar' ? 9 : 7;
     const longWing = species.id === 'red-tailed-hawk' ? 1.28 : species.id === 'barn-swallow' ? 1.18 : 1;
     for (let index = 0; index < primaryCount; index += 1) {
-      const length = (13.8 - index * 0.58) * longWing;
-      const featherRz = side * (0.16 + index * 0.055);
+      const length = (12.8 - index * 0.52) * longWing;
+      const featherRz = side * (0.10 + index * 0.070);
       const feather = addMesh(
         primaries,
-        makeFeatherGeometry(length, 2.85, 0.46, 0.30, 0.24),
+        makeFeatherGeometry(length, 2.45, 0.40, 0.34, 0.24),
         index % 2 === 0 ? wingMaterial : covertMaterial,
         {
           name: 'primaryFeather',
-          x: -10.8 - index * 1.9,
-          y: side * (7.2 + index * 1.78),
+          x: -0.9 - index * 1.35,
+          y: side * (1.15 + index * 1.36),
           z: 0.02 - index * 0.018,
           rz: featherRz,
           ry: side * 0.035
@@ -311,26 +418,26 @@
         shaftMaterial,
         {
           name: 'primaryFeatherShaft',
-          x: -10.8 - index * 1.9 - length * 0.38,
-          y: side * (7.2 + index * 1.78),
+          x: -0.9 - index * 1.35 - length * 0.38,
+          y: side * (1.15 + index * 1.36),
           z: 0.22 - index * 0.012,
           rz: Math.PI / 2 + featherRz
         }
       );
     }
 
-    for (let index = 0; index < 5; index += 1) {
+    for (let index = 0; index < 7; index += 1) {
       const featherRz = side * (0.04 + index * 0.036);
-      const length = 9.4 - index * 0.45;
+      const length = 8.7 - index * 0.36;
       const feather = addMesh(
         secondaries,
-        makeFeatherGeometry(length, 2.55, 0.56, 0.30, 0.22),
+        makeFeatherGeometry(length, 2.30, 0.52, 0.28, 0.20),
         index % 2 === 0 ? covertMaterial : wingMaterial,
         {
           name: 'secondaryFeather',
-          x: -4.6 - index * 2.0,
-          y: side * (3.5 + index * 0.92),
-          z: 0.45,
+          x: -1.0 - index * 0.90,
+          y: side * (0.55 + index * 0.58),
+          z: 0.38 - index * 0.012,
           rz: featherRz
         }
       );
@@ -341,12 +448,132 @@
         shaftMaterial,
         {
           name: 'secondaryFeatherShaft',
-          x: -4.6 - index * 2.0 - length * 0.34,
-          y: side * (3.5 + index * 0.92),
+          x: -1.0 - index * 0.90 - length * 0.34,
+          y: side * (0.55 + index * 0.58),
           z: 0.66,
           rz: Math.PI / 2 + featherRz
         }
       );
+    }
+
+    const alula = new THREE.Group();
+    alula.name = 'alulaFeathers';
+    alula.position.set(-0.7, side * 0.15, 0.34);
+    wrist.add(alula);
+    wing.userData.parts.alula = alula;
+    for (let index = 0; index < 3; index += 1) {
+      addMesh(alula, makeFeatherGeometry(5.0 - index * 0.34, 1.35, 0.36, 0.20, 0.16), covertMaterial, {
+        name: 'alulaFeather',
+        x: -0.3 - index * 0.45,
+        y: side * (0.15 + index * 0.28),
+        z: 0.18 + index * 0.03,
+        rz: side * (0.42 + index * 0.05)
+      });
+    }
+
+    return wing;
+  }
+
+  function makeHeroProfileWing(species) {
+    const wing = new THREE.Group();
+    wing.name = 'heroProfileNearWing';
+    wing.position.set(3.8, -2.7, 3.7);
+    wing.rotation.z = -0.58;
+    wing.rotation.x = -0.18;
+    wing.userData.parts = {};
+
+    const wingMaterial = makeMaterial(species.wing, { roughness: 0.62, colorLift: 0.02, minimumLift: 0.08 });
+    const covertMaterial = makeMaterial(species.id === 'american-robin' ? '#51483d' : species.accent, {
+      transparent: true,
+      opacity: 0.88,
+      roughness: 0.56,
+      colorLift: species.id === 'american-robin' ? 0.02 : 0.08,
+      minimumLift: 0.08
+    });
+    const shaftMaterial = makeMaterial('#ecd4a7', {
+      transparent: true,
+      opacity: 0.24,
+      roughness: 0.50,
+      colorLift: 0.04
+    });
+    const jointMaterial = makeMaterial(species.body, { roughness: 0.68, colorLift: 0.04, minimumLift: 0.09 });
+
+    makeEllipsoid(wing, jointMaterial, 'profileShoulderSocket', {
+      x: 0,
+      y: 0,
+      z: 0,
+      sx: 1.28,
+      sy: 0.78,
+      sz: 0.58
+    });
+
+    const humerus = new THREE.Group();
+    humerus.name = 'profileHumerusJoint';
+    wing.add(humerus);
+    wing.userData.parts.humerus = humerus;
+    addBoneBetween(humerus, { x: 0, y: 0, z: 0 }, { x: -3.8, y: -4.2, z: 0.18 }, 0.24, jointMaterial, 'profileHumerusBone');
+    addMesh(humerus, makeWingPanelGeometry([
+      [0.0, 0.0, 0.16],
+      [-2.0, -3.5, 0.34],
+      [-4.4, -6.0, 0.10],
+      [-4.8, -2.8, -0.18],
+      [-1.4, -0.8, -0.16]
+    ], 0.24, 0.08), covertMaterial, {
+      name: 'profileScapularCoverts',
+      z: 0.08
+    });
+
+    const elbow = new THREE.Group();
+    elbow.name = 'profileElbowJoint';
+    elbow.position.set(-3.8, -4.2, 0.18);
+    humerus.add(elbow);
+    wing.userData.parts.elbow = elbow;
+    addBoneBetween(elbow, { x: 0, y: 0, z: 0 }, { x: -5.9, y: -5.7, z: -0.05 }, 0.18, jointMaterial, 'profileRadiusUlna');
+
+    const wrist = new THREE.Group();
+    wrist.name = 'profileWristJoint';
+    wrist.position.set(-5.9, -5.7, -0.05);
+    elbow.add(wrist);
+    wing.userData.parts.wrist = wrist;
+
+    const secondaries = new THREE.Group();
+    secondaries.name = 'profileSecondaryFeatherFan';
+    elbow.add(secondaries);
+    wing.userData.parts.secondaries = secondaries;
+    for (let index = 0; index < 6; index += 1) {
+      const length = 8.4 - index * 0.28;
+      const feather = addMesh(secondaries, makeFeatherGeometry(length, 2.1, 0.44, 0.28, 0.20), index % 2 ? covertMaterial : wingMaterial, {
+        name: 'profileSecondaryFeather',
+        x: -0.5 - index * 0.95,
+        y: -0.7 - index * 1.05,
+        z: 0.16 - index * 0.018,
+        rz: -0.58 - index * 0.025
+      });
+      feather.userData.baseRz = feather.rotation.z;
+    }
+
+    const primaries = new THREE.Group();
+    primaries.name = 'profilePrimaryFeatherFan';
+    wrist.add(primaries);
+    wing.userData.parts.primaries = primaries;
+    for (let index = 0; index < 8; index += 1) {
+      const length = 10.8 - index * 0.38;
+      const rz = -0.84 - index * 0.035;
+      const feather = addMesh(primaries, makeFeatherGeometry(length, 2.2, 0.34, 0.34, 0.22), index % 2 ? covertMaterial : wingMaterial, {
+        name: 'profilePrimaryFeather',
+        x: -0.2 - index * 1.0,
+        y: -0.5 - index * 1.26,
+        z: -0.03 - index * 0.02,
+        rz
+      });
+      feather.userData.baseRz = feather.rotation.z;
+      addMesh(primaries, new THREE.CylinderGeometry(0.055, 0.035, length * 0.70, 6), shaftMaterial, {
+        name: 'profilePrimaryFeatherShaft',
+        x: -0.2 - index * 1.0 - length * 0.34,
+        y: -0.5 - index * 1.26,
+        z: 0.16 - index * 0.018,
+        rz: Math.PI / 2 + rz
+      });
     }
 
     return wing;
@@ -355,19 +582,19 @@
   function makeTail(species) {
     const tail = new THREE.Group();
     tail.name = 'tailFan';
-    tail.position.set(-14.6, 0, -0.12);
+    tail.position.set(-13.2, 0, -0.18);
     tail.userData.parts = [];
     const material = makeMaterial(species.wing, { roughness: 0.68, colorLift: 0.06, minimumLift: 0.13 });
     const accent = makeMaterial(species.accent, { transparent: true, opacity: 0.80, colorLift: 0.08, minimumLift: 0.12 });
     const shaft = makeMaterial('#f0d2a0', { transparent: true, opacity: 0.34, roughness: 0.52 });
-    const featherCount = species.id === 'barn-swallow' ? 4 : 5;
+    const featherCount = species.id === 'barn-swallow' ? 4 : 4;
     for (let index = 0; index < featherCount; index += 1) {
       const centered = index - (featherCount - 1) / 2;
       const swallowFork = species.id === 'barn-swallow' && Math.abs(centered) > 1 ? 1.7 : 1;
-      const length = (9.8 + Math.abs(centered) * 0.8) * swallowFork;
+      const length = (6.4 + Math.abs(centered) * 0.42) * swallowFork;
       const feather = addMesh(
         tail,
-        makeFeatherGeometry(length, 2.45, 0.54, 0.22, 0.22),
+        makeFeatherGeometry(length, 1.68, 0.38, 0.18, 0.18),
         Math.abs(centered) < 0.5 ? material : accent,
         {
           name: 'tailFeather',
@@ -407,6 +634,31 @@
         rz: -Math.PI / 2 + side * 0.16,
         sx: species.id === 'red-tailed-hawk' ? 1.35 : 0.85
       });
+    }
+  }
+
+  function addContourFeatherRows(root, species, materials) {
+    const darkBird = species.body === '#16191d';
+    const rows = [
+      { name: 'backContourFeather', z: 2.55, y: -1.35, material: materials.highlight, count: 7, width: 1.55, height: 0.34 },
+      { name: 'flankContourFeather', z: 0.92, y: 3.32, material: materials.shadow, count: 6, width: 1.36, height: 0.30 },
+      { name: 'breastContourFeather', z: -0.95, y: 0.0, material: materials.breast, count: 6, width: 1.44, height: 0.36 }
+    ];
+    for (const row of rows) {
+      for (let index = 0; index < row.count; index += 1) {
+        const t = row.count === 1 ? 0 : index / (row.count - 1);
+        const x = 7.2 - t * 14.0;
+        const yWave = Math.sin(t * Math.PI) * (row.name === 'breastContourFeather' ? 0.24 : 0.52);
+        makeEllipsoid(root, row.material, row.name, {
+          x,
+          y: row.y + (row.y < 0 ? -yWave : yWave),
+          z: row.z - Math.abs(t - 0.5) * 0.32,
+          sx: row.width * (0.78 + Math.sin(t * Math.PI) * 0.36),
+          sy: 0.30 + row.height,
+          sz: darkBird ? 0.18 : 0.22,
+          rz: (t - 0.5) * -0.22
+        });
+      }
     }
   }
 
@@ -460,7 +712,7 @@
       minimumLift: 0.14
     });
 
-    addMesh(root, new THREE.SphereGeometry(1, 32, 18), bodyMaterial, {
+    const body = addMesh(root, new THREE.SphereGeometry(1, 32, 18), bodyMaterial, {
       name: 'streamlinedBody',
       x: -1.8,
       z: 0.02,
@@ -468,6 +720,7 @@
       sy: 5.8,
       sz: 4.6
     });
+    root.userData.parts.body = body;
     addMesh(root, new THREE.SphereGeometry(1, 24, 14), contourMaterial, {
       name: 'volumetricBackHighlight',
       x: -2.7,
@@ -497,6 +750,36 @@
       sy: 4.2,
       sz: 2.4
     });
+    addMesh(root, new THREE.CylinderGeometry(0.20, 0.34, 8.4, 12), shadowContourMaterial, {
+      name: 'keelRidge',
+      x: 1.6,
+      y: 0,
+      z: -3.05,
+      rz: Math.PI / 2,
+      sx: 1,
+      sy: 1,
+      sz: 1
+    });
+    for (const side of [-1, 1]) {
+      makeEllipsoid(root, breastMaterial, 'pectoralFlightMuscle', {
+        x: 2.6,
+        y: side * 1.88,
+        z: -1.78,
+        sx: 5.3,
+        sy: 1.35,
+        sz: 1.25,
+        rz: side * 0.10
+      });
+      makeEllipsoid(root, breastMaterial, 'sideBreastPatch', {
+        x: 4.2,
+        y: side * 2.82,
+        z: 0.88,
+        sx: 5.4,
+        sy: 1.05,
+        sz: 1.35,
+        rz: side * -0.06
+      });
+    }
     addMesh(root, new THREE.SphereGeometry(1, 18, 10), contourMaterial, {
       name: 'breastFeatherSheen',
       x: 4.0,
@@ -507,7 +790,24 @@
       sz: 0.38,
       rz: -0.10
     });
-    addMesh(root, new THREE.SphereGeometry(1, 18, 12), bodyMaterial, {
+    makeEllipsoid(root, bodyMaterial, 'rump', {
+      x: -11.4,
+      y: 0,
+      z: -0.05,
+      sx: 4.0,
+      sy: 4.2,
+      sz: 2.8
+    });
+    addMesh(root, new THREE.SphereGeometry(1, 16, 10), contourMaterial, {
+      name: 'undertailCoverts',
+      x: -12.9,
+      y: 0,
+      z: -1.75,
+      sx: 2.4,
+      sy: 2.8,
+      sz: 0.75
+    });
+    const neck = addMesh(root, new THREE.SphereGeometry(1, 18, 12), bodyMaterial, {
       name: 'neck',
       x: 8.8,
       z: 0.65,
@@ -515,7 +815,8 @@
       sy: 3.2,
       sz: 2.8
     });
-    addMesh(root, new THREE.SphereGeometry(1, 28, 16), bodyMaterial, {
+    root.userData.parts.neck = neck;
+    const head = addMesh(root, new THREE.SphereGeometry(1, 28, 16), bodyMaterial, {
       name: 'head',
       x: 13.2,
       z: 0.85,
@@ -523,6 +824,7 @@
       sy: 4.2,
       sz: 3.9
     });
+    root.userData.parts.head = head;
     addMesh(root, new THREE.SphereGeometry(1, 16, 10), contourMaterial, {
       name: 'headCrownHighlight',
       x: 13.4,
@@ -605,17 +907,46 @@
       sz: 0.42,
       rz: -0.08
     });
+    addContourFeatherRows(root, species, {
+      highlight: contourMaterial,
+      shadow: shadowContourMaterial,
+      breast: breastMaterial
+    });
+    makeEllipsoid(root, breastMaterial, 'profileBreastBadge', {
+      x: 4.8,
+      y: -2.55,
+      z: 3.05,
+      sx: 4.6,
+      sy: 0.92,
+      sz: 0.46,
+      rz: -0.08
+    });
 
     const leftWing = makeWing(species, -1);
     const rightWing = makeWing(species, 1);
+    const heroProfileWing = makeHeroProfileWing(species);
     const tail = makeTail(species);
-    root.add(leftWing, rightWing, tail);
+    root.add(leftWing, rightWing, heroProfileWing, tail);
     root.userData.parts.leftWing = leftWing;
     root.userData.parts.rightWing = rightWing;
+    root.userData.parts.heroProfileWing = heroProfileWing;
+    root.userData.parts.heroProfileHumerus = heroProfileWing.userData.parts.humerus;
+    root.userData.parts.heroProfileElbow = heroProfileWing.userData.parts.elbow;
+    root.userData.parts.heroProfileWrist = heroProfileWing.userData.parts.wrist;
+    root.userData.parts.heroProfilePrimaries = heroProfileWing.userData.parts.primaries;
+    root.userData.parts.heroProfileSecondaries = heroProfileWing.userData.parts.secondaries;
+    root.userData.parts.leftHumerus = leftWing.userData.parts.humerus;
+    root.userData.parts.rightHumerus = rightWing.userData.parts.humerus;
+    root.userData.parts.leftElbow = leftWing.userData.parts.elbow;
+    root.userData.parts.rightElbow = rightWing.userData.parts.elbow;
+    root.userData.parts.leftWrist = leftWing.userData.parts.wrist;
+    root.userData.parts.rightWrist = rightWing.userData.parts.wrist;
     root.userData.parts.leftPrimaries = leftWing.userData.parts.primaries;
     root.userData.parts.rightPrimaries = rightWing.userData.parts.primaries;
     root.userData.parts.leftSecondaries = leftWing.userData.parts.secondaries;
     root.userData.parts.rightSecondaries = rightWing.userData.parts.secondaries;
+    root.userData.parts.leftAlula = leftWing.userData.parts.alula;
+    root.userData.parts.rightAlula = rightWing.userData.parts.alula;
     root.userData.parts.leftWingBlur = leftWing.userData.parts.blur;
     root.userData.parts.rightWingBlur = rightWing.userData.parts.blur;
     root.userData.parts.leftWingSheen = leftWing.userData.parts.dorsalSheen;
@@ -750,6 +1081,72 @@
     sunLight.intensity = 0.30 + state.lightLevel * 0.70 + (hasSoaringBird ? 0.07 : 0);
   }
 
+  function applyArticulatedWingPose(parts, species, flap, bank, speed, planFocus, liftPose) {
+    const glideFold = species.behavior === 'soar' || species.behavior === 'glide'
+      ? 0.36
+      : 1.0;
+    const downstroke = Math.max(0, -flap);
+    const upstroke = Math.max(0, flap);
+    const wingTravel = species.behavior === 'soar'
+      ? 0.12 + (liftPose < -0.18 ? 0.08 : 0)
+      : species.behavior === 'hover'
+        ? 0.98
+        : 0.36 + Math.min(0.32, speed / 210) + planFocus * 0.05;
+    const shoulderBeat = flap * wingTravel * glideFold;
+    const elbowFold = upstroke * 0.62 - downstroke * 0.18;
+    const wristPronation = downstroke * 0.30 - upstroke * 0.22;
+    const primaryLag = -flap * 0.14 + downstroke * 0.16 - upstroke * 0.08;
+    const secondaryLift = -downstroke * 0.08 + upstroke * 0.06;
+
+    parts.leftWing.rotation.z = -0.24 - bank * 0.09;
+    parts.rightWing.rotation.z = 0.24 - bank * 0.09;
+    parts.leftWing.rotation.x = shoulderBeat * 0.28 - bank * 0.12;
+    parts.rightWing.rotation.x = -shoulderBeat * 0.28 - bank * 0.12;
+    parts.leftWing.rotation.y = -0.06 + downstroke * 0.07;
+    parts.rightWing.rotation.y = 0.06 - downstroke * 0.07;
+
+    parts.leftHumerus.rotation.z = -0.28 - shoulderBeat * 0.34 - bank * 0.035;
+    parts.rightHumerus.rotation.z = 0.28 + shoulderBeat * 0.34 - bank * 0.035;
+    parts.leftHumerus.rotation.x = -0.12 - shoulderBeat * 0.62;
+    parts.rightHumerus.rotation.x = 0.12 + shoulderBeat * 0.62;
+
+    parts.leftElbow.rotation.z = -0.16 - elbowFold * 0.52 - bank * 0.025;
+    parts.rightElbow.rotation.z = 0.16 + elbowFold * 0.52 - bank * 0.025;
+    parts.leftElbow.rotation.x = -0.04 - downstroke * 0.18 + upstroke * 0.12;
+    parts.rightElbow.rotation.x = 0.04 + downstroke * 0.18 - upstroke * 0.12;
+
+    parts.leftWrist.rotation.z = -0.10 - wristPronation * 0.62 - bank * 0.035;
+    parts.rightWrist.rotation.z = 0.10 + wristPronation * 0.62 - bank * 0.035;
+    parts.leftWrist.rotation.y = -0.04 + downstroke * 0.18 - upstroke * 0.10;
+    parts.rightWrist.rotation.y = 0.04 - downstroke * 0.18 + upstroke * 0.10;
+
+    parts.leftPrimaries.rotation.z = -primaryLag - bank * 0.05;
+    parts.rightPrimaries.rotation.z = primaryLag - bank * 0.05;
+    parts.leftPrimaries.rotation.y = -0.04 + downstroke * 0.08;
+    parts.rightPrimaries.rotation.y = 0.04 - downstroke * 0.08;
+    parts.leftSecondaries.rotation.z = secondaryLift - bank * 0.03;
+    parts.rightSecondaries.rotation.z = -secondaryLift - bank * 0.03;
+    parts.leftAlula.rotation.z = -0.10 - upstroke * 0.22 + planFocus * 0.10;
+    parts.rightAlula.rotation.z = 0.10 + upstroke * 0.22 - planFocus * 0.10;
+
+    const blurOpacity = species.flapHz > 10
+      ? 0.16 + Math.min(0.28, species.flapHz / 180)
+      : Math.max(0, (Math.abs(flap) - 0.52) * 0.18);
+    parts.leftWingBlur.material.opacity = blurOpacity;
+    parts.rightWingBlur.material.opacity = blurOpacity;
+    parts.leftWingBlur.material.needsUpdate = true;
+    parts.rightWingBlur.material.needsUpdate = true;
+    parts.leftWingBlur.scale.setScalar(1 + downstroke * 0.10);
+    parts.rightWingBlur.scale.setScalar(1 + downstroke * 0.10);
+    if (parts.leftWingSheen?.material && parts.rightWingSheen?.material) {
+      const sheenOpacity = 0.10 + downstroke * 0.12 + Math.abs(bank) * 0.08;
+      parts.leftWingSheen.material.opacity = sheenOpacity;
+      parts.rightWingSheen.material.opacity = sheenOpacity;
+      parts.leftWingSheen.material.needsUpdate = true;
+      parts.rightWingSheen.material.needsUpdate = true;
+    }
+  }
+
   function updateBirdVisual(bird, group, dt) {
     const species = speciesCatalog[bird.speciesIndex % speciesCatalog.length];
     const velocityAngle = Math.atan2(bird.vy, bird.vx);
@@ -757,7 +1154,8 @@
     const flap = Math.sin(bird.wingPhase);
     const turnPose = math.clamp((bird.pathCurvature || 0) / Math.max(0.1, species.turnRate), -1, 1);
     const bank = (bird.bank || 0) * 0.76 + turnPose * species.maxBank * 0.18;
-    const depthScale = species.size * (0.42 + bird.depth * 0.52);
+    const heroScale = bird.isHeroBird ? 3.1 : 1.0;
+    const depthScale = species.size * heroScale * (0.42 + bird.depth * 0.52);
     const hoverWobble = species.behavior === 'hover'
       ? Math.sin(bird.age * 15 + bird.behaviorPhase) * 2.4
       : 0;
@@ -766,47 +1164,34 @@
 
     group.position.set(bird.x, bird.y + hoverWobble, bird.depth * 40);
     group.rotation.z = velocityAngle;
-    group.rotation.x = -bank * 0.20 + liftPose * 0.10;
-    group.rotation.y = bank * 0.34 + Math.sin(bird.age * 0.9 + bird.behaviorPhase) * 0.04;
+    group.rotation.x = (bird.isHeroBird ? -0.62 : -0.20) - bank * 0.20 + liftPose * 0.10;
+    group.rotation.y = (bird.isHeroBird ? -0.24 : 0) + bank * 0.34 + Math.sin(bird.age * 0.9 + bird.behaviorPhase) * 0.04;
     group.scale.setScalar(depthScale);
 
     const parts = group.userData.parts;
-    const glideFold = species.behavior === 'soar' || species.behavior === 'glide'
-      ? 0.36
-      : 1.0;
-    const downstroke = Math.max(0, -flap);
-    const upstroke = Math.max(0, flap);
-    const wingTravel = species.behavior === 'soar'
-      ? 0.12 + (bird.sinkRate > 3 ? 0.10 : 0)
-      : species.behavior === 'hover'
-        ? 0.94
-        : 0.34 + Math.min(0.30, speed / 210) + planFocus * 0.05;
-    const shoulderRoll = flap * 0.34 * glideFold - bank * 0.14;
-    parts.leftWing.rotation.z = -0.22 - flap * wingTravel - bank * 0.10;
-    parts.rightWing.rotation.z = 0.22 + flap * wingTravel - bank * 0.10;
-    parts.leftWing.rotation.x = shoulderRoll;
-    parts.rightWing.rotation.x = -flap * 0.34 * glideFold - bank * 0.14;
-    parts.leftWing.rotation.y = -0.04 + downstroke * 0.08;
-    parts.rightWing.rotation.y = 0.04 - downstroke * 0.08;
-    parts.leftPrimaries.rotation.z = -downstroke * 0.16 - upstroke * 0.05 - bank * 0.06;
-    parts.rightPrimaries.rotation.z = downstroke * 0.16 + upstroke * 0.05 - bank * 0.06;
-    parts.leftSecondaries.rotation.z = -downstroke * 0.09 - bank * 0.035;
-    parts.rightSecondaries.rotation.z = downstroke * 0.09 - bank * 0.035;
-    const blurOpacity = species.flapHz > 10
-      ? 0.18 + Math.min(0.24, species.flapHz / 180)
-      : Math.max(0, (Math.abs(flap) - 0.54) * 0.20);
-    parts.leftWingBlur.material.opacity = blurOpacity;
-    parts.rightWingBlur.material.opacity = blurOpacity;
-    parts.leftWingBlur.material.needsUpdate = true;
-    parts.rightWingBlur.material.needsUpdate = true;
-    parts.leftWingBlur.scale.setScalar(1 + downstroke * 0.08);
-    parts.rightWingBlur.scale.setScalar(1 + downstroke * 0.08);
-    if (parts.leftWingSheen?.material && parts.rightWingSheen?.material) {
-      const sheenOpacity = 0.10 + downstroke * 0.10 + Math.abs(bank) * 0.06;
-      parts.leftWingSheen.material.opacity = sheenOpacity;
-      parts.rightWingSheen.material.opacity = sheenOpacity;
-      parts.leftWingSheen.material.needsUpdate = true;
-      parts.rightWingSheen.material.needsUpdate = true;
+    applyArticulatedWingPose(parts, species, flap, bank, speed, planFocus, liftPose);
+    if (parts.heroProfileWing) {
+      parts.heroProfileWing.visible = Boolean(bird.isHeroBird);
+      if (bird.isHeroBird) {
+        const downstroke = Math.max(0, -flap);
+        const upstroke = Math.max(0, flap);
+        parts.heroProfileWing.rotation.z = -0.62 - flap * 0.22 - bank * 0.08;
+        parts.heroProfileHumerus.rotation.z = -0.06 - flap * 0.20;
+        parts.heroProfileElbow.rotation.z = -0.04 - upstroke * 0.20 + downstroke * 0.08;
+        parts.heroProfileWrist.rotation.z = -0.08 - downstroke * 0.22 + upstroke * 0.12;
+        parts.heroProfilePrimaries.rotation.z = downstroke * 0.16 - upstroke * 0.08;
+        parts.heroProfileSecondaries.rotation.z = -downstroke * 0.08 + upstroke * 0.05;
+      }
+    }
+    if (parts.head && parts.neck) {
+      const headTurn = math.clamp(
+        math.signedAngleDelta(velocityAngle, bird.targetHeading || velocityAngle),
+        -0.45,
+        0.45
+      );
+      parts.neck.rotation.z = headTurn * 0.10;
+      parts.head.rotation.z = headTurn * 0.18;
+      parts.head.rotation.y = -bank * 0.12;
     }
     parts.tail.rotation.z = Math.sin(bird.age * 1.4 + bird.behaviorPhase) * 0.08 + bank * 0.22;
     parts.tail.rotation.y = -Math.sin(velocityAngle) * 0.10 + turnPose * 0.08;

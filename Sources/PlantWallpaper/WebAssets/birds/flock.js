@@ -5,10 +5,10 @@
     {
       id: 'american-robin',
       name: 'American Robin',
-      body: '#5b5147',
-      breast: '#c76536',
-      wing: '#3d3d3a',
-      accent: '#f2d3a0',
+      body: '#3f3730',
+      breast: '#c45f34',
+      wing: '#242625',
+      accent: '#d6aa75',
       beak: '#d99a2b',
       size: 1.00,
       speed: 1.00,
@@ -422,14 +422,17 @@
     const area = Math.max(0.001, (zone.bounds.maxX - zone.bounds.minX) * (zone.bounds.maxY - zone.bounds.minY));
     const screenArea = Math.max(1, width * height);
     const density = clamp(countMultiplier, 0.25, 2.0);
-    return clamp(Math.round((1.8 + area / screenArea * 7.0) * density), 1, 10);
+    if (density <= 1.05) {
+      return 1;
+    }
+    return clamp(Math.round(1 + (density - 1.0) * 3.2 + (area / screenArea) * 2.4), 1, 5);
   }
 
   function createBirdState(zone, index, width, height) {
     const planSeed = (zone.skySeed || 1) + index * 8191 + hashString(zone.id || 'zone');
     const random = mulberry32(planSeed);
     const point = randomPointInZone(zone, random);
-    const speciesIndex = Math.floor(random() * SPECIES.length) % SPECIES.length;
+    const speciesIndex = index === 0 ? 0 : Math.floor(random() * SPECIES.length) % SPECIES.length;
     const species = SPECIES[speciesIndex];
     const angle = random() * Math.PI * 2;
     const speed = clamp(
@@ -450,6 +453,7 @@
       bank: 0,
       depth: 0.45 + random() * 0.55,
       speciesIndex,
+      isHeroBird: index === 0,
       wingPhase: random() * Math.PI * 2,
       liftPhase: random() * Math.PI * 2,
       flapHz: species.flapHz,
