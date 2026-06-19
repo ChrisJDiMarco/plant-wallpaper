@@ -130,6 +130,8 @@ final class CatCompanionController: NSObject {
     private var globalClickMonitor: Any?
     private var localClickMonitor: Any?
     private var clickSnapshotTimer: Timer?
+    private var workspaceObservers: [NSObjectProtocol] = []
+    private var notificationObservers: [NSObjectProtocol] = []
     private let chatWindowController: CatCompanionChatWindowController
     private let isChatOnClickEnabled: () -> Bool
     private let catChatBlockingGardenElementContains: (NSPoint) -> Bool
@@ -171,59 +173,75 @@ final class CatCompanionController: NSObject {
         _ = foregroundGardenElementContains
         super.init()
         mirrorEnabledStateToSharedDefaults()
-        let workspaceCenter = NSWorkspace.shared.notificationCenter
-        workspaceCenter.addObserver(
-            self,
-            selector: #selector(screensDidSleep),
-            name: NSWorkspace.screensDidSleepNotification,
-            object: nil
-        )
-        workspaceCenter.addObserver(
-            self,
-            selector: #selector(screensDidWake),
-            name: NSWorkspace.screensDidWakeNotification,
-            object: nil
-        )
-        NotificationCenter.default.addObserver(
-            self,
-            selector: #selector(companionToggled),
-            name: .gardenCatCompanionToggled,
-            object: nil
-        )
-        NotificationCenter.default.addObserver(
-            self,
-            selector: #selector(settingsChanged),
-            name: .gardenCatCompanionSettingsChanged,
-            object: nil
-        )
-        NotificationCenter.default.addObserver(
-            self,
-            selector: #selector(windowOcclusionChanged(_:)),
-            name: NSWindow.didChangeOcclusionStateNotification,
-            object: nil
-        )
-        NotificationCenter.default.addObserver(
-            self,
-            selector: #selector(screenParametersChanged),
-            name: NSApplication.didChangeScreenParametersNotification,
-            object: nil
-        )
-        NotificationCenter.default.addObserver(
-            self,
-            selector: #selector(bugPreySnapshotChanged(_:)),
-            name: .gardenBugPreySnapshotDidChange,
-            object: nil
-        )
-        NotificationCenter.default.addObserver(
-            self,
-            selector: #selector(gardenStoreChanged(_:)),
-            name: .gardenStoreDidChange,
-            object: nil
-        )
+        observeWorkspaceNotification(name: NSWorkspace.screensDidSleepNotification) { controller, _ in
+            controller.screensDidSleep()
+        }
+        observeWorkspaceNotification(name: NSWorkspace.screensDidWakeNotification) { controller, _ in
+            controller.screensDidWake()
+        }
+        observeNotification(name: .gardenCatCompanionToggled) { controller, _ in
+            controller.companionToggled()
+        }
+        observeNotification(name: .gardenCatCompanionSettingsChanged) { controller, _ in
+            controller.settingsChanged()
+        }
+        observeNotification(name: NSWindow.didChangeOcclusionStateNotification) { controller, notification in
+            controller.windowOcclusionChanged(notification)
+        }
+        observeNotification(name: NSApplication.didChangeScreenParametersNotification) { controller, _ in
+            controller.screenParametersChanged()
+        }
+        observeNotification(name: .gardenBugPreySnapshotDidChange) { controller, notification in
+            controller.bugPreySnapshotChanged(notification)
+        }
+        observeNotification(name: .gardenStoreDidChange) { controller, notification in
+            controller.gardenStoreChanged(notification)
+        }
         startMouseTimer()
         startDesktopEnvironmentTimer()
         startClickSnapshotTimer()
         startClickMonitors()
+    }
+
+    private func observeNotification(
+        name: Notification.Name,
+        object: Any? = nil,
+        handler: @escaping @MainActor (CatCompanionController, Notification) -> Void
+    ) {
+        let observer = NotificationCenter.default.addObserver(
+            forName: name,
+            object: object,
+            queue: .main
+        ) { [weak self] notification in
+            let delivery = MainActorNotificationDelivery(notification: notification)
+            Task { @MainActor in
+                guard let self else {
+                    return
+                }
+                handler(self, delivery.notification)
+            }
+        }
+        notificationObservers.append(observer)
+    }
+
+    private func observeWorkspaceNotification(
+        name: Notification.Name,
+        handler: @escaping @MainActor (CatCompanionController, Notification) -> Void
+    ) {
+        let observer = NSWorkspace.shared.notificationCenter.addObserver(
+            forName: name,
+            object: nil,
+            queue: .main
+        ) { [weak self] notification in
+            let delivery = MainActorNotificationDelivery(notification: notification)
+            Task { @MainActor in
+                guard let self else {
+                    return
+                }
+                handler(self, delivery.notification)
+            }
+        }
+        workspaceObservers.append(observer)
     }
 
     /// The cat windows are click-through, so clicks land on whatever sits
@@ -917,11 +935,11 @@ final class CatCompanionController: NSObject {
         }
     }
 
-    @objc private func screensDidSleep() {
+    private func screensDidSleep() {
         setPaused(true)
     }
 
-    @objc private func screensDidWake() {
+    private func screensDidWake() {
         applyVisibilityPauseState()
         pushDesktopEnvironmentIfNeeded(force: true)
     }
@@ -929,7 +947,7 @@ final class CatCompanionController: NSObject {
     /// A cat nobody can see shouldn't burn GPU: pause each web view whose
     /// window is fully covered (fullscreen app, presentation) and resume
     /// the ones with any visible pixels.
-    @objc private func windowOcclusionChanged(_ notification: Notification) {
+    private func windowOcclusionChanged(_ notification: Notification) {
         guard notification.object is CatCompanionWindow else {
             return
         }
@@ -945,22 +963,22 @@ final class CatCompanionController: NSObject {
         }
     }
 
-    @objc private func companionToggled() {
+    private func companionToggled() {
         mirrorEnabledStateToSharedDefaults()
         rebuildWindows()
     }
 
-    @objc private func screenParametersChanged() {
+    private func screenParametersChanged() {
         rebuildWindows()
     }
 
-    @objc private func gardenStoreChanged(_ notification: Notification) {
+    private func gardenStoreChanged(_ notification: Notification) {
         pushGnomeTerritoriesIfNeeded()
         pushPlantMissionTargetsIfNeeded()
         _ = notification
     }
 
-    @objc private func settingsChanged() {
+    private func settingsChanged() {
         let previousFingerprint = loadedBuildFingerprint
         settings = CatCompanionSettings.load()
         if settings.buildFingerprint != previousFingerprint {
@@ -971,7 +989,7 @@ final class CatCompanionController: NSObject {
         }
     }
 
-    @objc private func bugPreySnapshotChanged(_ notification: Notification) {
+    private func bugPreySnapshotChanged(_ notification: Notification) {
         guard isEnabled,
               let screenIndex = notification.userInfo?["screenIndex"] as? Int,
               screenIndex < webViews.count,

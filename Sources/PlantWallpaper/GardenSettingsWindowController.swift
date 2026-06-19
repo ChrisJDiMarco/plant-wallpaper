@@ -367,6 +367,7 @@ final class GardenSettingsWindowController: NSWindowController, NSTextFieldDeleg
     private var dynamicUpdates: [() -> Void] = []
     private var saveDebounceTimer: Timer?
     private var uiRefreshTimer: Timer?
+    private var storeObserver: NSObjectProtocol?
     private var renderedMusicSource: GardenMusicSource?
     private var renderedCustomSceneKeys: [String] = []
     private var sceneDetailController: GardenSceneDetailWindowController?
@@ -412,12 +413,15 @@ final class GardenSettingsWindowController: NSWindowController, NSTextFieldDeleg
         buildWindow()
         renderSelectedSection()
 
-        NotificationCenter.default.addObserver(
-            self,
-            selector: #selector(storeDidChange),
-            name: .gardenStoreDidChange,
-            object: store
-        )
+        storeObserver = NotificationCenter.default.addObserver(
+            forName: .gardenStoreDidChange,
+            object: store,
+            queue: nil
+        ) { [weak self] _ in
+            Task { @MainActor in
+                self?.storeDidChange()
+            }
+        }
     }
 
     required init?(coder: NSCoder) {
@@ -558,7 +562,7 @@ final class GardenSettingsWindowController: NSWindowController, NSTextFieldDeleg
         uiRefreshTimer = nil
     }
 
-    @objc private func storeDidChange() {
+    private func storeDidChange() {
         guard window?.isVisible == true else {
             return
         }

@@ -59,16 +59,20 @@ final class RainbowMomentController: NSObject {
     private var screens: [NSScreen] = []
     private var lastPayloadFingerprints: [Int: String] = [:]
     private var refreshTimer: Timer?
+    private var storeObserver: NSObjectProtocol?
 
     init(store: GardenStore) {
         self.store = store
         super.init()
-        NotificationCenter.default.addObserver(
-            self,
-            selector: #selector(storeDidChange),
-            name: .gardenStoreDidChange,
-            object: store
-        )
+        storeObserver = NotificationCenter.default.addObserver(
+            forName: .gardenStoreDidChange,
+            object: store,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in
+                self?.storeDidChange()
+            }
+        }
         startRefreshTimer()
     }
 
@@ -216,7 +220,7 @@ final class RainbowMomentController: NSObject {
         return string
     }
 
-    @objc private func storeDidChange() {
+    private func storeDidChange() {
         refresh()
     }
 }

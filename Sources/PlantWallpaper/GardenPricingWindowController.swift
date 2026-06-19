@@ -16,6 +16,7 @@ final class GardenPricingWindowController: NSObject {
     private weak var currentPlanLabel: NSTextField?
     private weak var freeCTAButton: NSButton?
     private weak var proCTAButton: NSButton?
+    private var entitlementsObserver: NSObjectProtocol?
 
     private static let cardWidth: CGFloat = 312
     private static let contentWidth: CGFloat = 648
@@ -23,16 +24,15 @@ final class GardenPricingWindowController: NSObject {
     init(onOpenAPIKeySettings: @escaping () -> Void) {
         self.onOpenAPIKeySettings = onOpenAPIKeySettings
         super.init()
-        NotificationCenter.default.addObserver(
-            self,
-            selector: #selector(entitlementsDidChange),
-            name: .gardenEntitlementsDidChange,
-            object: nil
-        )
-    }
-
-    deinit {
-        NotificationCenter.default.removeObserver(self)
+        entitlementsObserver = NotificationCenter.default.addObserver(
+            forName: .gardenEntitlementsDidChange,
+            object: nil,
+            queue: nil
+        ) { [weak self] _ in
+            Task { @MainActor in
+                self?.entitlementsDidChange()
+            }
+        }
     }
 
     func show(lockedFeature: GardenProFeature? = nil) {
@@ -302,7 +302,7 @@ final class GardenPricingWindowController: NSObject {
         window?.close()
     }
 
-    @objc private func entitlementsDidChange() {
+    private func entitlementsDidChange() {
         refreshPlanState()
     }
 }

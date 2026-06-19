@@ -17,26 +17,34 @@ final class GardenWeatherService: NSObject, CLLocationManagerDelegate {
     private var lastKnownLocation: CLLocation?
     private var lastFetchedCondition: GardenWeatherCondition?
     private(set) var statusDescription = "Off"
+    private var storeObserver: NSObjectProtocol?
+    private var wakeObserver: NSObjectProtocol?
 
     init(store: GardenStore) {
         self.store = store
         super.init()
-        NotificationCenter.default.addObserver(
-            self,
-            selector: #selector(storeDidChange),
-            name: .gardenStoreDidChange,
-            object: store
-        )
-        NotificationCenter.default.addObserver(
-            self,
-            selector: #selector(systemDidWake),
-            name: NSWorkspace.didWakeNotification,
-            object: nil
-        )
+        storeObserver = NotificationCenter.default.addObserver(
+            forName: .gardenStoreDidChange,
+            object: store,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in
+                self?.storeDidChange()
+            }
+        }
+        wakeObserver = NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.didWakeNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in
+                self?.systemDidWake()
+            }
+        }
         syncWithSettings()
     }
 
-    @objc private func storeDidChange() {
+    private func storeDidChange() {
         syncWithSettings()
 
         // Scene switches load a different garden file; re-apply the latest
@@ -49,7 +57,7 @@ final class GardenWeatherService: NSObject, CLLocationManagerDelegate {
         }
     }
 
-    @objc private func systemDidWake() {
+    private func systemDidWake() {
         refreshIfEnabled()
     }
 

@@ -316,6 +316,7 @@ final class GardenStatusMenu: NSObject {
     private var catSettingsWindowController: CatCompanionSettingsWindowController?
     private var welcomeController: GardenWelcomeController?
     private var mouseTrackingMonitor: Any?
+    private var notificationObservers: [NSObjectProtocol] = []
     private var lastDesktopPlantingTarget: PlantingTarget?
     private var lastMouseSampleTime = ContinuousClock.now
     private var isMenuVisible = false
@@ -336,21 +337,36 @@ final class GardenStatusMenu: NSObject {
         configureStatusButton()
         buildMenu()
         installDesktopMouseTracking()
-        NotificationCenter.default.addObserver(
-            self,
-            selector: #selector(storeDidChange),
-            name: .gardenStoreDidChange,
-            object: store
-        )
-        NotificationCenter.default.addObserver(
-            self,
-            selector: #selector(entitlementsDidChange),
-            name: .gardenEntitlementsDidChange,
-            object: nil
-        )
+        observeNotification(name: .gardenStoreDidChange, object: store) { menu, _ in
+            menu.storeDidChange()
+        }
+        observeNotification(name: .gardenEntitlementsDidChange) { menu, _ in
+            menu.entitlementsDidChange()
+        }
     }
 
-    @objc private func entitlementsDidChange() {
+    private func observeNotification(
+        name: Notification.Name,
+        object: Any? = nil,
+        handler: @escaping @MainActor (GardenStatusMenu, Notification) -> Void
+    ) {
+        let observer = NotificationCenter.default.addObserver(
+            forName: name,
+            object: object,
+            queue: nil
+        ) { [weak self] notification in
+            guard let self else {
+                return
+            }
+            let delivery = MainActorNotificationDelivery(notification: notification)
+            MainActor.assumeIsolated {
+                handler(self, delivery.notification)
+            }
+        }
+        notificationObservers.append(observer)
+    }
+
+    private func entitlementsDidChange() {
         // Rebuild so Pro/locked badges across the menu reflect the new tier.
         buildMenu()
     }
@@ -2593,7 +2609,7 @@ final class GardenStatusMenu: NSObject {
         }
     }
 
-    @objc private func storeDidChange() {
+    private func storeDidChange() {
         // The status icon is always visible, so it tracks state cheaply on
         // every change (focus running, plants thirsty, all steady).
         refreshStatusIcon()

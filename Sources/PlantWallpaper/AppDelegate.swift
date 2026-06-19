@@ -22,6 +22,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var autosaveTimer: Timer?
     private var screenSaverSnapshotTimer: Timer?
     private var smartLockWallpaperTask: Task<Void, Never>?
+    private var screenParametersObserver: NSObjectProtocol?
+    private var storeChangeObserver: NSObjectProtocol?
     private var displayRefreshInterval: TimeInterval?
     private var lastTimeLapseCheckDay: String?
     private var lastGardenInteractionLocked = false
@@ -156,24 +158,37 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             GardenRadioPlayer.shared.toggleChillHopRadio()
         }
 
-        NotificationCenter.default.addObserver(
-            self,
-            selector: #selector(screensDidChange),
-            name: NSApplication.didChangeScreenParametersNotification,
-            object: nil
-        )
-        NotificationCenter.default.addObserver(
-            self,
-            selector: #selector(gardenStoreDidChangeForDisplay),
-            name: .gardenStoreDidChange,
-            object: gardenStore
-        )
+        screenParametersObserver = NotificationCenter.default.addObserver(
+            forName: NSApplication.didChangeScreenParametersNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in
+                self?.screensDidChange()
+            }
+        }
+        storeChangeObserver = NotificationCenter.default.addObserver(
+            forName: .gardenStoreDidChange,
+            object: gardenStore,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in
+                self?.gardenStoreDidChangeForDisplay()
+            }
+        }
     }
 
     func applicationWillTerminate(_ notification: Notification) {
         store?.save()
         overlayController?.shutdown()
-        NotificationCenter.default.removeObserver(self)
+        if let screenParametersObserver {
+            NotificationCenter.default.removeObserver(screenParametersObserver)
+            self.screenParametersObserver = nil
+        }
+        if let storeChangeObserver {
+            NotificationCenter.default.removeObserver(storeChangeObserver)
+            self.storeChangeObserver = nil
+        }
         simulationTimer?.invalidate()
         displayTimer?.invalidate()
         autosaveTimer?.invalidate()
@@ -286,23 +301,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func startTimers() {
-        simulationTimer = Timer.scheduledTimer(
-            timeInterval: 1.0,
-            target: self,
-            selector: #selector(simulationTimerFired),
-            userInfo: nil,
-            repeats: true
-        )
+        simulationTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
+            Task { @MainActor in
+                self?.simulationTimerFired()
+            }
+        }
 
         updateDisplayCadence()
 
-        autosaveTimer = Timer.scheduledTimer(
-            timeInterval: 20.0,
-            target: self,
-            selector: #selector(autosaveTimerFired),
-            userInfo: nil,
-            repeats: true
-        )
+        autosaveTimer = Timer.scheduledTimer(withTimeInterval: 20.0, repeats: true) { [weak self] _ in
+            Task { @MainActor in
+                self?.autosaveTimerFired()
+            }
+        }
     }
 
     private func scheduleDisplayTimer(interval: TimeInterval) {
@@ -315,13 +326,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         displayTimer?.invalidate()
         displayRefreshInterval = safeInterval
-        displayTimer = Timer.scheduledTimer(
-            timeInterval: safeInterval,
-            target: self,
-            selector: #selector(displayTimerFired),
-            userInfo: nil,
-            repeats: true
-        )
+        displayTimer = Timer.scheduledTimer(withTimeInterval: safeInterval, repeats: true) { [weak self] _ in
+            Task { @MainActor in
+                self?.displayTimerFired()
+            }
+        }
         displayTimer?.tolerance = min(safeInterval * 0.2, 0.25)
     }
 
@@ -361,7 +370,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return IOPSCopyExternalPowerAdapterDetails()?.takeRetainedValue() == nil
     }
 
-    @objc private func screensDidChange() {
+    private func screensDidChange() {
         let screens = NSScreen.screens
         let settings = store?.state.settings ?? .default
         let targetScreens = targetScreens(from: screens, settings: settings)
@@ -376,7 +385,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         updateDisplayCadence()
     }
 
-    @objc private func simulationTimerFired() {
+    private func simulationTimerFired() {
         let now = Date()
         store?.advance(to: now)
         if let store {
@@ -428,12 +437,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         timeLapseRecorder?.captureFrameIfNeeded(store: store, at: date)
     }
 
-    @objc private func displayTimerFired() {
+    private func displayTimerFired() {
         overlayController?.repaint()
         updateDisplayCadence()
     }
 
-    @objc private func gardenStoreDidChangeForDisplay() {
+    private func gardenStoreDidChangeForDisplay() {
         if let store {
             GardenRadioPlayer.shared.setVolume(store.state.settings.musicVolume)
             ambienceEngine.setMix(GardenAmbienceEngine.mix(
@@ -569,7 +578,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    @objc private func autosaveTimerFired() {
+    private func autosaveTimerFired() {
         store?.save()
         scheduleScreenSaverSnapshotPublish(delay: 0.2)
         statusMenu?.checkProgressionAutoAdvanceIfDue()

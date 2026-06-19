@@ -37,6 +37,7 @@ final class GardenOverlayController {
     private var globalMouseUpMonitor: Any?
     private var globalMouseMovedMonitor: Any?
     private var pointerRoutingTimer: Timer?
+    private var notificationObservers: [NSObjectProtocol] = []
     private var mousePressCoordinator = GardenMousePressCoordinator()
     private var lastDragScreenPoint: NSPoint?
     private var lastPointerRoutingScreenPoint: NSPoint?
@@ -72,67 +73,41 @@ final class GardenOverlayController {
         self.store = store
         self.musicPlayer = musicPlayer
         self.lastObservedExperienceMode = store.state.settings.experienceMode
-        NotificationCenter.default.addObserver(
-            self,
-            selector: #selector(storeDidChange),
-            name: .gardenStoreDidChange,
-            object: store
-        )
-        NotificationCenter.default.addObserver(
-            self,
-            selector: #selector(statusMenuWillOpen),
-            name: .gardenStatusMenuWillOpen,
-            object: nil
-        )
-        NotificationCenter.default.addObserver(
-            self,
-            selector: #selector(statusMenuDidClose),
-            name: .gardenStatusMenuDidClose,
-            object: nil
-        )
-        NotificationCenter.default.addObserver(
-            self,
-            selector: #selector(gnomeZoneDrawingModeDidChange(_:)),
-            name: .gardenGnomeZoneDrawingModeDidChange,
-            object: nil
-        )
-        NotificationCenter.default.addObserver(
-            self,
-            selector: #selector(gnomePerspectiveAdjustmentModeDidChange(_:)),
-            name: .gardenGnomePerspectiveAdjustmentModeDidChange,
-            object: nil
-        )
-        NotificationCenter.default.addObserver(
-            self,
-            selector: #selector(birdSkyZoneDrawingModeDidChange(_:)),
-            name: .gardenBirdSkyZoneDrawingModeDidChange,
-            object: nil
-        )
-        NotificationCenter.default.addObserver(
-            self,
-            selector: #selector(soilBrushModeDidChange(_:)),
-            name: .gardenSoilBrushModeDidChange,
-            object: nil
-        )
-        NotificationCenter.default.addObserver(
-            self,
-            selector: #selector(catCompanionClaimedClick(_:)),
-            name: .gardenCatCompanionClaimedClick,
-            object: nil
-        )
-        NotificationCenter.default.addObserver(
-            self,
-            selector: #selector(plantSpotlightVisibilityChanged(_:)),
-            name: .gardenPlantSpotlightVisibilityChanged,
-            object: nil
-        )
+        observeNotification(name: .gardenStoreDidChange, object: store) { controller, _ in
+            controller.storeDidChange()
+        }
+        observeNotification(name: .gardenStatusMenuWillOpen) { controller, _ in
+            controller.statusMenuWillOpen()
+        }
+        observeNotification(name: .gardenStatusMenuDidClose) { controller, _ in
+            controller.statusMenuDidClose()
+        }
+        observeNotification(name: .gardenGnomeZoneDrawingModeDidChange) { controller, notification in
+            controller.gnomeZoneDrawingModeDidChange(notification)
+        }
+        observeNotification(name: .gardenGnomePerspectiveAdjustmentModeDidChange) { controller, notification in
+            controller.gnomePerspectiveAdjustmentModeDidChange(notification)
+        }
+        observeNotification(name: .gardenBirdSkyZoneDrawingModeDidChange) { controller, notification in
+            controller.birdSkyZoneDrawingModeDidChange(notification)
+        }
+        observeNotification(name: .gardenSoilBrushModeDidChange) { controller, notification in
+            controller.soilBrushModeDidChange(notification)
+        }
+        observeNotification(name: .gardenCatCompanionClaimedClick) { controller, notification in
+            controller.catCompanionClaimedClick(notification)
+        }
+        observeNotification(name: .gardenPlantSpotlightVisibilityChanged) { controller, notification in
+            controller.plantSpotlightVisibilityChanged(notification)
+        }
         installEventMonitors()
         installEventTap()
         startPointerRoutingTimer()
     }
 
     func shutdown() {
-        NotificationCenter.default.removeObserver(self)
+        notificationObservers.forEach { NotificationCenter.default.removeObserver($0) }
+        notificationObservers = []
         pointerRoutingTimer?.invalidate()
         pointerRoutingTimer = nil
         if let globalMouseDownMonitor {
@@ -160,6 +135,27 @@ final class GardenOverlayController {
             CFMachPortInvalidate(eventTap)
             self.eventTap = nil
         }
+    }
+
+    private func observeNotification(
+        name: Notification.Name,
+        object: Any? = nil,
+        handler: @escaping @MainActor (GardenOverlayController, Notification) -> Void
+    ) {
+        let observer = NotificationCenter.default.addObserver(
+            forName: name,
+            object: object,
+            queue: .main
+        ) { [weak self] notification in
+            let delivery = MainActorNotificationDelivery(notification: notification)
+            Task { @MainActor in
+                guard let self else {
+                    return
+                }
+                handler(self, delivery.notification)
+            }
+        }
+        notificationObservers.append(observer)
     }
 
     func show() {
@@ -347,7 +343,7 @@ final class GardenOverlayController {
         bugSystems = []
     }
 
-    @objc private func storeDidChange() {
+    private func storeDidChange() {
         let currentMode = store.state.settings.experienceMode
         if let lastObservedExperienceMode,
            lastObservedExperienceMode != currentMode {
@@ -357,7 +353,7 @@ final class GardenOverlayController {
         refresh()
     }
 
-    @objc private func plantSpotlightVisibilityChanged(_: Notification) {
+    private func plantSpotlightVisibilityChanged(_: Notification) {
         syncPlantSpotlightPresentation()
         if activeDragWindow == nil {
             updateMouseRouting(at: NSEvent.mouseLocation)
@@ -375,7 +371,7 @@ final class GardenOverlayController {
         teardownBugSystems()
     }
 
-    @objc private func statusMenuWillOpen() {
+    private func statusMenuWillOpen() {
         isStatusMenuOpen = true
         handleMouseUp()
         interactionWindows.forEach { $0.close() }
@@ -384,7 +380,7 @@ final class GardenOverlayController {
         windows.forEach { $0.ignoresMouseEvents = true }
     }
 
-    @objc private func statusMenuDidClose() {
+    private func statusMenuDidClose() {
         isStatusMenuOpen = false
         updateInteractionRegionWindows()
         updateMouseRouting(at: NSEvent.mouseLocation)
@@ -444,27 +440,27 @@ final class GardenOverlayController {
             }
     }
 
-    @objc private func gnomeZoneDrawingModeDidChange(_ notification: Notification) {
+    private func gnomeZoneDrawingModeDidChange(_ notification: Notification) {
         let isEnabled = notification.userInfo?["isEnabled"] as? Bool ?? false
         setGnomeZoneDrawingMode(isEnabled)
     }
 
-    @objc private func birdSkyZoneDrawingModeDidChange(_ notification: Notification) {
+    private func birdSkyZoneDrawingModeDidChange(_ notification: Notification) {
         let isEnabled = notification.userInfo?["isEnabled"] as? Bool ?? false
         setBirdSkyZoneDrawingMode(isEnabled)
     }
 
-    @objc private func soilBrushModeDidChange(_ notification: Notification) {
+    private func soilBrushModeDidChange(_ notification: Notification) {
         let isEnabled = notification.userInfo?["isEnabled"] as? Bool ?? false
         setSoilBrushMode(isEnabled)
     }
 
-    @objc private func gnomePerspectiveAdjustmentModeDidChange(_ notification: Notification) {
+    private func gnomePerspectiveAdjustmentModeDidChange(_ notification: Notification) {
         let isEnabled = notification.userInfo?["isEnabled"] as? Bool ?? false
         setGnomePerspectiveAdjustmentMode(isEnabled)
     }
 
-    @objc private func catCompanionClaimedClick(_ notification: Notification) {
+    private func catCompanionClaimedClick(_ notification: Notification) {
         guard let pointValue = notification.userInfo?["screenPoint"] as? NSValue else {
             return
         }

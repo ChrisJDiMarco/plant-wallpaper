@@ -29,6 +29,7 @@ final class GardenMomentNotifier {
     private var wasPrecipitating = false
     private var lastRainCelebrationDay: String?
     private var lastCelebratedMomentKind: GardenRareMomentKind?
+    private var storeObserver: NSObjectProtocol?
 
     init(
         store: GardenStore,
@@ -44,16 +45,18 @@ final class GardenMomentNotifier {
         self.notificationDeliverer = notificationDeliverer
         self.lastRainCelebrationDay = defaults.string(forKey: Self.lastRainCelebrationDayDefaultsKey)
         captureBaseline()
-        NotificationCenter.default.addObserver(
-            self,
-            selector: #selector(storeDidChange),
-            name: .gardenStoreDidChange,
-            object: store
-        )
-    }
-
-    deinit {
-        NotificationCenter.default.removeObserver(self)
+        storeObserver = NotificationCenter.default.addObserver(
+            forName: .gardenStoreDidChange,
+            object: store,
+            queue: nil
+        ) { [weak self] _ in
+            guard let self else {
+                return
+            }
+            MainActor.assumeIsolated {
+                self.storeDidChange()
+            }
+        }
     }
 
     private func captureBaseline() {
@@ -66,7 +69,7 @@ final class GardenMomentNotifier {
         previousFocusTotalMinutes = store.state.focusStats?.totalFocusMinutes ?? 0
     }
 
-    @objc private func storeDidChange() {
+    private func storeDidChange() {
         guard isAvailable else {
             return
         }

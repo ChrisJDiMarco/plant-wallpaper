@@ -127,20 +127,20 @@ final class GnomeTribeController: NSObject {
     private var screens: [NSScreen] = []
     private var lastPayloadFingerprints: [Int: String] = [:]
     private var routineRefreshTimer: Timer?
+    private var storeObserver: NSObjectProtocol?
 
     init(store: GardenStore) {
         self.store = store
         super.init()
-        NotificationCenter.default.addObserver(
-            self,
-            selector: #selector(storeDidChange),
-            name: .gardenStoreDidChange,
-            object: store
-        )
-    }
-
-    deinit {
-        NotificationCenter.default.removeObserver(self)
+        storeObserver = NotificationCenter.default.addObserver(
+            forName: .gardenStoreDidChange,
+            object: store,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in
+                self?.storeDidChange()
+            }
+        }
     }
 
     func show() {
@@ -638,7 +638,7 @@ final class GnomeTribeController: NSObject {
         routineRefreshTimer = nil
     }
 
-    @objc private func storeDidChange() {
+    private func storeDidChange() {
         refresh()
     }
 

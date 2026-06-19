@@ -20,6 +20,7 @@ final class GardenProfileWindowController: NSObject {
     private weak var managePlanButton: NSButton?
     private weak var statsHost: NSStackView?
     private var avatarButtons: [NSButton] = []
+    private var entitlementsObserver: NSObjectProtocol?
 
     private static let memberSinceFormatter: DateFormatter = {
         let formatter = DateFormatter()
@@ -39,16 +40,15 @@ final class GardenProfileWindowController: NSObject {
         self.onManagePlan = onManagePlan
         self.onOpenSettings = onOpenSettings
         super.init()
-        NotificationCenter.default.addObserver(
-            self,
-            selector: #selector(entitlementsDidChange),
-            name: .gardenEntitlementsDidChange,
-            object: nil
-        )
-    }
-
-    deinit {
-        NotificationCenter.default.removeObserver(self)
+        entitlementsObserver = NotificationCenter.default.addObserver(
+            forName: .gardenEntitlementsDidChange,
+            object: nil,
+            queue: nil
+        ) { [weak self] _ in
+            Task { @MainActor in
+                self?.entitlementsDidChange()
+            }
+        }
     }
 
     func show() {
@@ -373,7 +373,7 @@ final class GardenProfileWindowController: NSObject {
         window?.close()
     }
 
-    @objc private func entitlementsDidChange() {
+    private func entitlementsDidChange() {
         refreshPlanViews()
     }
 }
