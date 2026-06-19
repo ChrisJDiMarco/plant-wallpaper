@@ -17,7 +17,9 @@ enum GardenBugSprites {
             38
         case .whiteButterfly, .moth:
             32
-        case .bee, .hoverfly:
+        case .bee:
+            34
+        case .hoverfly:
             24
         case .firefly:
             18
@@ -101,7 +103,7 @@ enum GardenBugSprites {
         switch behavior {
         case .nectarFeed:
             addBodyBob(to: container, distance: species == .bee ? 1.8 : 1.2, duration: 0.34)
-            container.sublayers?.first(where: { $0.name == "head" })?.add(forageAnimation(), forKey: "forage")
+            firstLayer(named: "head", in: container)?.add(forageAnimation(), forKey: "forage")
         case .plantVisit:
             addBodyBob(to: container, distance: 2.6, duration: 0.46)
         case .leafRest:
@@ -129,6 +131,18 @@ enum GardenBugSprites {
         case .travel:
             addBodyBob(to: container, distance: species == .dragonfly ? 0.4 : 2.4, duration: species == .dragonfly ? 0.14 : (species == .bee ? 0.18 : 0.42))
         }
+    }
+
+    private static func firstLayer(named name: String, in layer: CALayer) -> CALayer? {
+        if layer.name == name {
+            return layer
+        }
+        for sublayer in layer.sublayers ?? [] {
+            if let match = firstLayer(named: name, in: sublayer) {
+                return match
+            }
+        }
+        return nil
     }
 
     private static func populateButterfly(
@@ -170,47 +184,361 @@ enum GardenBugSprites {
     }
 
     private static func populateBee(container: CALayer, size: CGFloat, isHoverfly: Bool) {
-        let wingColor = NSColor(calibratedWhite: 0.96, alpha: 0.46)
-        let bodyColor = isHoverfly
-            ? NSColor(calibratedRed: 0.52, green: 0.43, blue: 0.19, alpha: 0.90)
-            : NSColor(calibratedRed: 0.85, green: 0.58, blue: 0.12, alpha: 0.94)
-        let body = ovalLayer(
-            frame: CGRect(x: size * 0.26, y: size * 0.35, width: size * 0.48, height: size * 0.30),
-            color: bodyColor
+        let dark = NSColor(calibratedRed: 0.09, green: 0.07, blue: 0.045, alpha: 0.78)
+        let amber = isHoverfly
+            ? NSColor(calibratedRed: 0.57, green: 0.45, blue: 0.20, alpha: 0.92)
+            : NSColor(calibratedRed: 0.94, green: 0.66, blue: 0.18, alpha: 0.96)
+        let thoraxColor = isHoverfly
+            ? NSColor(calibratedRed: 0.33, green: 0.25, blue: 0.13, alpha: 0.94)
+            : NSColor(calibratedRed: 0.42, green: 0.29, blue: 0.16, alpha: 0.95)
+        let membrane = NSColor(calibratedRed: 0.86, green: 0.96, blue: 1.00, alpha: 0.34)
+        let blur = NSColor(calibratedRed: 0.86, green: 0.96, blue: 1.00, alpha: 0.18)
+
+        let upperBlur = beeWingBlurLayer(
+            frame: CGRect(x: size * 0.16, y: size * 0.09, width: size * 0.58, height: size * 0.34),
+            color: blur,
+            side: -1
         )
-        body.name = "body"
-        body.borderColor = NSColor(calibratedRed: 0.12, green: 0.10, blue: 0.06, alpha: 0.52).cgColor
-        body.borderWidth = 1
-        for fraction in [0.38, 0.50, 0.62] {
-            body.addSublayer(stripeLayer(
-                frame: CGRect(x: body.bounds.width * fraction, y: 0, width: max(1, size * 0.035), height: body.bounds.height),
-                color: NSColor(calibratedRed: 0.08, green: 0.07, blue: 0.05, alpha: isHoverfly ? 0.32 : 0.62)
-            ))
+        let lowerBlur = beeWingBlurLayer(
+            frame: CGRect(x: size * 0.16, y: size * 0.57, width: size * 0.58, height: size * 0.34),
+            color: blur,
+            side: 1
+        )
+        let upperWing = beeWingLayer(
+            frame: CGRect(x: size * 0.19, y: size * 0.18, width: size * 0.50, height: size * 0.28),
+            color: membrane,
+            side: -1
+        )
+        let lowerWing = beeWingLayer(
+            frame: CGRect(x: size * 0.19, y: size * 0.54, width: size * 0.50, height: size * 0.28),
+            color: membrane.withAlphaComponent(membrane.alphaComponent * 0.92),
+            side: 1
+        )
+        for wing in [upperBlur, lowerBlur, upperWing, lowerWing] {
+            container.addSublayer(wing)
+            let amplitude: CGFloat = wing === upperWing || wing === upperBlur ? -0.12 : 0.12
+            addWingFlap(to: wing, keyPath: "transform.rotation.z", amplitude: amplitude, duration: 0.025)
         }
-        let head = ovalLayer(
-            frame: CGRect(x: size * 0.18, y: size * 0.39, width: size * 0.16, height: size * 0.20),
-            color: NSColor(calibratedRed: 0.14, green: 0.10, blue: 0.06, alpha: 0.86)
+
+        let body = CALayer()
+        body.name = "body"
+        body.frame = container.bounds
+
+        let abdomenFrame = CGRect(x: size * 0.38, y: size * 0.35, width: size * 0.40, height: size * 0.31)
+        let thoraxFrame = CGRect(x: size * 0.24, y: size * 0.34, width: size * 0.25, height: size * 0.33)
+        let headFrame = CGRect(x: size * 0.14, y: size * 0.38, width: size * 0.18, height: size * 0.24)
+
+        let abdomen = beeAbdomenLayer(frame: abdomenFrame, baseColor: amber, shadowColor: dark)
+        let thorax = shadedOvalLayer(
+            frame: thoraxFrame,
+            baseColor: thoraxColor,
+            highlightColor: NSColor(calibratedRed: 0.86, green: 0.66, blue: 0.34, alpha: isHoverfly ? 0.22 : 0.34),
+            shadowColor: dark.withAlphaComponent(0.70)
+        )
+        thorax.name = "thorax"
+        let head = shadedOvalLayer(
+            frame: headFrame,
+            baseColor: NSColor(calibratedRed: 0.15, green: 0.11, blue: 0.075, alpha: 0.96),
+            highlightColor: NSColor(calibratedWhite: 0.34, alpha: 0.26),
+            shadowColor: dark
         )
         head.name = "head"
-        let leftWing = ovalLayer(
-            frame: CGRect(x: size * 0.18, y: size * 0.18, width: size * 0.30, height: size * 0.26),
-            color: wingColor
-        )
-        leftWing.name = "wing"
-        let rightWing = ovalLayer(
-            frame: CGRect(x: size * 0.52, y: size * 0.18, width: size * 0.30, height: size * 0.26),
-            color: wingColor
-        )
-        rightWing.name = "wing"
-        addInsectLegs(to: container, bodyFrame: body.frame, color: NSColor(calibratedRed: 0.10, green: 0.08, blue: 0.05, alpha: 0.50), size: size)
-        addAntennae(to: container, center: CGPoint(x: size * 0.25, y: size * 0.40), size: size * 0.55, color: NSColor(calibratedRed: 0.10, green: 0.08, blue: 0.05, alpha: 0.58))
-        addPollenBaskets(to: container, bodyFrame: body.frame, size: size, isHoverfly: isHoverfly)
-        container.addSublayer(leftWing)
-        container.addSublayer(rightWing)
+
+        body.addSublayer(abdomen)
+        body.addSublayer(thorax)
+        body.addSublayer(head)
+        addBeeFuzz(to: body, around: thoraxFrame, color: NSColor(calibratedRed: 0.96, green: 0.80, blue: 0.48, alpha: isHoverfly ? 0.20 : 0.32), size: size)
+        addCompoundEye(to: body, frame: headFrame, size: size, alpha: 0.88)
+        addOcelli(to: body, center: CGPoint(x: headFrame.midX + headFrame.width * 0.04, y: headFrame.midY), size: size)
+        addBeeLegs(to: container, thoraxFrame: thoraxFrame, abdomenFrame: abdomenFrame, color: dark.withAlphaComponent(0.66), size: size)
+        addBeeAntennae(to: container, headFrame: headFrame, size: size, color: dark.withAlphaComponent(0.72))
         container.addSublayer(body)
-        container.addSublayer(head)
-        addWingFlap(to: leftWing, keyPath: "transform.scale.y", amplitude: 0.28, duration: 0.09)
-        addWingFlap(to: rightWing, keyPath: "transform.scale.y", amplitude: 0.28, duration: 0.09)
+        addBeePollenBaskets(to: container, abdomenFrame: abdomenFrame, size: size, isHoverfly: isHoverfly)
+    }
+
+    private static func beeAbdomenLayer(frame: CGRect, baseColor: NSColor, shadowColor: NSColor) -> CALayer {
+        let abdomen = CALayer()
+        abdomen.name = "abdomen"
+        abdomen.frame = frame
+        abdomen.cornerRadius = min(frame.width, frame.height) / 2
+        abdomen.masksToBounds = true
+        abdomen.borderColor = shadowColor.withAlphaComponent(0.50).cgColor
+        abdomen.borderWidth = 0.85
+
+        let gradient = CAGradientLayer()
+        gradient.frame = abdomen.bounds
+        gradient.colors = [
+            baseColor.highlight(withLevel: 0.34)?.cgColor ?? baseColor.cgColor,
+            baseColor.cgColor,
+            shadowColor.cgColor
+        ]
+        gradient.locations = [0.0, 0.46, 1.0]
+        gradient.startPoint = CGPoint(x: 0.10, y: 0.12)
+        gradient.endPoint = CGPoint(x: 0.96, y: 0.82)
+        abdomen.addSublayer(gradient)
+
+        for fraction in [0.18, 0.34, 0.51, 0.68] {
+            let stripe = stripeLayer(
+                frame: CGRect(
+                    x: frame.width * CGFloat(fraction),
+                    y: -frame.height * 0.04,
+                    width: max(1.25, frame.width * 0.085),
+                    height: frame.height * 1.08
+                ),
+                color: shadowColor.withAlphaComponent(0.72)
+            )
+            stripe.name = "abdomenStripe"
+            stripe.transform = CATransform3DMakeRotation(0.10, 0, 0, 1)
+            abdomen.addSublayer(stripe)
+        }
+
+        let highlight = lineLayer(
+            from: CGPoint(x: frame.width * 0.12, y: frame.height * 0.30),
+            to: CGPoint(x: frame.width * 0.70, y: frame.height * 0.24),
+            color: NSColor(calibratedWhite: 1.0, alpha: 0.16),
+            width: max(0.45, frame.height * 0.08)
+        )
+        highlight.name = "bodyHighlight"
+        abdomen.addSublayer(highlight)
+        return abdomen
+    }
+
+    private static func shadedOvalLayer(
+        frame: CGRect,
+        baseColor: NSColor,
+        highlightColor: NSColor,
+        shadowColor: NSColor
+    ) -> CALayer {
+        let layer = CALayer()
+        layer.frame = frame
+        layer.cornerRadius = min(frame.width, frame.height) / 2
+        layer.masksToBounds = true
+        layer.borderColor = shadowColor.withAlphaComponent(0.42).cgColor
+        layer.borderWidth = 0.75
+
+        let gradient = CAGradientLayer()
+        gradient.frame = layer.bounds
+        gradient.colors = [
+            highlightColor.cgColor,
+            baseColor.cgColor,
+            shadowColor.cgColor
+        ]
+        gradient.locations = [0.0, 0.42, 1.0]
+        gradient.startPoint = CGPoint(x: 0.15, y: 0.08)
+        gradient.endPoint = CGPoint(x: 0.90, y: 0.92)
+        layer.addSublayer(gradient)
+        return layer
+    }
+
+    private static func beeWingLayer(frame: CGRect, color: NSColor, side: CGFloat) -> CAShapeLayer {
+        let wing = CAShapeLayer()
+        wing.name = "wing"
+        wing.frame = frame
+        let width = frame.width
+        let height = frame.height
+        let path = CGMutablePath()
+        let rootY = side < 0 ? height * 0.72 : height * 0.28
+        path.move(to: CGPoint(x: width * 0.08, y: rootY))
+        path.addCurve(
+            to: CGPoint(x: width * 0.92, y: height * 0.50),
+            control1: CGPoint(x: width * 0.22, y: side < 0 ? -height * 0.06 : height * 1.06),
+            control2: CGPoint(x: width * 0.70, y: side < 0 ? height * 0.00 : height * 1.00)
+        )
+        path.addCurve(
+            to: CGPoint(x: width * 0.08, y: rootY),
+            control1: CGPoint(x: width * 0.62, y: side < 0 ? height * 0.92 : height * 0.08),
+            control2: CGPoint(x: width * 0.24, y: side < 0 ? height * 0.95 : height * 0.05)
+        )
+        wing.path = path
+        wing.fillColor = color.cgColor
+        wing.strokeColor = NSColor(calibratedRed: 0.58, green: 0.75, blue: 0.82, alpha: 0.28).cgColor
+        wing.lineWidth = max(0.45, frame.height * 0.08)
+        wing.lineJoin = .round
+        wing.anchorPoint = CGPoint(x: 0.12, y: side < 0 ? 0.72 : 0.28)
+        wing.position = CGPoint(x: frame.minX + width * wing.anchorPoint.x, y: frame.minY + height * wing.anchorPoint.y)
+        addBeeWingVeins(to: wing, side: side)
+        return wing
+    }
+
+    private static func beeWingBlurLayer(frame: CGRect, color: NSColor, side: CGFloat) -> CAShapeLayer {
+        let blur = beeWingLayer(frame: frame, color: color, side: side)
+        blur.name = "wingBlur"
+        blur.strokeColor = NSColor(calibratedRed: 0.72, green: 0.90, blue: 1.0, alpha: 0.12).cgColor
+        blur.lineWidth = max(0.8, frame.height * 0.14)
+        blur.opacity = 0.86
+        blur.sublayers?.compactMap { $0 as? CAShapeLayer }.forEach {
+            $0.strokeColor = NSColor(calibratedRed: 0.35, green: 0.48, blue: 0.50, alpha: 0.10).cgColor
+        }
+        let pulse = CABasicAnimation(keyPath: "opacity")
+        pulse.fromValue = 0.24
+        pulse.toValue = 0.86
+        pulse.duration = 0.025
+        pulse.autoreverses = true
+        pulse.repeatCount = .infinity
+        pulse.timingFunction = CAMediaTimingFunction(name: .linear)
+        blur.add(pulse, forKey: "flapBlur")
+        return blur
+    }
+
+    private static func addBeeWingVeins(to wing: CALayer, side: CGFloat) {
+        let width = wing.bounds.width
+        let height = wing.bounds.height
+        let root = CGPoint(x: width * 0.12, y: side < 0 ? height * 0.70 : height * 0.30)
+        let veinColor = NSColor(calibratedRed: 0.27, green: 0.38, blue: 0.38, alpha: wing.name == "wingBlur" ? 0.10 : 0.24)
+        for fraction in [0.30, 0.48, 0.66, 0.82] {
+            let vein = lineLayer(
+                from: root,
+                to: CGPoint(x: width * CGFloat(fraction), y: side < 0 ? height * 0.30 : height * 0.70),
+                color: veinColor,
+                width: max(0.26, height * 0.035)
+            )
+            vein.name = "wingVein"
+            wing.addSublayer(vein)
+        }
+        let leadingEdge = lineLayer(
+            from: CGPoint(x: width * 0.10, y: side < 0 ? height * 0.66 : height * 0.34),
+            to: CGPoint(x: width * 0.88, y: height * 0.50),
+            color: veinColor.withAlphaComponent(veinColor.alphaComponent * 1.25),
+            width: max(0.30, height * 0.045)
+        )
+        leadingEdge.name = "wingVein"
+        wing.addSublayer(leadingEdge)
+    }
+
+    private static func addBeeLegs(
+        to container: CALayer,
+        thoraxFrame: CGRect,
+        abdomenFrame: CGRect,
+        color: NSColor,
+        size: CGFloat
+    ) {
+        let sockets = [
+            (x: thoraxFrame.minX + thoraxFrame.width * 0.42, name: "foreleg"),
+            (x: thoraxFrame.midX + thoraxFrame.width * 0.12, name: "leg"),
+            (x: abdomenFrame.minX + abdomenFrame.width * 0.34, name: "leg")
+        ]
+        for socket in sockets {
+            for side in [-1.0, 1.0] {
+                let sideValue = CGFloat(side)
+                let start = CGPoint(x: socket.x, y: thoraxFrame.midY + thoraxFrame.height * 0.22 * sideValue)
+                let knee = CGPoint(x: socket.x - size * 0.09, y: start.y + size * 0.18 * sideValue)
+                let foot = CGPoint(x: socket.x - size * 0.24, y: start.y + size * 0.28 * sideValue)
+                let upper = lineLayer(from: start, to: knee, color: color, width: max(0.45, size * 0.017))
+                let lower = lineLayer(from: knee, to: foot, color: color.withAlphaComponent(color.alphaComponent * 0.78), width: max(0.34, size * 0.014))
+                upper.name = socket.name
+                lower.name = socket.name
+                container.addSublayer(upper)
+                container.addSublayer(lower)
+            }
+        }
+    }
+
+    private static func addBeeFuzz(to container: CALayer, around frame: CGRect, color: NSColor, size: CGFloat) {
+        let offsets: [(CGFloat, CGFloat)] = [
+            (-0.22, -0.46), (-0.02, -0.52), (0.22, -0.44),
+            (-0.30, 0.44), (-0.06, 0.52), (0.22, 0.44)
+        ]
+        for offset in offsets {
+            let center = CGPoint(
+                x: frame.midX + frame.width * offset.0,
+                y: frame.midY + frame.height * offset.1
+            )
+            let hair = lineLayer(
+                from: center,
+                to: CGPoint(x: center.x + size * 0.035, y: center.y + size * 0.08 * (offset.1 < 0 ? -1 : 1)),
+                color: color,
+                width: max(0.28, size * 0.010)
+            )
+            hair.name = "fuzz"
+            container.addSublayer(hair)
+        }
+    }
+
+    private static func addBeePollenBaskets(to container: CALayer, abdomenFrame: CGRect, size: CGFloat, isHoverfly: Bool) {
+        guard !isHoverfly else {
+            return
+        }
+        let pollen = NSColor(calibratedRed: 0.98, green: 0.74, blue: 0.18, alpha: 0.88)
+        for side in [-1.0, 1.0] {
+            let basket = shadedOvalLayer(
+                frame: CGRect(
+                    x: abdomenFrame.minX + abdomenFrame.width * 0.24,
+                    y: abdomenFrame.midY + abdomenFrame.height * CGFloat(side) * 0.42 - size * 0.035,
+                    width: size * 0.105,
+                    height: size * 0.075
+                ),
+                baseColor: pollen,
+                highlightColor: NSColor(calibratedWhite: 1.0, alpha: 0.22),
+                shadowColor: NSColor(calibratedRed: 0.45, green: 0.26, blue: 0.04, alpha: 0.48)
+            )
+            basket.name = "pollen"
+            container.addSublayer(basket)
+        }
+    }
+
+    private static func addBeeAntennae(to container: CALayer, headFrame: CGRect, size: CGFloat, color: NSColor) {
+        for side in [-1.0, 1.0] {
+            let sideValue = CGFloat(side)
+            let base = CGPoint(x: headFrame.minX + headFrame.width * 0.22, y: headFrame.midY + headFrame.height * 0.18 * sideValue)
+            let tip = CGPoint(x: base.x - size * 0.16, y: base.y + size * 0.13 * sideValue)
+            let antenna = lineLayer(from: base, to: tip, color: color, width: max(0.38, size * 0.012))
+            antenna.name = "antenna"
+            container.addSublayer(antenna)
+            let bulb = ovalLayer(
+                frame: CGRect(x: tip.x - size * 0.012, y: tip.y - size * 0.012, width: size * 0.024, height: size * 0.024),
+                color: color.withAlphaComponent(color.alphaComponent * 0.82)
+            )
+            bulb.name = "antenna"
+            container.addSublayer(bulb)
+        }
+    }
+
+    private static func addCompoundEye(to container: CALayer, frame: CGRect, size: CGFloat, alpha: CGFloat) {
+        for side in [-1.0, 1.0] {
+            let sideValue = CGFloat(side)
+            let eye = shadedOvalLayer(
+                frame: CGRect(
+                    x: frame.minX + frame.width * 0.10,
+                    y: frame.midY + frame.height * 0.20 * sideValue - size * 0.035,
+                    width: size * 0.075,
+                    height: size * 0.075
+                ),
+                baseColor: NSColor(calibratedRed: 0.035, green: 0.025, blue: 0.018, alpha: alpha),
+                highlightColor: NSColor(calibratedWhite: 1.0, alpha: 0.30),
+                shadowColor: NSColor(calibratedWhite: 0.0, alpha: 0.72)
+            )
+            eye.name = "compoundEye"
+            for dotOffset in [CGPoint(x: 0.34, y: 0.34), CGPoint(x: 0.56, y: 0.48), CGPoint(x: 0.42, y: 0.62)] {
+                let facet = ovalLayer(
+                    frame: CGRect(
+                        x: eye.bounds.width * dotOffset.x,
+                        y: eye.bounds.height * dotOffset.y,
+                        width: max(0.7, size * 0.012),
+                        height: max(0.7, size * 0.012)
+                    ),
+                    color: NSColor(calibratedWhite: 1.0, alpha: 0.12)
+                )
+                facet.name = "eyeFacet"
+                eye.addSublayer(facet)
+            }
+            container.addSublayer(eye)
+        }
+    }
+
+    private static func addOcelli(to container: CALayer, center: CGPoint, size: CGFloat) {
+        for offset in [-0.026, 0.0, 0.026] {
+            let ocellus = ovalLayer(
+                frame: CGRect(
+                    x: center.x - size * 0.010,
+                    y: center.y + size * CGFloat(offset) - size * 0.010,
+                    width: size * 0.020,
+                    height: size * 0.020
+                ),
+                color: NSColor(calibratedWhite: 0.0, alpha: 0.42)
+            )
+            ocellus.name = "ocellus"
+            container.addSublayer(ocellus)
+        }
     }
 
     /// Per-instance abdomen colorways for the darner — picked at random so a

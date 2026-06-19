@@ -150,67 +150,134 @@ extension GardenCanvasView {
     }
 
     func drawBee(_ sample: GardenWildlifeSample, at center: NSPoint, profile: GardenSceneVisualProfile) {
-        let scale = CGFloat(sample.scale) * 2.05
+        let scale = CGFloat(sample.scale) * 2.35
         let heading = CGFloat(sample.headingDegrees)
-        let blurAlpha = CGFloat(0.28 + sample.wingBlur * 0.18)
-        let bodyFill = color(red: 196, green: 142, blue: 38, alpha: 0.78)
-        let bodyStroke = color(red: 39, green: 30, blue: 20, alpha: 0.62)
-        let wingFill = color(red: 236, green: 250, blue: 238, alpha: blurAlpha)
+        let blurAlpha = CGFloat(0.30 + sample.wingBlur * 0.24)
+        let amber = color(red: 230, green: 165, blue: 42, alpha: 0.86)
+        let thoraxFill = color(red: 82, green: 54, blue: 28, alpha: 0.84)
+        let bodyStroke = color(red: 24, green: 18, blue: 12, alpha: 0.72)
+        let wingFill = color(red: 220, green: 244, blue: 252, alpha: blurAlpha)
+        let wingEdge = color(red: 154, green: 198, blue: 212, alpha: blurAlpha * 0.52)
 
-        drawInsectShadow(center: center, scale: scale, width: 8.8, height: 3.5, headingDegrees: heading, alpha: 0.12)
+        drawInsectShadow(center: center, scale: scale, width: 10.2, height: 3.8, headingDegrees: heading, alpha: 0.13)
 
         drawInsectOval(
-            center: orientedPoint(center, dx: -0.18 * scale, dy: -1.20 * scale, headingDegrees: heading),
-            size: NSSize(width: 4.15 * scale, height: 1.55 * scale),
-            angle: heading - 18,
-            fill: wingFill,
-            stroke: color(red: 208, green: 234, blue: 220, alpha: blurAlpha * 0.60)
+            center: orientedPoint(center, dx: -0.16 * scale, dy: -1.34 * scale, headingDegrees: heading),
+            size: NSSize(width: 4.8 * scale, height: 1.82 * scale),
+            angle: heading - 21,
+            fill: wingFill.withAlphaComponent(wingFill.alphaComponent * 0.50),
+            stroke: wingEdge.withAlphaComponent(wingEdge.alphaComponent * 0.32)
         )
         drawInsectOval(
-            center: orientedPoint(center, dx: -0.18 * scale, dy: 1.20 * scale, headingDegrees: heading),
-            size: NSSize(width: 4.15 * scale, height: 1.55 * scale),
-            angle: heading + 18,
+            center: orientedPoint(center, dx: -0.16 * scale, dy: 1.34 * scale, headingDegrees: heading),
+            size: NSSize(width: 4.8 * scale, height: 1.82 * scale),
+            angle: heading + 21,
+            fill: wingFill.withAlphaComponent(wingFill.alphaComponent * 0.46),
+            stroke: wingEdge.withAlphaComponent(wingEdge.alphaComponent * 0.32)
+        )
+        drawInsectOval(
+            center: orientedPoint(center, dx: -0.20 * scale, dy: -1.06 * scale, headingDegrees: heading),
+            size: NSSize(width: 4.08 * scale, height: 1.22 * scale),
+            angle: heading - 16,
             fill: wingFill,
-            stroke: color(red: 208, green: 234, blue: 220, alpha: blurAlpha * 0.60)
+            stroke: wingEdge
+        )
+        drawInsectOval(
+            center: orientedPoint(center, dx: -0.20 * scale, dy: 1.06 * scale, headingDegrees: heading),
+            size: NSSize(width: 4.08 * scale, height: 1.22 * scale),
+            angle: heading + 16,
+            fill: wingFill.withAlphaComponent(wingFill.alphaComponent * 0.92),
+            stroke: wingEdge
         )
         drawFlyWingVeins(center: center, scale: scale, heading: heading, side: -1, color: bodyStroke.withAlphaComponent(0.20))
         drawFlyWingVeins(center: center, scale: scale, heading: heading, side: 1, color: bodyStroke.withAlphaComponent(0.20))
 
         drawInsectOval(
-            center: orientedPoint(center, dx: -1.55 * scale, dy: 0, headingDegrees: heading),
-            size: NSSize(width: 2.25 * scale, height: 1.72 * scale),
+            center: orientedPoint(center, dx: -0.88 * scale, dy: 0, headingDegrees: heading),
+            size: NSSize(width: 2.20 * scale, height: 1.70 * scale),
             angle: heading,
-            fill: color(red: 74, green: 52, blue: 29, alpha: 0.76),
-            stroke: bodyStroke.withAlphaComponent(0.34)
+            fill: thoraxFill,
+            stroke: bodyStroke.withAlphaComponent(0.42)
         )
         drawInsectOval(
-            center: center,
-            size: NSSize(width: 4.45 * scale, height: 2.05 * scale),
+            center: orientedPoint(center, dx: 0.92 * scale, dy: 0, headingDegrees: heading),
+            size: NSSize(width: 3.56 * scale, height: 1.68 * scale),
             angle: heading,
-            fill: bodyFill,
+            fill: amber,
             stroke: bodyStroke
         )
         drawInsectOval(
-            center: orientedPoint(center, dx: 2.18 * scale, dy: 0, headingDegrees: heading),
-            size: NSSize(width: 1.05 * scale, height: 0.92 * scale),
+            center: orientedPoint(center, dx: -2.34 * scale, dy: 0, headingDegrees: heading),
+            size: NSSize(width: 1.26 * scale, height: 1.10 * scale),
             angle: heading,
-            fill: color(red: 35, green: 27, blue: 20, alpha: 0.72),
-            stroke: nil
+            fill: color(red: 28, green: 22, blue: 16, alpha: 0.86),
+            stroke: bodyStroke.withAlphaComponent(0.36)
         )
-        for stripe in [CGFloat(-0.95), CGFloat(-0.18), CGFloat(0.62), CGFloat(1.28)] {
+
+        for stripe in [CGFloat(-0.18), CGFloat(0.36), CGFloat(0.90), CGFloat(1.38)] {
             drawLine(
-                from: orientedPoint(center, dx: stripe * scale, dy: -0.86 * scale, headingDegrees: heading),
-                to: orientedPoint(center, dx: stripe * scale, dy: 0.86 * scale, headingDegrees: heading),
-                color: bodyStroke.withAlphaComponent(0.54),
-                width: max(0.34, 0.34 * scale)
+                from: orientedPoint(center, dx: stripe * scale, dy: -0.76 * scale, headingDegrees: heading),
+                to: orientedPoint(center, dx: stripe * scale, dy: 0.76 * scale, headingDegrees: heading),
+                color: bodyStroke.withAlphaComponent(0.62),
+                width: max(0.38, 0.36 * scale)
             )
         }
-        drawInsectLegs(center: center, scale: scale, heading: heading, color: bodyStroke.withAlphaComponent(0.52))
+        for fuzz in [CGFloat(-1.10), CGFloat(-0.76), CGFloat(-0.42)] {
+            drawLine(
+                from: orientedPoint(center, dx: fuzz * scale, dy: -0.74 * scale, headingDegrees: heading),
+                to: orientedPoint(center, dx: (fuzz + 0.12) * scale, dy: -1.04 * scale, headingDegrees: heading),
+                color: color(red: 255, green: 216, blue: 128, alpha: 0.24),
+                width: max(0.18, 0.13 * scale)
+            )
+            drawLine(
+                from: orientedPoint(center, dx: fuzz * scale, dy: 0.74 * scale, headingDegrees: heading),
+                to: orientedPoint(center, dx: (fuzz + 0.12) * scale, dy: 1.04 * scale, headingDegrees: heading),
+                color: color(red: 255, green: 216, blue: 128, alpha: 0.24),
+                width: max(0.18, 0.13 * scale)
+            )
+        }
+
+        drawInsectLegs(center: orientedPoint(center, dx: -0.20 * scale, dy: 0, headingDegrees: heading), scale: scale * 0.98, heading: heading, color: bodyStroke.withAlphaComponent(0.58))
+        drawInsectOval(
+            center: orientedPoint(center, dx: -2.46 * scale, dy: -0.28 * scale, headingDegrees: heading),
+            size: NSSize(width: 0.42 * scale, height: 0.34 * scale),
+            angle: heading,
+            fill: color(red: 6, green: 5, blue: 4, alpha: 0.62),
+            stroke: nil
+        )
+        drawInsectOval(
+            center: orientedPoint(center, dx: -2.46 * scale, dy: 0.28 * scale, headingDegrees: heading),
+            size: NSSize(width: 0.42 * scale, height: 0.34 * scale),
+            angle: heading,
+            fill: color(red: 6, green: 5, blue: 4, alpha: 0.62),
+            stroke: nil
+        )
         drawLine(
-            from: orientedPoint(center, dx: -0.85 * scale, dy: -0.18 * scale, headingDegrees: heading),
-            to: orientedPoint(center, dx: 1.55 * scale, dy: -0.38 * scale, headingDegrees: heading),
-            color: color(red: 255, green: 223, blue: 108, alpha: 0.28),
-            width: max(0.24, 0.22 * scale)
+            from: orientedPoint(center, dx: 0.20 * scale, dy: -0.78 * scale, headingDegrees: heading),
+            to: orientedPoint(center, dx: 1.56 * scale, dy: -0.48 * scale, headingDegrees: heading),
+            color: color(red: 255, green: 230, blue: 122, alpha: 0.25),
+            width: max(0.22, 0.18 * scale)
+        )
+        for side in [CGFloat(-1), CGFloat(1)] {
+            drawInsectOval(
+                center: orientedPoint(center, dx: 0.22 * scale, dy: 1.16 * scale * side, headingDegrees: heading),
+                size: NSSize(width: 0.66 * scale, height: 0.42 * scale),
+                angle: heading + 10 * side,
+                fill: color(red: 246, green: 184, blue: 44, alpha: 0.64),
+                stroke: color(red: 112, green: 72, blue: 16, alpha: 0.28)
+            )
+        }
+        drawLine(
+            from: orientedPoint(center, dx: -2.80 * scale, dy: -0.28 * scale, headingDegrees: heading),
+            to: orientedPoint(center, dx: -3.42 * scale, dy: -0.92 * scale, headingDegrees: heading),
+            color: bodyStroke.withAlphaComponent(0.50),
+            width: max(0.18, 0.12 * scale)
+        )
+        drawLine(
+            from: orientedPoint(center, dx: -2.80 * scale, dy: 0.28 * scale, headingDegrees: heading),
+            to: orientedPoint(center, dx: -3.42 * scale, dy: 0.92 * scale, headingDegrees: heading),
+            color: bodyStroke.withAlphaComponent(0.50),
+            width: max(0.18, 0.12 * scale)
         )
     }
 

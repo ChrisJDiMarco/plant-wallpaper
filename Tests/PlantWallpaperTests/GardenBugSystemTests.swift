@@ -74,7 +74,44 @@ struct GardenBugSystemTests {
                 #expect(layerNames.contains("leg"))
                 #expect(layerNames.contains("antenna"))
             }
+            if species == .bee {
+                let beeAnatomy: Set<String> = [
+                    "abdomen",
+                    "abdomenStripe",
+                    "thorax",
+                    "compoundEye",
+                    "ocellus",
+                    "wingBlur",
+                    "wingVein",
+                    "fuzz",
+                    "pollen"
+                ]
+                #expect(beeAnatomy.isSubset(of: layerNames))
+            }
         }
+    }
+
+    @Test("bee sprites use realistic proportions and high speed wing blur")
+    func beeSpritesUseRealisticProportionsAndHighSpeedWingBlur() {
+        let size = GardenBugSprites.containerSize(for: .bee)
+        let container = CALayer()
+        container.bounds = CGRect(x: 0, y: 0, width: size, height: size)
+
+        GardenBugSprites.populate(container: container, species: .bee, scale: 1)
+        let layers = recursiveLayers(in: container)
+        let abdomen = layers.first { $0.name == "abdomen" }
+        let thorax = layers.first { $0.name == "thorax" }
+        let head = layers.first { $0.name == "head" }
+        let wingBlurCount = layers.filter { $0.name == "wingBlur" }.count
+        let wingVeinCount = layers.filter { $0.name == "wingVein" }.count
+        let flapAnimations = layers.compactMap { $0.animation(forKey: "flap") as? CABasicAnimation }
+
+        #expect(size > GardenBugSprites.containerSize(for: .hoverfly))
+        #expect((abdomen?.bounds.width ?? 0) > (thorax?.bounds.width ?? .greatestFiniteMagnitude))
+        #expect((thorax?.bounds.height ?? 0) > (head?.bounds.height ?? .greatestFiniteMagnitude))
+        #expect(wingBlurCount == 2)
+        #expect(wingVeinCount >= 8)
+        #expect(flapAnimations.contains { $0.duration <= 0.025 })
     }
 
     @Test("behavior animations are attached for feeding and resting")
@@ -168,6 +205,14 @@ struct GardenBugSystemTests {
             names.append(contentsOf: recursiveLayerNames(in: sublayer))
         }
         return names
+    }
+
+    private func recursiveLayers(in layer: CALayer) -> [CALayer] {
+        var layers = [layer]
+        for sublayer in layer.sublayers ?? [] {
+            layers.append(contentsOf: recursiveLayers(in: sublayer))
+        }
+        return layers
     }
 
     private func recursiveAnimationKeys(in layer: CALayer) -> Set<String> {
