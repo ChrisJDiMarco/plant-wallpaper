@@ -27,6 +27,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var displayRefreshInterval: TimeInterval?
     private var lastTimeLapseCheckDay: String?
     private var lastGardenInteractionLocked = false
+    private var lastUseAIGeneratedLockSnapshot = GardenSettings.default.useAIGeneratedLockSnapshot
     private var isSmartLockWallpaperActive = false
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -50,6 +51,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         gardenStore.removePlantsWithoutDisplayableAssets()
         gardenStore.save()
         lastGardenInteractionLocked = gardenStore.state.settings.isGardenInteractionLocked
+        lastUseAIGeneratedLockSnapshot = gardenStore.state.settings.useAIGeneratedLockSnapshot
         wallpaperManager.applyLivingSceneWallpaper(to: targetScreens(from: screens, settings: gardenStore.state.settings))
         let overlayController = GardenOverlayController(store: gardenStore)
 
@@ -484,13 +486,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func handleSmartLockSettingWhileLocked() {
-        guard let store,
-              store.state.settings.isGardenInteractionLocked else {
+        guard let store else {
             return
         }
 
-        if store.state.settings.useAIGeneratedLockSnapshot {
-            if !isSmartLockWallpaperActive, smartLockWallpaperTask == nil {
+        let settings = store.state.settings
+        let didToggleAILockView = settings.useAIGeneratedLockSnapshot != lastUseAIGeneratedLockSnapshot
+        lastUseAIGeneratedLockSnapshot = settings.useAIGeneratedLockSnapshot
+
+        guard settings.isGardenInteractionLocked else {
+            return
+        }
+
+        if settings.useAIGeneratedLockSnapshot {
+            if didToggleAILockView, !isSmartLockWallpaperActive, smartLockWallpaperTask == nil {
                 startSmartLockWallpaperGenerationIfNeeded()
             }
             return
