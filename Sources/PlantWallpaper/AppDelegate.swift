@@ -165,7 +165,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             object: nil,
             queue: .main
         ) { [weak self] _ in
-            Task { @MainActor in
+            MainActor.assumeIsolated {
                 self?.screensDidChange()
             }
         }
@@ -174,7 +174,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             object: gardenStore,
             queue: .main
         ) { [weak self] _ in
-            Task { @MainActor in
+            MainActor.assumeIsolated {
                 self?.gardenStoreDidChangeForDisplay()
             }
         }
@@ -304,7 +304,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func startTimers() {
         simulationTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
-            Task { @MainActor in
+            MainActor.assumeIsolated {
                 self?.simulationTimerFired()
             }
         }
@@ -312,7 +312,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         updateDisplayCadence()
 
         autosaveTimer = Timer.scheduledTimer(withTimeInterval: 20.0, repeats: true) { [weak self] _ in
-            Task { @MainActor in
+            MainActor.assumeIsolated {
                 self?.autosaveTimerFired()
             }
         }
@@ -329,7 +329,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         displayTimer?.invalidate()
         displayRefreshInterval = safeInterval
         displayTimer = Timer.scheduledTimer(withTimeInterval: safeInterval, repeats: true) { [weak self] _ in
-            Task { @MainActor in
+            MainActor.assumeIsolated {
                 self?.displayTimerFired()
             }
         }
@@ -596,7 +596,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func scheduleScreenSaverSnapshotPublish(delay: TimeInterval = 0.8) {
         screenSaverSnapshotTimer?.invalidate()
         screenSaverSnapshotTimer = Timer.scheduledTimer(withTimeInterval: delay, repeats: false) { [weak self] _ in
-            Task { @MainActor in
+            MainActor.assumeIsolated {
                 self?.publishScreenSaverSnapshot()
             }
         }

@@ -151,6 +151,25 @@ final class CatCompanionWindow: NSWindow {
 /// Hosts one Three.js cat per screen in a transparent WKWebView. The cat
 /// lives entirely in the bundled web assets (WebAssets/cat); this controller
 /// only manages windows, lifecycle, and power state.
+private final class CatCompanionEventRelay: @unchecked Sendable {
+    weak var controller: CatCompanionController?
+
+    init(controller: CatCompanionController) {
+        self.controller = controller
+    }
+
+    func dispatch(_ body: @escaping @MainActor (CatCompanionController) -> Void) {
+        DispatchQueue.main.async { [weak self] in
+            guard let controller = self?.controller else {
+                return
+            }
+            MainActor.assumeIsolated {
+                body(controller)
+            }
+        }
+    }
+}
+
 @MainActor
 final class CatCompanionController: NSObject {
     static let enabledDefaultsKey = "catCompanionEnabled"
@@ -181,6 +200,7 @@ final class CatCompanionController: NSObject {
     private var globalClickMonitor: Any?
     private var localClickMonitor: Any?
     private var clickSnapshotTimer: Timer?
+    private lazy var eventRelay = CatCompanionEventRelay(controller: self)
     private var workspaceObservers: [NSObjectProtocol] = []
     private var notificationObservers: [NSObjectProtocol] = []
     private let chatWindowController: CatCompanionChatWindowController
@@ -264,11 +284,11 @@ final class CatCompanionController: NSObject {
             object: object,
             queue: .main
         ) { [weak self] notification in
+            guard let self else {
+                return
+            }
             let delivery = MainActorNotificationDelivery(notification: notification)
-            Task { @MainActor in
-                guard let self else {
-                    return
-                }
+            MainActor.assumeIsolated {
                 handler(self, delivery.notification)
             }
         }
@@ -284,11 +304,11 @@ final class CatCompanionController: NSObject {
             object: nil,
             queue: .main
         ) { [weak self] notification in
+            guard let self else {
+                return
+            }
             let delivery = MainActorNotificationDelivery(notification: notification)
-            Task { @MainActor in
-                guard let self else {
-                    return
-                }
+            MainActor.assumeIsolated {
                 handler(self, delivery.notification)
             }
         }
@@ -300,17 +320,15 @@ final class CatCompanionController: NSObject {
     /// for our own garden windows) lets a click still reach the cat — used
     /// to tap a climbing cat down off the screen edge.
     private func startClickMonitors() {
-        globalClickMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown]) { [weak self] _ in
-            Task { @MainActor in
-                guard let self else {
-                    return
-                }
+        let relay = eventRelay
+        globalClickMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown]) { _ in
+            relay.dispatch { controller in
                 let point = NSEvent.mouseLocation
-                if self.chatWindowController.dismissForOutsideClickIfNeeded(at: point)
-                    || self.chatWindowController.containsScreenPoint(point) {
+                if controller.chatWindowController.dismissForOutsideClickIfNeeded(at: point)
+                    || controller.chatWindowController.containsScreenPoint(point) {
                     return
                 }
-                self.forwardClick(at: point)
+                controller.forwardClick(at: point)
             }
         }
         localClickMonitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown]) { [weak self] event in
@@ -326,9 +344,7 @@ final class CatCompanionController: NSObject {
                 self.forwardClick(at: point, suppressChat: true)
                 return nil
             }
-            Task { @MainActor in
-                self.forwardClick(at: point)
-            }
+            self.forwardClick(at: point)
             return event
         }
     }
@@ -737,7 +753,7 @@ final class CatCompanionController: NSObject {
     private func startDesktopEnvironmentTimer() {
         desktopEnvironmentTimer?.invalidate()
         desktopEnvironmentTimer = Timer.scheduledTimer(withTimeInterval: 5, repeats: true) { [weak self] _ in
-            Task { @MainActor in
+            MainActor.assumeIsolated {
                 self?.pushDesktopEnvironmentIfNeeded()
             }
         }
@@ -815,7 +831,7 @@ final class CatCompanionController: NSObject {
     private func startMouseTimer() {
         mouseTimer?.invalidate()
         mouseTimer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] _ in
-            Task { @MainActor in
+            MainActor.assumeIsolated {
                 self?.mouseTimerFired()
             }
         }
@@ -825,7 +841,7 @@ final class CatCompanionController: NSObject {
     private func startClickSnapshotTimer() {
         clickSnapshotTimer?.invalidate()
         clickSnapshotTimer = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { [weak self] _ in
-            Task { @MainActor in
+            MainActor.assumeIsolated {
                 self?.refreshClickSnapshots()
             }
         }

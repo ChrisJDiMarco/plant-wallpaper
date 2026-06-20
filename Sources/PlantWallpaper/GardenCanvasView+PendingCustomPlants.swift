@@ -143,7 +143,7 @@ extension GardenCanvasView {
             withTimeInterval: Self.pendingCustomAssetAnimationInterval,
             repeats: true
         ) { [weak self] _ in
-            Task { @MainActor in
+            MainActor.assumeIsolated {
                 self?.invalidatePendingCustomPlantAssetRegionsForAnimation()
             }
         }

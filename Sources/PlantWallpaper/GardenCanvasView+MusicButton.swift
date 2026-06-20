@@ -455,7 +455,7 @@ extension GardenCanvasView {
         }
 
         musicButtonHoverAnimationTimer = Timer.scheduledTimer(withTimeInterval: 1 / 24, repeats: true) { [weak self] _ in
-            Task { @MainActor [weak self] in
+            MainActor.assumeIsolated {
                 guard let self else {
                     return
                 }

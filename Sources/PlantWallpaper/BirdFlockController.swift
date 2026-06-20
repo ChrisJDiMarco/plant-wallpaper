@@ -100,8 +100,11 @@ final class BirdFlockController: NSObject {
             object: store,
             queue: .main
         ) { [weak self] _ in
-            Task { @MainActor in
-                self?.storeDidChange()
+            guard let self else {
+                return
+            }
+            MainActor.assumeIsolated {
+                self.storeDidChange()
             }
         }
     }
@@ -323,7 +326,7 @@ final class BirdFlockController: NSObject {
         }
 
         lightRefreshTimer = Timer.scheduledTimer(withTimeInterval: 90, repeats: true) { [weak self] _ in
-            Task { @MainActor in
+            MainActor.assumeIsolated {
                 self?.refresh()
             }
         }

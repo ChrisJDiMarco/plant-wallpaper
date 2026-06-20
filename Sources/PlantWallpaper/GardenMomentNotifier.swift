@@ -48,7 +48,7 @@ final class GardenMomentNotifier {
         storeObserver = NotificationCenter.default.addObserver(
             forName: .gardenStoreDidChange,
             object: store,
-            queue: nil
+            queue: .main
         ) { [weak self] _ in
             guard let self else {
                 return

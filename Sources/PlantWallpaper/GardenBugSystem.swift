@@ -97,13 +97,13 @@ final class GardenBugSystem {
         hostLayer.autoresizingMask = [.layerWidthSizable, .layerHeightSizable]
         view.layer?.addSublayer(hostLayer)
         planTimer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: true) { [weak self] _ in
-            Task { @MainActor in
+            MainActor.assumeIsolated {
                 self?.syncPopulation()
             }
         }
         planTimer?.tolerance = 0.5
         preyTimer = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { [weak self] _ in
-            Task { @MainActor in
+            MainActor.assumeIsolated {
                 self?.publishPreySnapshot()
             }
         }
@@ -115,7 +115,7 @@ final class GardenBugSystem {
         ) { [weak self] notification in
             let bugID = notification.userInfo?["bugID"] as? String
             let targetScreen = notification.userInfo?["screenIndex"] as? Int
-            Task { @MainActor in
+            MainActor.assumeIsolated {
                 self?.handleCatCaughtBug(id: bugID, screenIndex: targetScreen)
             }
         }

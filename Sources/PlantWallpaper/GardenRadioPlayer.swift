@@ -199,7 +199,7 @@ final class GardenRadioPlayer: GardenMusicPlaybackControlling {
             withTimeInterval: Self.playbackStartGracePeriod,
             repeats: false
         ) { [weak self] _ in
-            Task { @MainActor [weak self] in
+            MainActor.assumeIsolated {
                 self?.fallbackIfPlaybackDidNotStart()
             }
         }

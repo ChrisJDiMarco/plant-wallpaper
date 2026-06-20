@@ -138,8 +138,11 @@ final class GnomeTribeController: NSObject {
             object: store,
             queue: .main
         ) { [weak self] _ in
-            Task { @MainActor in
-                self?.storeDidChange()
+            guard let self else {
+                return
+            }
+            MainActor.assumeIsolated {
+                self.storeDidChange()
             }
         }
     }
@@ -633,7 +636,7 @@ final class GnomeTribeController: NSObject {
         }
 
         routineRefreshTimer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in
-            Task { @MainActor in
+            MainActor.assumeIsolated {
                 self?.refresh()
             }
         }

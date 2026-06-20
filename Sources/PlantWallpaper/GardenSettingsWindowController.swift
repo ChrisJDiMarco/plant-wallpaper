@@ -423,10 +423,13 @@ final class GardenSettingsWindowController: NSWindowController {
         storeObserver = NotificationCenter.default.addObserver(
             forName: .gardenStoreDidChange,
             object: store,
-            queue: nil
+            queue: .main
         ) { [weak self] _ in
-            Task { @MainActor in
-                self?.storeDidChange()
+            guard let self else {
+                return
+            }
+            MainActor.assumeIsolated {
+                self.storeDidChange()
             }
         }
     }
@@ -556,8 +559,8 @@ final class GardenSettingsWindowController: NSWindowController {
         }
 
         // Keeps non-store-driven status fresh (radio playback, keychain, login item).
-        uiRefreshTimer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: true) { _ in
-            Task { @MainActor [weak self] in
+        uiRefreshTimer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated {
                 self?.refreshDynamicContent()
             }
         }
@@ -2689,8 +2692,8 @@ final class GardenSettingsWindowController: NSWindowController {
     private func updateSettingsDebounced(_ transform: (GardenSettings) -> GardenSettings) {
         store.updateSettings(transform(store.state.settings), persist: false)
         saveDebounceTimer?.invalidate()
-        saveDebounceTimer = Timer.scheduledTimer(withTimeInterval: 0.6, repeats: false) { _ in
-            Task { @MainActor [weak self] in
+        saveDebounceTimer = Timer.scheduledTimer(withTimeInterval: 0.6, repeats: false) { [weak self] _ in
+            MainActor.assumeIsolated {
                 self?.flushPendingSettingsSave()
             }
         }
@@ -2699,8 +2702,8 @@ final class GardenSettingsWindowController: NSWindowController {
     private func updateSceneVisualsDebounced(_ update: () -> Void) {
         update()
         saveDebounceTimer?.invalidate()
-        saveDebounceTimer = Timer.scheduledTimer(withTimeInterval: 0.6, repeats: false) { _ in
-            Task { @MainActor [weak self] in
+        saveDebounceTimer = Timer.scheduledTimer(withTimeInterval: 0.6, repeats: false) { [weak self] _ in
+            MainActor.assumeIsolated {
                 self?.flushPendingSettingsSave()
             }
         }

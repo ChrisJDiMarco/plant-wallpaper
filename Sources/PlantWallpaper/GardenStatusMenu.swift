@@ -315,7 +315,7 @@ final class GardenStatusMenu: NSObject {
     )
     private var catSettingsWindowController: CatCompanionSettingsWindowController?
     private var welcomeController: GardenWelcomeController?
-    private var mouseTrackingMonitor: Any?
+    private var mouseTrackingTimer: Timer?
     private var menuDelegate: MainActorMenuDelegate?
     private var notificationObservers: [NSObjectProtocol] = []
     private var lastDesktopPlantingTarget: PlantingTarget?
@@ -354,7 +354,7 @@ final class GardenStatusMenu: NSObject {
         let observer = NotificationCenter.default.addObserver(
             forName: name,
             object: object,
-            queue: nil
+            queue: .main
         ) { [weak self] notification in
             guard let self else {
                 return
@@ -3137,14 +3137,12 @@ final class GardenStatusMenu: NSObject {
 
     private func installDesktopMouseTracking() {
         updateDesktopPlantingTarget(at: NSEvent.mouseLocation)
-        // Global mouse-moved monitors fire for every pixel of motion. Throttle
-        // sampling: the planting target only needs coarse recency, not
-        // per-event precision. AppKit delivers the handler through its event
-        // machinery, which is not necessarily a Swift main-actor executor.
-        mouseTrackingMonitor = NSEvent.addGlobalMonitorForEvents(
-            matching: [.mouseMoved, .leftMouseDragged, .rightMouseDragged]
-        ) { [weak self] _ in
-            DispatchQueue.main.async {
+        // The planting target only needs coarse recency, not per-pixel mouse
+        // precision. A main-runloop timer avoids AppKit global monitor callbacks
+        // crossing Swift's MainActor boundary from event-dispatch internals.
+        mouseTrackingTimer?.invalidate()
+        mouseTrackingTimer = Timer.scheduledTimer(withTimeInterval: 0.12, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated {
                 guard let self else {
                     return
                 }
@@ -3158,6 +3156,7 @@ final class GardenStatusMenu: NSObject {
                 self.updateDesktopPlantingTarget(at: NSEvent.mouseLocation)
             }
         }
+        mouseTrackingTimer?.tolerance = 0.04
     }
 
     private func updateDesktopPlantingTarget(at screenPoint: NSPoint) {

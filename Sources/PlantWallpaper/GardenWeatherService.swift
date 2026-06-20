@@ -28,7 +28,7 @@ final class GardenWeatherService: NSObject, CLLocationManagerDelegate {
             object: store,
             queue: .main
         ) { [weak self] _ in
-            Task { @MainActor in
+            MainActor.assumeIsolated {
                 self?.storeDidChange()
             }
         }
@@ -37,7 +37,7 @@ final class GardenWeatherService: NSObject, CLLocationManagerDelegate {
             object: nil,
             queue: .main
         ) { [weak self] _ in
-            Task { @MainActor in
+            MainActor.assumeIsolated {
                 self?.systemDidWake()
             }
         }
@@ -91,8 +91,8 @@ final class GardenWeatherService: NSObject, CLLocationManagerDelegate {
         refreshTimer = Timer.scheduledTimer(
             withTimeInterval: Self.refreshInterval,
             repeats: true
-        ) { _ in
-            Task { @MainActor [weak self] in
+        ) { [weak self] _ in
+            MainActor.assumeIsolated {
                 self?.refreshIfEnabled()
             }
         }

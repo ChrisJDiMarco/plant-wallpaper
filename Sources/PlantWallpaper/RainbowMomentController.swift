@@ -70,8 +70,11 @@ final class RainbowMomentController: NSObject {
             object: store,
             queue: .main
         ) { [weak self] _ in
-            Task { @MainActor in
-                self?.storeDidChange()
+            guard let self else {
+                return
+            }
+            MainActor.assumeIsolated {
+                self.storeDidChange()
             }
         }
         startRefreshTimer()
@@ -186,7 +189,7 @@ final class RainbowMomentController: NSObject {
     private func startRefreshTimer() {
         refreshTimer?.invalidate()
         refreshTimer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: true) { [weak self] _ in
-            Task { @MainActor in
+            MainActor.assumeIsolated {
                 self?.refresh()
             }
         }

@@ -10,6 +10,25 @@ enum GardenDesktopEventTapStatus {
     static var isUnavailable = false
 }
 
+private final class GardenOverlayEventRelay: @unchecked Sendable {
+    weak var controller: GardenOverlayController?
+
+    init(controller: GardenOverlayController) {
+        self.controller = controller
+    }
+
+    func dispatch(_ body: @escaping @MainActor (GardenOverlayController) -> Void) {
+        DispatchQueue.main.async { [weak self] in
+            guard let controller = self?.controller else {
+                return
+            }
+            MainActor.assumeIsolated {
+                body(controller)
+            }
+        }
+    }
+}
+
 @MainActor
 final class GardenOverlayController {
     private let store: GardenStore
@@ -50,6 +69,7 @@ final class GardenOverlayController {
     private var isSoilBrushMode = false
     private var isGnomePerspectiveAdjustmentMode = false
     private var gnomePerspectiveDragSession: GnomePerspectiveDragSession?
+    private lazy var eventRelay = GardenOverlayEventRelay(controller: self)
     private var eventTap: CFMachPort?
     private var eventTapRunLoopSource: CFRunLoopSource?
     private var lastObservedExperienceMode: GardenExperienceMode?
@@ -147,11 +167,11 @@ final class GardenOverlayController {
             object: object,
             queue: .main
         ) { [weak self] notification in
+            guard let self else {
+                return
+            }
             let delivery = MainActorNotificationDelivery(notification: notification)
-            Task { @MainActor in
-                guard let self else {
-                    return
-                }
+            MainActor.assumeIsolated {
                 handler(self, delivery.notification)
             }
         }
@@ -584,58 +604,52 @@ final class GardenOverlayController {
     }
 
     private func installEventMonitors() {
-        globalMouseDownMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown]) { [weak self] event in
-            Task { @MainActor in
-                guard let self else {
-                    return
-                }
-
+        let relay = eventRelay
+        globalMouseDownMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown]) { event in
+            let clickCount = event.clickCount
+            relay.dispatch { controller in
                 let screenPoint = NSEvent.mouseLocation
-                guard self.canHandleDesktopMouse(at: screenPoint, forceFreshSnapshot: true) else {
+                guard controller.canHandleDesktopMouse(at: screenPoint, forceFreshSnapshot: true) else {
                     return
                 }
 
-                if self.claimWallCatClickIfNeeded(at: screenPoint) {
+                if controller.claimWallCatClickIfNeeded(at: screenPoint) {
                     return
                 }
 
-                if self.openDesktopPlantingMenuIfNeeded(at: screenPoint, clickCount: event.clickCount) {
+                if controller.openDesktopPlantingMenuIfNeeded(at: screenPoint, clickCount: clickCount) {
                     return
                 }
 
-                if self.canClearSelectionFromMouseDown(at: screenPoint),
-                   self.clearSelectionIfEmptyScreenPoint(at: screenPoint) {
+                if controller.canClearSelectionFromMouseDown(at: screenPoint),
+                   controller.clearSelectionIfEmptyScreenPoint(at: screenPoint) {
                     return
                 }
 
-                self.handleMouseDown(at: screenPoint, clickCount: event.clickCount)
+                controller.handleMouseDown(at: screenPoint, clickCount: clickCount)
             }
         }
 
-        globalMouseDraggedMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDragged]) { [weak self] event in
-            Task { @MainActor in
-                guard let self else {
-                    return
-                }
-
+        globalMouseDraggedMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDragged]) { _ in
+            relay.dispatch { controller in
                 let screenPoint = NSEvent.mouseLocation
-                guard self.canHandleDesktopDrag(at: screenPoint, forceFreshSnapshot: true) else {
+                guard controller.canHandleDesktopDrag(at: screenPoint, forceFreshSnapshot: true) else {
                     return
                 }
 
-                self.handleMouseDragged(at: screenPoint)
+                controller.handleMouseDragged(at: screenPoint)
             }
         }
 
-        globalMouseUpMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseUp]) { [weak self] _ in
-            Task { @MainActor in
-                self?.handleMouseUp()
+        globalMouseUpMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseUp]) { _ in
+            relay.dispatch { controller in
+                controller.handleMouseUp()
             }
         }
 
-        globalMouseMovedMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.mouseMoved, .leftMouseDragged]) { [weak self] event in
-            Task { @MainActor in
-                self?.updateMouseRouting(at: NSEvent.mouseLocation)
+        globalMouseMovedMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.mouseMoved, .leftMouseDragged]) { _ in
+            relay.dispatch { controller in
+                controller.updateMouseRouting(at: NSEvent.mouseLocation)
             }
         }
     }
@@ -646,7 +660,8 @@ final class GardenOverlayController {
             | CGEventMask(1 << CGEventType.leftMouseUp.rawValue)
             | CGEventMask(1 << CGEventType.mouseMoved.rawValue)
 
-        let userInfo = Unmanaged.passUnretained(self).toOpaque()
+        let relay = eventRelay
+        let userInfo = Unmanaged.passUnretained(relay).toOpaque()
         guard let tap = CGEvent.tapCreate(
             tap: .cgSessionEventTap,
             place: .headInsertEventTap,
@@ -657,12 +672,12 @@ final class GardenOverlayController {
                     return Unmanaged.passUnretained(event)
                 }
 
-                let controller = Unmanaged<GardenOverlayController>
+                let relay = Unmanaged<GardenOverlayEventRelay>
                     .fromOpaque(userInfo)
                     .takeUnretainedValue()
                 let quartzLocation = event.location
                 let clickCount = Int(event.getIntegerValueField(.mouseEventClickState))
-                Task { @MainActor in
+                relay.dispatch { controller in
                     controller.handleEventTap(
                         type: type,
                         quartzLocation: quartzLocation,
@@ -743,7 +758,7 @@ final class GardenOverlayController {
             withTimeInterval: GardenPointerRoutingCadence.refreshInterval,
             repeats: true
         ) { [weak self] _ in
-            Task { @MainActor in
+            MainActor.assumeIsolated {
                 self?.pointerRoutingTimerFired()
             }
         }

@@ -49,7 +49,7 @@ final class GnomeSettlementSetupPanelController: NSWindowController {
             object: store,
             queue: .main
         ) { [weak self] _ in
-            Task { @MainActor in
+            MainActor.assumeIsolated {
                 self?.refresh()
             }
         }

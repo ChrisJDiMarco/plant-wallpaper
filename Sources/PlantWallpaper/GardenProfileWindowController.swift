@@ -45,10 +45,13 @@ final class GardenProfileWindowController: NSObject {
         entitlementsObserver = NotificationCenter.default.addObserver(
             forName: .gardenEntitlementsDidChange,
             object: nil,
-            queue: nil
+            queue: .main
         ) { [weak self] _ in
-            Task { @MainActor in
-                self?.entitlementsDidChange()
+            guard let self else {
+                return
+            }
+            MainActor.assumeIsolated {
+                self.entitlementsDidChange()
             }
         }
     }
