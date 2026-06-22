@@ -139,7 +139,20 @@ final class PlantAssetLibrary {
     }
 
     func initialGrowth(for species: PlantSpecies) -> Double {
-        hasCompleteGrowthAssetSet(for: species) ? 0.08 : 1.0
+        availableStageIndices(for: species).contains(0) ? 0.08 : 1.0
+    }
+
+    func nextGrowthMilestone(for species: PlantSpecies, growth: Double) -> Double? {
+        let currentIndex = stageIndex(for: growth)
+        guard let nextIndex = availableStageIndices(for: species)
+            .sorted()
+            .first(where: { $0 > currentIndex }) else {
+            return nil
+        }
+
+        return nextIndex == Self.stageCount - 1
+            ? 1.0
+            : Double(nextIndex) / Double(Self.stageCount)
     }
 
     func displayableSpecies(in kind: PlantKind? = nil) -> [PlantSpecies] {

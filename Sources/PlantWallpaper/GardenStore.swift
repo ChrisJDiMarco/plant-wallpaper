@@ -160,7 +160,31 @@ final class GardenStore: NSObject {
     }
 
     func nourishPlant(id: UUID) {
-        let nextState = GardenEngine.nourishPlant(state, id: id)
+        let selectedPlant = state.plants.first { $0.id == id }
+        var nextState = GardenEngine.nourishPlant(state, id: id)
+        if let selectedPlant,
+           selectedPlant.customAssetID == nil,
+           !selectedPlant.isDead,
+           let nextGrowth = PlantAssetLibrary.shared.nextGrowthMilestone(
+            for: selectedPlant.species,
+            growth: selectedPlant.growth
+           ),
+           nextGrowth > selectedPlant.growth {
+            let now = Date()
+            nextState.plants = nextState.plants.map { plant in
+                guard plant.id == id else {
+                    return plant
+                }
+
+                var plant = plant
+                plant.growth = nextGrowth
+                plant.lastStageChangedAt = now
+                plant.lastTendedAt = now
+                plant.lastNourishedAt = now
+                return plant
+            }
+            nextState.lastUpdatedAt = now
+        }
         guard nextState != state else {
             return
         }

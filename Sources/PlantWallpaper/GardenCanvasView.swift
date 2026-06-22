@@ -142,6 +142,7 @@ final class GardenCanvasView: NSView {
     var resizeSession: PlantResizeSession?
     var musicButtonDragSession: MusicButtonDragSession?
     var musicButtonHoverState: MusicButtonHoverState?
+    var inspectorHoverAction: InspectorAction?
     var pendingCustomAssetDragSession: PendingCustomAssetDragSession?
     var pendingCustomAssetAnimationTimer: Timer?
     var isGnomeZoneDrawingMode = false {
@@ -304,12 +305,14 @@ final class GardenCanvasView: NSView {
     override func mouseMoved(with event: NSEvent) {
         super.mouseMoved(with: event)
         let point = convert(event.locationInWindow, from: nil)
+        updateInspectorActionHover(at: point)
         updateMusicButtonHover(at: point)
         updatePerspectiveHover(at: [point])
     }
 
     override func mouseExited(with event: NSEvent) {
         super.mouseExited(with: event)
+        clearInspectorActionHover()
         clearMusicButtonHover()
         clearPerspectiveHover()
     }

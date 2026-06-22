@@ -906,8 +906,8 @@ struct PlantAssetLibraryTests {
         }
     }
 
-    @Test("incomplete staged species load real artwork and start mature")
-    func incompleteStagedSpeciesLoadRealArtworkAndStartMature() {
+    @Test("partial staged species start at beginning and advance through available artwork")
+    func partialStagedSpeciesStartAtBeginningAndAdvanceThroughAvailableArtwork() {
         let library = PlantAssetLibrary()
 
         #expect(library.image(for: .ivy, stageIndex: 5) != nil)
@@ -919,9 +919,13 @@ struct PlantAssetLibraryTests {
         #expect(library.hasDisplayableAsset(for: .determinateTomato))
         #expect(library.hasDisplayableAsset(for: .rosemary))
         #expect(library.initialGrowth(for: .fern) == 0.08)
-        #expect(library.initialGrowth(for: .ivy) == 1.0)
-        #expect(library.initialGrowth(for: .pitcherPlant) == 1.0)
-        #expect(library.initialGrowth(for: .determinateTomato) == 1.0)
+        #expect(library.initialGrowth(for: .ivy) == 0.08)
+        #expect(library.initialGrowth(for: .pitcherPlant) == 0.08)
+        #expect(library.initialGrowth(for: .determinateTomato) == 0.08)
+        #expect(library.nextGrowthMilestone(for: .pitcherPlant, growth: 0.08) == 0.2)
+        #expect(library.nextGrowthMilestone(for: .pitcherPlant, growth: 0.2) == 0.5)
+        #expect(library.nextGrowthMilestone(for: .pitcherPlant, growth: 0.5) == 1.0)
+        #expect(library.nextGrowthMilestone(for: .pitcherPlant, growth: 1.0) == nil)
         #expect(library.displayableSpecies(in: .tree).contains(.bonsai))
         #expect(library.displayableSpecies(in: .flower).contains(.rose))
         #expect(library.displayableSpecies(in: .foliage).contains(.pitcherPlant))
@@ -959,12 +963,12 @@ struct PlantAssetLibraryTests {
 @MainActor
 @Suite("Garden store scene switching")
 struct GardenStoreSceneSwitchingTests {
-    @Test("mature-only PNG assets are retained in scenes")
-    func matureOnlyPNGAssetsAreRetainedInScenes() throws {
+    @Test("partial PNG assets are retained in scenes")
+    func partialPNGAssetsAreRetainedInScenes() throws {
         let fixture = try TemporaryWallpaperFixture()
         defer { fixture.cleanup() }
 
-        let matureOnlyPlant = Plant(
+        let partialAssetPlant = Plant(
             species: .pitcherPlant,
             screenIndex: 0,
             position: GardenPoint(x: 0.40, y: 0.72)
@@ -975,17 +979,40 @@ struct GardenStoreSceneSwitchingTests {
             position: GardenPoint(x: 0.58, y: 0.78)
         )
         let store = GardenStore(
-            state: GardenState(plants: [matureOnlyPlant, supportedPlant]),
+            state: GardenState(plants: [partialAssetPlant, supportedPlant]),
             persistence: GardenPersistence(directoryURL: fixture.directoryURL)
         )
-        store.setSelectedPlant(matureOnlyPlant.id)
+        store.setSelectedPlant(partialAssetPlant.id)
         let counter = GardenStoreNotificationCounter(store: store)
 
         store.removePlantsWithoutDisplayableAssets()
 
         #expect(store.state.plants.map(\.species) == [.pitcherPlant, .fern])
-        #expect(store.selectedPlantID == matureOnlyPlant.id)
+        #expect(store.selectedPlantID == partialAssetPlant.id)
         #expect(counter.snapshots.isEmpty)
+    }
+
+    @Test("nourishing a partial staged plant jumps through available artwork stages")
+    func nourishingPartialStagedPlantJumpsThroughAvailableArtworkStages() throws {
+        let fixture = try TemporaryWallpaperFixture()
+        defer { fixture.cleanup() }
+
+        let store = GardenStore(
+            state: GardenState(plants: []),
+            persistence: GardenPersistence(directoryURL: fixture.directoryURL)
+        )
+
+        store.addPlant(species: .pitcherPlant, screenIndex: 0, position: GardenPoint(x: 0.45, y: 0.72))
+        #expect(store.selectedPlant?.growth == 0.08)
+
+        store.nourishSelectedPlant()
+        #expect(store.selectedPlant?.growth == 0.2)
+
+        store.nourishSelectedPlant()
+        #expect(store.selectedPlant?.growth == 0.5)
+
+        store.nourishSelectedPlant()
+        #expect(store.selectedPlant?.growth == 1.0)
     }
 
     @Test("displayable plant positions survive scene-switch cleanup exactly")
@@ -1330,7 +1357,7 @@ struct GardenStoreSceneSwitchingTests {
 
         let selectedPlant = try #require(store.selectedPlant)
         #expect(selectedPlant.species == .jasmine)
-        #expect(selectedPlant.growth == 1.0)
+        #expect(selectedPlant.growth == PlantAssetLibrary.shared.initialGrowth(for: .jasmine))
         #expect(store.state.plants.count == 1)
         #expect(counter.snapshots == [
             GardenStoreNotificationSnapshot(

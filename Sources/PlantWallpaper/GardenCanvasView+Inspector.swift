@@ -69,6 +69,19 @@ extension GardenCanvasView {
         for (action, buttonRect) in inspectorActionRects(for: plant) {
             drawInspectorAction(action, for: plant, in: buttonRect)
         }
+
+        let hoveredActionRect = inspectorHoverAction.flatMap { hoveredAction in
+            inspectorActionRects(for: plant).first { $0.0 == hoveredAction }
+        }
+        if let inspectorHoverAction,
+           inspectorActions(for: plant).contains(inspectorHoverAction),
+           let hoveredActionRect {
+            drawInspectorTooltip(
+                tooltip(for: inspectorHoverAction, plant: plant),
+                above: hoveredActionRect.1,
+                in: rect
+            )
+        }
     }
 
     func drawSelectionFrame(for plant: Plant) {
@@ -292,6 +305,7 @@ extension GardenCanvasView {
     }
 
     func performInspectorAction(_ action: InspectorAction) {
+        clearInspectorActionHover()
         switch action {
         case .care:
             store.performRecommendedCareForSelectedPlant()
@@ -328,6 +342,31 @@ extension GardenCanvasView {
             pinnedInspectorRect = nil
             plantExplorerPlantID = nil
         }
+    }
+
+    func updateInspectorActionHover(at point: NSPoint) {
+        let nextAction = store.selectedPlant.flatMap { plant -> InspectorAction? in
+            guard plant.screenIndex == screenIndex, canDisplay(plant) else {
+                return nil
+            }
+
+            return inspectorAction(at: point, for: plant)
+        }
+        guard nextAction != inspectorHoverAction else {
+            return
+        }
+
+        inspectorHoverAction = nextAction
+        needsDisplay = true
+    }
+
+    func clearInspectorActionHover() {
+        guard inspectorHoverAction != nil else {
+            return
+        }
+
+        inspectorHoverAction = nil
+        needsDisplay = true
     }
 
     func drawInspectorAction(_ action: InspectorAction, for plant: Plant, in rect: NSRect) {
@@ -393,6 +432,52 @@ extension GardenCanvasView {
             return plant.placementLocked ? "Unlock Placement" : "Lock Placement"
         }
         return action.accessibilityLabel
+    }
+
+    func tooltip(for action: InspectorAction, plant: Plant) -> String {
+        switch action {
+        case .care:
+            "Do recommended care"
+        case .water:
+            "Water this plant"
+        case .nourish:
+            "Grow to next stage"
+        case .harvest:
+            "Harvest ready crop"
+        case .prune:
+            "Prune and collect seeds"
+        case .clone:
+            "Duplicate this plant"
+        case .explore:
+            "Open plant details"
+        case .lockPlacement:
+            plant.placementLocked ? "Unlock placement" : "Lock placement"
+        case .remove:
+            "Remove this plant"
+        }
+    }
+
+    func drawInspectorTooltip(_ text: String, above buttonRect: NSRect, in inspectorRect: NSRect) {
+        let attributes: [NSAttributedString.Key: Any] = [
+            .font: NSFont.systemFont(ofSize: 12, weight: .medium),
+            .foregroundColor: color(red: 247, green: 252, blue: 232, alpha: 0.98)
+        ]
+        let textSize = (text as NSString).size(withAttributes: attributes)
+        let width = min(inspectorRect.width - 28, textSize.width + 18)
+        let height: CGFloat = 26
+        let x = min(
+            max(inspectorRect.minX + 14, buttonRect.midX - width / 2),
+            inspectorRect.maxX - 14 - width
+        )
+        let y = max(inspectorRect.minY + 8, buttonRect.minY - height - 8)
+        let rect = NSRect(x: x, y: y, width: width, height: height)
+        let path = NSBezierPath(roundedRect: rect, xRadius: 7, yRadius: 7)
+        color(red: 45, green: 58, blue: 39, alpha: 0.94).setFill()
+        path.fill()
+        text.draw(
+            in: NSRect(x: rect.minX + 9, y: rect.minY + 5, width: rect.width - 18, height: 16),
+            withAttributes: attributes
+        )
     }
 
     func drawPlacementLockBadge(in rect: NSRect) {
