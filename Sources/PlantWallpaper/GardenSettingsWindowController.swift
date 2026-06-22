@@ -392,6 +392,9 @@ final class GardenSettingsWindowController: NSWindowController {
         currentRadioCompanion.stationStream(in: store.state.settings)
     }
 
+    private static let openAIAPIKeySettingsSubtitle = "Open Manage to add, replace, or remove the OpenAI key in Keychain."
+    private static let elevenLabsAPIKeySettingsSubtitle = "Open Manage to add, replace, or remove the ElevenLabs key in Keychain."
+
     init(store: GardenStore, wallpaperManager: WallpaperManager, actions: Actions) {
         self.store = store
         self.wallpaperManager = wallpaperManager
@@ -558,7 +561,7 @@ final class GardenSettingsWindowController: NSWindowController {
             return
         }
 
-        // Keeps non-store-driven status fresh (radio playback, keychain, login item).
+        // Keeps non-store-driven status fresh (radio playback, login item).
         uiRefreshTimer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated {
                 self?.refreshDynamicContent()
@@ -1700,11 +1703,7 @@ final class GardenSettingsWindowController: NSWindowController {
                 title: "OpenAI API key",
                 buttonTitle: "Manage...",
                 action: #selector(openAPIKeySettings),
-                subtitle: {
-                    OpenAIAPIKeyStore.load() == nil
-                        ? "No key stored in Keychain."
-                        : "A key is stored in Keychain."
-                }
+                subtitle: { Self.openAIAPIKeySettingsSubtitle }
             )
         ])
 
@@ -1715,11 +1714,7 @@ final class GardenSettingsWindowController: NSWindowController {
                 title: "ElevenLabs API key",
                 buttonTitle: "Manage...",
                 action: #selector(openElevenLabsAPIKeySettings),
-                subtitle: {
-                    ElevenLabsAPIKeyStore.load() == nil
-                        ? "No key stored in Keychain."
-                        : "A key is stored in Keychain."
-                }
+                subtitle: { Self.elevenLabsAPIKeySettingsSubtitle }
             )
         ])
 
@@ -1858,11 +1853,7 @@ final class GardenSettingsWindowController: NSWindowController {
                 title: "OpenAI API key",
                 buttonTitle: "Manage...",
                 action: #selector(openAPIKeySettings),
-                subtitle: {
-                    OpenAIAPIKeyStore.load() == nil
-                        ? "No key stored in Keychain."
-                        : "A key is stored in Keychain."
-                }
+                subtitle: { Self.openAIAPIKeySettingsSubtitle }
             )
         ])
     }

@@ -62,7 +62,8 @@ struct GardenReleaseReadinessEnvironment: Equatable {
             isRunningFromAppBundle: Bundle.main.bundleIdentifier != nil,
             isInputMonitoringLimited: GardenDesktopEventTapStatus.isUnavailable,
             isScreenSaverInstalled: defaultScreenSaverInstalled(),
-            isOpenAIKeyConfigured: OpenAIAPIKeyStore.load() != nil,
+            // Passive readiness must not prompt Keychain; generation checks the key on demand.
+            isOpenAIKeyConfigured: true,
             isProDevelopmentUnlocked: entitlementSnapshot.isDevelopmentUnlocked,
             isPaidEntitlementValidationConfigured: entitlementSnapshot.isPaidValidationConfigured,
             paidValidationProvider: entitlementSnapshot.paidValidationProvider,
