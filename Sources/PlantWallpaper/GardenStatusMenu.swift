@@ -903,9 +903,10 @@ final class GardenStatusMenu: NSObject {
 
     private func populateRoomIndoorPlantSubmenu(_ submenu: NSMenu) {
         submenu.removeAllItems()
+        let sceneRootKey = wallpaperManager.wallpaperSceneRootKey()
 
         let enabledSpecies = GardenPlantSpecificMenuCatalog.enabledRoomStudioIndoorSpecies(
-            sceneKey: store.activeSceneKey
+            sceneKey: sceneRootKey
         )
 
         let addNewItem = NSMenuItem(
@@ -948,7 +949,7 @@ final class GardenStatusMenu: NSObject {
         submenu.addItem(randomItem)
         submenu.addItem(NSMenuItem.separator())
 
-        let entries = GardenPlantSpecificMenuCatalog.roomStudioIndoorEntries(sceneKey: store.activeSceneKey)
+        let entries = GardenPlantSpecificMenuCatalog.roomStudioIndoorEntries(sceneKey: sceneRootKey)
         let assetReadyEntries = entries.filter(\.isAssetAvailable)
         let placeholderEntries = entries.filter { !$0.isAssetAvailable }
 
@@ -1821,9 +1822,10 @@ final class GardenStatusMenu: NSObject {
     ) {
         submenu.removeAllItems()
         let style = Self.plantMenuStyle(for: kind)
+        let sceneRootKey = wallpaperManager.wallpaperSceneRootKey()
 
         let hasEnabledSpecies = GardenPlantSpecificMenuCatalog.hasEnabledSpecies(
-            sceneKey: store.activeSceneKey,
+            sceneKey: sceneRootKey,
             in: kind
         )
         let addNewItem = NSMenuItem(
@@ -1866,7 +1868,7 @@ final class GardenStatusMenu: NSObject {
         submenu.addItem(randomItem)
         submenu.addItem(NSMenuItem.separator())
 
-        let entries = GardenPlantSpecificMenuCatalog.entries(sceneKey: store.activeSceneKey, in: kind)
+        let entries = GardenPlantSpecificMenuCatalog.entries(sceneKey: sceneRootKey, in: kind)
         let assetReadyEntries = entries.filter(\.isAssetAvailable)
         let placeholderEntries = entries.filter { !$0.isAssetAvailable }
 
@@ -2472,11 +2474,12 @@ final class GardenStatusMenu: NSObject {
     }
 
     private func updatePlantingShortcut(_ item: NSMenuItem, kind: PlantKind) {
+        let sceneRootKey = wallpaperManager.wallpaperSceneRootKey()
         let enabledSpecies = GardenPlantSpecificMenuCatalog.enabledSpecies(
-            sceneKey: store.activeSceneKey,
+            sceneKey: sceneRootKey,
             in: kind
         )
-        let environment = GardenScenePlantEnvironment(sceneKey: store.activeSceneKey)
+        let environment = GardenScenePlantEnvironment(sceneKey: sceneRootKey)
         item.isEnabled = !enabledSpecies.isEmpty
         let style = Self.plantMenuStyle(for: kind)
         let color = item.isEnabled ? style.accent : NSColor.disabledControlTextColor
@@ -2815,7 +2818,7 @@ final class GardenStatusMenu: NSObject {
 
     @objc private func plantRandomIndoorPlant() {
         guard let species = GardenPlantSpecificMenuCatalog.enabledRoomStudioIndoorSpecies(
-            sceneKey: store.activeSceneKey
+            sceneKey: wallpaperManager.wallpaperSceneRootKey()
         ).randomElement() else {
             return
         }
@@ -2844,7 +2847,8 @@ final class GardenStatusMenu: NSObject {
         }
 
         submenu.removeAllItems()
-        let insights = GardenGameLoopInsights(state: store.state, sceneKey: store.activeSceneKey)
+        let sceneRootKey = wallpaperManager.wallpaperSceneRootKey()
+        let insights = GardenGameLoopInsights(state: store.state, sceneKey: sceneRootKey)
         let inventory = GardenGameLoopInsights.seedInventoryEntries(in: store.state)
 
         seedPouchItem.isHidden = inventory.isEmpty
@@ -2873,7 +2877,7 @@ final class GardenStatusMenu: NSObject {
             submenu.addItem(NSMenuItem.separator())
         }
 
-        let environment = GardenScenePlantEnvironment(sceneKey: store.activeSceneKey)
+        let environment = GardenScenePlantEnvironment(sceneKey: sceneRootKey)
         for entry in inventory {
             let species = entry.species
             let count = entry.count
@@ -2943,7 +2947,7 @@ final class GardenStatusMenu: NSObject {
 
     private func plantRandomSpecies(in kind: PlantKind) {
         guard let species = GardenPlantSpecificMenuCatalog.enabledSpecies(
-            sceneKey: store.activeSceneKey,
+            sceneKey: wallpaperManager.wallpaperSceneRootKey(),
             in: kind
         ).randomElement() else {
             return
@@ -3060,7 +3064,10 @@ final class GardenStatusMenu: NSObject {
             currentSceneKey: currentSceneKey,
             targetMode: mode
         ) {
-            applyWallpaperSceneKey(handoffKey, settingsOverride: nextSettings)
+            applyWallpaperSceneKey(
+                wallpaperManager.latestWallpaperKey(forSceneRootKey: handoffKey),
+                settingsOverride: nextSettings
+            )
         } else {
             store.updateSettings(nextSettings)
         }
@@ -3145,7 +3152,7 @@ final class GardenStatusMenu: NSObject {
         guard PlantAssetLibrary.shared.hasDisplayableAsset(for: species) else {
             return
         }
-        guard GardenScenePlantEnvironment(sceneKey: store.activeSceneKey).isSuitable(species) else {
+        guard GardenScenePlantEnvironment(sceneKey: wallpaperManager.wallpaperSceneRootKey()).isSuitable(species) else {
             return
         }
 
@@ -4012,7 +4019,7 @@ final class GardenStatusMenu: NSObject {
     }
 
     private var activeSceneName: String {
-        let key = wallpaperManager.selectedWallpaperSceneKey
+        let key = wallpaperManager.wallpaperSceneRootKey()
         return GardenWallpaperScene(rawValue: key)?.displayName
             ?? wallpaperManager.customWallpapers.first { $0.key == key }?.displayName
             ?? "Custom Scene"
@@ -4053,7 +4060,7 @@ final class GardenStatusMenu: NSObject {
             return
         }
 
-        applyWallpaperSceneKey(sceneKey)
+        applyWallpaperSceneKey(wallpaperManager.latestWallpaperKey(forSceneRootKey: sceneKey))
     }
 
     @objc private func applyWallpaperSceneRoot(_ sender: NSMenuItem) {

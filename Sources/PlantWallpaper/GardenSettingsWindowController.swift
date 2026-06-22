@@ -1281,13 +1281,13 @@ final class GardenSettingsWindowController: NSWindowController {
                 guard let self else {
                     return ""
                 }
-                let key = self.wallpaperManager.selectedWallpaperSceneKey
+                let key = self.wallpaperManager.wallpaperSceneRootKey()
                 return GardenWallpaperScene(rawValue: key)?.displayName
                     ?? self.wallpaperManager.customWallpapers.first { $0.key == key }?.displayName
                     ?? "Custom Scene"
             }),
             infoRow(title: "Environment", value: { [weak self] in
-                GardenScenePlantEnvironment(sceneKey: self?.wallpaperManager.selectedWallpaperSceneKey).displayName
+                GardenScenePlantEnvironment(sceneKey: self?.wallpaperManager.wallpaperSceneRootKey()).displayName
             }),
             infoRow(title: "Plants in scene", value: { [weak self] in
                 "\(self?.store.state.plants.count ?? 0)"
@@ -2496,7 +2496,7 @@ final class GardenSettingsWindowController: NSWindowController {
     /// A visual scene picker: thumbnail cards for every built-in and custom
     /// scene, with a green ring and badge on the active one.
     private func sceneGalleryView() -> NSView {
-        let selectedKey = wallpaperManager.selectedWallpaperSceneKey
+        let selectedKey = wallpaperManager.wallpaperSceneRootKey()
         var sceneEntries: [(key: String, name: String, isEnabled: Bool)] = GardenWallpaperScene.scenes(for: store.state.settings.experienceMode).map {
             ($0.rawValue, $0.displayName, $0.isSelectableScene)
         }
@@ -2592,8 +2592,9 @@ final class GardenSettingsWindowController: NSWindowController {
         }
 
         // Make the clicked scene live so the editor previews and edits it.
-        if sceneKey != wallpaperManager.selectedWallpaperSceneKey {
-            actions.applyScene(sceneKey)
+        let latestSceneKey = wallpaperManager.latestWallpaperKey(forSceneRootKey: sceneKey)
+        if latestSceneKey != wallpaperManager.selectedWallpaperSceneKey {
+            actions.applyScene(latestSceneKey)
         }
 
         let controller = GardenSceneDetailWindowController(
@@ -2651,7 +2652,7 @@ final class GardenSettingsWindowController: NSWindowController {
                 return
             }
 
-            let isActive = self.wallpaperManager.selectedWallpaperSceneKey == record.key
+            let isActive = self.wallpaperManager.wallpaperSceneRootKey() == record.key
             applyButton.isEnabled = !isActive
             let title = isActive ? "Active" : "Apply"
             if applyButton.title != title {
@@ -3010,7 +3011,10 @@ final class GardenSettingsWindowController: NSWindowController {
             currentSceneKey: wallpaperManager.selectedWallpaperSceneKey,
             targetMode: mode
         ) {
-            actions.applySceneWithSettings(handoffKey, nextSettings)
+            actions.applySceneWithSettings(
+                wallpaperManager.latestWallpaperKey(forSceneRootKey: handoffKey),
+                nextSettings
+            )
         } else {
             store.updateSettings(nextSettings)
         }
@@ -3540,7 +3544,7 @@ final class GardenSettingsWindowController: NSWindowController {
             return
         }
 
-        actions.applyScene(key)
+        actions.applyScene(wallpaperManager.latestWallpaperKey(forSceneRootKey: key))
         refreshDynamicContent()
     }
 
@@ -3567,7 +3571,9 @@ final class GardenSettingsWindowController: NSWindowController {
             try? FileManager.default.removeItem(at: gardenFileURL)
 
             if wasSelected {
-                actions.applyScene(GardenWallpaperScene.defaultScene.rawValue)
+                actions.applyScene(
+                    wallpaperManager.latestWallpaperKey(forSceneRootKey: GardenWallpaperScene.defaultScene.rawValue)
+                )
             }
             renderSelectedSection(preservingScroll: true)
         } catch {
