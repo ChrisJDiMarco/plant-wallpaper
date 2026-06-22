@@ -131,6 +131,20 @@ struct GardenStatusMenuModeSwitchTests {
         #expect(!fixture.menu.wallpaperToolsTitlesForSelfTest().contains("Start Plants from Seedlings"))
     }
 
+    @Test("wallpaper tools toggle time of day plant darkening")
+    func wallpaperToolsToggleTimeOfDayPlantDarkening() throws {
+        let fixture = try StatusMenuModeFixture()
+        defer { fixture.cleanup() }
+
+        #expect(fixture.menu.wallpaperToolsTitlesForSelfTest().contains("Darken Plants by Time of Day"))
+        #expect(fixture.menu.menuItemStateForSelfTest(named: "Darken Plants by Time of Day") == .on)
+
+        fixture.menu.toggleTimeOfDayPlantDarkeningForSelfTest()
+
+        #expect(!fixture.store.state.settings.isTimeOfDayPlantDarkeningEnabled)
+        #expect(fixture.menu.menuItemStateForSelfTest(named: "Darken Plants by Time of Day") == .off)
+    }
+
     @Test("garden tools expose hide and remove gnome actions")
     func gardenToolsExposeHideAndRemoveGnomeActions() throws {
         let fixture = try StatusMenuModeFixture()

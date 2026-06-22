@@ -341,6 +341,7 @@ public struct GardenSettings: Codable, Equatable, Sendable {
     public let radioActivationMode: GardenRadioActivationMode
     public let wallpaperGenerationQuality: GardenWallpaperGenerationQuality
     public let aiEditStrength: GardenAIEditStrength
+    public let isTimeOfDayPlantDarkeningEnabled: Bool
     public let rareMomentsMode: GardenRareMomentsMode
     public let displayBehavior: GardenDisplayBehavior
     public let notifyCare: Bool
@@ -396,6 +397,7 @@ public struct GardenSettings: Codable, Equatable, Sendable {
         radioActivationMode: GardenRadioActivationMode = .singleClick,
         wallpaperGenerationQuality: GardenWallpaperGenerationQuality = .twoK,
         aiEditStrength: GardenAIEditStrength = .subtle,
+        isTimeOfDayPlantDarkeningEnabled: Bool = true,
         rareMomentsMode: GardenRareMomentsMode = .full,
         displayBehavior: GardenDisplayBehavior = .mirrorAllDisplays,
         notifyCare: Bool = true,
@@ -450,6 +452,7 @@ public struct GardenSettings: Codable, Equatable, Sendable {
         self.radioActivationMode = radioActivationMode
         self.wallpaperGenerationQuality = wallpaperGenerationQuality
         self.aiEditStrength = aiEditStrength
+        self.isTimeOfDayPlantDarkeningEnabled = isTimeOfDayPlantDarkeningEnabled
         self.rareMomentsMode = rareMomentsMode
         self.displayBehavior = displayBehavior
         self.notifyCare = notifyCare
@@ -506,6 +509,7 @@ public struct GardenSettings: Codable, Equatable, Sendable {
         case radioActivationMode
         case wallpaperGenerationQuality
         case aiEditStrength
+        case isTimeOfDayPlantDarkeningEnabled
         case rareMomentsMode
         case displayBehavior
         case notifyCare
@@ -580,6 +584,10 @@ public struct GardenSettings: Codable, Equatable, Sendable {
                 forKey: .wallpaperGenerationQuality
             ) ?? .twoK,
             aiEditStrength: try container.decodeIfPresent(GardenAIEditStrength.self, forKey: .aiEditStrength) ?? .subtle,
+            isTimeOfDayPlantDarkeningEnabled: try container.decodeIfPresent(
+                Bool.self,
+                forKey: .isTimeOfDayPlantDarkeningEnabled
+            ) ?? true,
             rareMomentsMode: try container.decodeIfPresent(GardenRareMomentsMode.self, forKey: .rareMomentsMode) ?? .full,
             displayBehavior: try container.decodeIfPresent(GardenDisplayBehavior.self, forKey: .displayBehavior) ?? .mirrorAllDisplays,
             notifyCare: try container.decodeIfPresent(Bool.self, forKey: .notifyCare) ?? true,
@@ -637,6 +645,7 @@ public struct GardenSettings: Codable, Equatable, Sendable {
         radioActivationMode: GardenRadioActivationMode? = nil,
         wallpaperGenerationQuality: GardenWallpaperGenerationQuality? = nil,
         aiEditStrength: GardenAIEditStrength? = nil,
+        isTimeOfDayPlantDarkeningEnabled: Bool? = nil,
         rareMomentsMode: GardenRareMomentsMode? = nil,
         displayBehavior: GardenDisplayBehavior? = nil,
         notifyCare: Bool? = nil,
@@ -692,6 +701,7 @@ public struct GardenSettings: Codable, Equatable, Sendable {
             radioActivationMode: radioActivationMode ?? self.radioActivationMode,
             wallpaperGenerationQuality: wallpaperGenerationQuality ?? self.wallpaperGenerationQuality,
             aiEditStrength: aiEditStrength ?? self.aiEditStrength,
+            isTimeOfDayPlantDarkeningEnabled: isTimeOfDayPlantDarkeningEnabled ?? self.isTimeOfDayPlantDarkeningEnabled,
             rareMomentsMode: rareMomentsMode ?? self.rareMomentsMode,
             displayBehavior: displayBehavior ?? self.displayBehavior,
             notifyCare: notifyCare ?? self.notifyCare,

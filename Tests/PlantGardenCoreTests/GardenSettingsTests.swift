@@ -105,6 +105,7 @@ struct GardenSettingsTests {
         #expect(settings.gnomeSimulation.settlementExpansionDays == 7.0)
         #expect(settings.wallpaperGenerationQuality == .twoK)
         #expect(settings.aiEditStrength == .subtle)
+        #expect(settings.isTimeOfDayPlantDarkeningEnabled)
         #expect(settings.rareMomentsMode == .full)
         #expect(settings.displayBehavior == .mirrorAllDisplays)
         #expect(settings.notifyCare)

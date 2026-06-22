@@ -279,6 +279,7 @@ final class GardenStatusMenu: NSObject {
     private var lastRenderedExperienceMode: GardenExperienceMode?
     private var lastRenderedAssistantMenuItemEnabled: Bool?
     private let updateWallpaperItem = NSMenuItem()
+    private let timeOfDayPlantDarkeningItem = NSMenuItem()
     private let wallpaperVersionsItem = NSMenuItem()
     private let progressionToggleItem = NSMenuItem()
     private let progressionStatusItem = NSMenuItem()
@@ -627,6 +628,7 @@ final class GardenStatusMenu: NSObject {
             roomCollectiblesItem,
             roomLoungeGearItem,
             updateWallpaperItem,
+            timeOfDayPlantDarkeningItem,
             wallpaperVersionsItem,
             progressionToggleItem,
             progressionStatusItem,
@@ -745,6 +747,10 @@ final class GardenStatusMenu: NSObject {
         }
 
         return item.state
+    }
+
+    func toggleTimeOfDayPlantDarkeningForSelfTest() {
+        toggleTimeOfDayPlantDarkening()
     }
 
     private static func menuItem(in menu: NSMenu, titled title: String) -> NSMenuItem? {
@@ -1443,6 +1449,13 @@ final class GardenStatusMenu: NSObject {
         submenu.addItem(menuItem(title: "OpenAI API Key Settings...", symbol: "key.fill", action: #selector(openAIAPIKeySettings)))
         submenu.addItem(menuItem(title: "Restore Previous Wallpaper", symbol: "photo.on.rectangle", action: #selector(restorePreviousWallpaper)))
         submenu.addItem(NSMenuItem.separator())
+        configureMenuItem(
+            timeOfDayPlantDarkeningItem,
+            title: "Darken Plants by Time of Day",
+            symbol: "moon.stars.fill",
+            action: #selector(toggleTimeOfDayPlantDarkening)
+        )
+        submenu.addItem(timeOfDayPlantDarkeningItem)
         if store.state.settings.experienceMode == .garden {
             submenu.addItem(menuItem(
                 title: "Start Plants from Seedlings",
@@ -2322,6 +2335,10 @@ final class GardenStatusMenu: NSObject {
             let rawValue = versionItem.representedObject as? String
             versionItem.state = rawValue == wallpaperManager.selectedWallpaperSceneKey ? .on : .off
         }
+        timeOfDayPlantDarkeningItem.state = store.state.settings.isTimeOfDayPlantDarkeningEnabled ? .on : .off
+        timeOfDayPlantDarkeningItem.toolTip = store.state.settings.isTimeOfDayPlantDarkeningEnabled
+            ? "Trees and plants follow morning, evening, and night shading."
+            : "Trees and plants stay bright regardless of time of day."
         statusItem.button?.toolTip = "Plant Wallpaper - \(vitality.summary) - \(season.summary) - \(sunlight.summary) - \(dew.summary) - \(recommendation.summary)"
         if let lastError = store.lastError {
             let errorTitle = "Save Error: \(lastError)"
@@ -3492,6 +3509,13 @@ final class GardenStatusMenu: NSObject {
         store.updateSettings(
             settings.updating(useAIGeneratedLockSnapshot: !settings.useAIGeneratedLockSnapshot)
         )
+    }
+
+    @objc private func toggleTimeOfDayPlantDarkening() {
+        let settings = store.state.settings
+        store.updateSettings(settings.updating(
+            isTimeOfDayPlantDarkeningEnabled: !settings.isTimeOfDayPlantDarkeningEnabled
+        ))
     }
 
     @objc private func regenerateAILockView() {

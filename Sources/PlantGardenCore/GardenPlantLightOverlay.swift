@@ -3,16 +3,25 @@ import Foundation
 public struct GardenPlantLightOverlay: Equatable, Sendable {
     public let opacity: Double
 
-    public init(sunlight: GardenSunlightCondition, manualDarkening: Double = 0) {
-        let automaticOpacity: Double = switch sunlight.mood {
-        case .bright:
-            0
-        case .morning:
-            0.08
-        case .golden:
-            0.16
-        case .night:
-            0.50
+    public init(
+        sunlight: GardenSunlightCondition,
+        manualDarkening: Double = 0,
+        isTimeOfDayDarkeningEnabled: Bool = true
+    ) {
+        let automaticOpacity: Double
+        if isTimeOfDayDarkeningEnabled {
+            automaticOpacity = switch sunlight.mood {
+            case .bright:
+                0
+            case .morning:
+                0.08
+            case .golden:
+                0.16
+            case .night:
+                0.50
+            }
+        } else {
+            automaticOpacity = 0
         }
 
         opacity = (automaticOpacity + manualDarkening.clamped(to: 0...0.60))
@@ -31,7 +40,8 @@ public extension GardenState {
     ) -> GardenPlantLightOverlay {
         GardenPlantLightOverlay(
             sunlight: sunlightCondition(at: date, calendar: calendar),
-            manualDarkening: manualPlantDarkening
+            manualDarkening: manualPlantDarkening,
+            isTimeOfDayDarkeningEnabled: settings.isTimeOfDayPlantDarkeningEnabled
         )
     }
 }

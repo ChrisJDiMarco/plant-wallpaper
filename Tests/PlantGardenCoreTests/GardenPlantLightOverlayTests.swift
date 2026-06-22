@@ -54,6 +54,14 @@ struct GardenPlantLightOverlayTests {
         #expect(state.plantLightOverlay(at: noon, calendar: utcCalendar).opacity == 0.60)
     }
 
+    @Test("garden state can disable time of day plant darkening")
+    func gardenStateCanDisableTimeOfDayPlantDarkening() throws {
+        let night = try date(atHour: 23)
+        let state = GardenState(settings: .default.updating(isTimeOfDayPlantDarkeningEnabled: false))
+
+        #expect(state.plantLightOverlay(at: night, calendar: utcCalendar).opacity == 0)
+    }
+
     private func sunlight(atHour hour: Int) throws -> GardenSunlightCondition {
         GardenSunlightCondition(at: try date(atHour: hour), calendar: utcCalendar)
     }
