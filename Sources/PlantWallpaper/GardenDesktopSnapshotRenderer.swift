@@ -27,7 +27,11 @@ enum GardenDesktopSnapshotRenderer {
     /// gets the chosen filename; additional displays get a " - Display N"
     /// suffix. Returns the written file URLs.
     @discardableResult
-    static func writeSnapshotPNGs(store: GardenStore, to baseURL: URL) throws -> [URL] {
+    static func writeSnapshotPNGs(
+        store: GardenStore,
+        to baseURL: URL,
+        wallpaperImageURL: URL? = nil
+    ) throws -> [URL] {
         let screens = NSScreen.screens
         guard !screens.isEmpty else {
             throw SnapshotError.noScreenAvailable
@@ -35,12 +39,18 @@ enum GardenDesktopSnapshotRenderer {
 
         return try screens.enumerated().map { screenIndex, screen in
             let outputURL = screenIndex == 0 ? baseURL : displayNumberedURL(baseURL, displayNumber: screenIndex + 1)
-            try writeSnapshotPNG(store: store, screen: screen, screenIndex: screenIndex, to: outputURL)
+            try writeSnapshotPNG(
+                store: store,
+                screen: screen,
+                screenIndex: screenIndex,
+                to: outputURL,
+                wallpaperImageURL: wallpaperImageURL
+            )
             return outputURL
         }
     }
 
-    static func writeSnapshotPNG(store: GardenStore, to url: URL) throws {
+    static func writeSnapshotPNG(store: GardenStore, to url: URL, wallpaperImageURL: URL? = nil) throws {
         let screens = NSScreen.screens
         guard let screen = NSScreen.main ?? screens.first else {
             throw SnapshotError.noScreenAvailable
@@ -50,7 +60,8 @@ enum GardenDesktopSnapshotRenderer {
             store: store,
             screen: screen,
             screenIndex: screens.firstIndex(of: screen) ?? 0,
-            to: url
+            to: url,
+            wallpaperImageURL: wallpaperImageURL
         )
     }
 
@@ -67,9 +78,15 @@ enum GardenDesktopSnapshotRenderer {
         store: GardenStore,
         screen: NSScreen,
         screenIndex: Int,
-        to url: URL
+        to url: URL,
+        wallpaperImageURL: URL? = nil
     ) throws {
-        let pngData = try snapshotPNGData(store: store, screen: screen, screenIndex: screenIndex)
+        let pngData = try snapshotPNGData(
+            store: store,
+            screen: screen,
+            screenIndex: screenIndex,
+            wallpaperImageURL: wallpaperImageURL
+        )
         try pngData.write(to: url, options: [.atomic])
     }
 
@@ -79,9 +96,15 @@ enum GardenDesktopSnapshotRenderer {
     static func snapshotPNGData(
         store: GardenStore,
         screen: NSScreen,
-        screenIndex: Int
+        screenIndex: Int,
+        wallpaperImageURL: URL? = nil
     ) throws -> Data {
-        let bitmap = try makeSnapshotBitmap(store: store, screen: screen, screenIndex: screenIndex)
+        let bitmap = try makeSnapshotBitmap(
+            store: store,
+            screen: screen,
+            screenIndex: screenIndex,
+            wallpaperImageURL: wallpaperImageURL
+        )
         guard let pngData = bitmap.representation(using: .png, properties: [:]) else {
             throw SnapshotError.couldNotRenderSnapshot
         }
@@ -93,14 +116,19 @@ enum GardenDesktopSnapshotRenderer {
     static func makeSnapshotBitmap(
         store: GardenStore,
         screen: NSScreen,
-        screenIndex: Int
+        screenIndex: Int,
+        wallpaperImageURL: URL? = nil
     ) throws -> NSBitmapImageRep {
         let pointSize = screen.frame.size
         let scale = max(1, screen.backingScaleFactor)
         let pixelWidth = max(1, Int((pointSize.width * scale).rounded()))
         let pixelHeight = max(1, Int((pointSize.height * scale).rounded()))
 
-        guard let wallpaperImage = currentWallpaperImage(for: screen, store: store) else {
+        guard let wallpaperImage = currentWallpaperImage(
+            for: screen,
+            store: store,
+            fallbackURL: wallpaperImageURL
+        ) else {
             throw SnapshotError.couldNotLoadWallpaper
         }
 
@@ -188,11 +216,12 @@ enum GardenDesktopSnapshotRenderer {
         return image
     }
 
-    private static func currentWallpaperImage(for screen: NSScreen, store: GardenStore) -> NSImage? {
-        if let wallpaperURL = NSWorkspace.shared.desktopImageURL(for: screen),
-           let wallpaperImage = NSImage(contentsOf: wallpaperURL),
-           wallpaperImage.size.width > 0,
-           wallpaperImage.size.height > 0 {
+    private static func currentWallpaperImage(for screen: NSScreen, store: GardenStore, fallbackURL: URL?) -> NSImage? {
+        if let wallpaperImage = loadImage(NSWorkspace.shared.desktopImageURL(for: screen)) {
+            return wallpaperImage
+        }
+
+        if let wallpaperImage = loadImage(fallbackURL) {
             return wallpaperImage
         }
 
@@ -213,6 +242,18 @@ enum GardenDesktopSnapshotRenderer {
 
         fallbackImage.cacheMode = .always
         return fallbackImage
+    }
+
+    private static func loadImage(_ url: URL?) -> NSImage? {
+        guard let url,
+              let image = NSImage(contentsOf: url),
+              image.size.width > 0,
+              image.size.height > 0 else {
+            return nil
+        }
+
+        image.cacheMode = .always
+        return image
     }
 
     private static func bundledSceneImageURL(named name: String) -> URL? {

@@ -17,8 +17,12 @@ enum GardenSmartLockSnapshotRenderer {
         }
     }
 
-    static func sourceImageData(store: GardenStore, screen: NSScreen? = NSScreen.main) throws -> Data {
-        guard let screen = screen ?? NSScreen.screens.first else {
+    static func sourceImageData(
+        store: GardenStore,
+        screen: NSScreen? = nil,
+        wallpaperImageURL: URL? = nil
+    ) throws -> Data {
+        guard let screen = screen ?? NSScreen.screens.first ?? NSScreen.main else {
             throw SmartLockSnapshotError.noScreenAvailable
         }
 
@@ -28,7 +32,8 @@ enum GardenSmartLockSnapshotRenderer {
         return try GardenDesktopSnapshotRenderer.snapshotPNGData(
             store: store,
             screen: screen,
-            screenIndex: screenIndex
+            screenIndex: screenIndex,
+            wallpaperImageURL: wallpaperImageURL
         )
     }
 }

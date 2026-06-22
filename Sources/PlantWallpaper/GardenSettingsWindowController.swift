@@ -938,7 +938,8 @@ final class GardenSettingsWindowController: NSWindowController {
               let bitmap = try? GardenDesktopSnapshotRenderer.makeSnapshotBitmap(
                 store: store,
                 screen: screen,
-                screenIndex: NSScreen.screens.firstIndex(of: screen) ?? 0
+                screenIndex: NSScreen.screens.firstIndex(of: screen) ?? 0,
+                wallpaperImageURL: wallpaperManager.currentWallpaperImageURL
               ) else {
             return nil
         }
@@ -1138,7 +1139,7 @@ final class GardenSettingsWindowController: NSWindowController {
             displayBehaviorRow(selectedBehavior: store.state.settings.displayBehavior),
             switchRow(
                 title: "AI lock view",
-                subtitle: "When interactions are locked, generate and apply a hyper-realistic time-of-day wallpaper from a clean Garden Snapshot. Sends one source image to OpenAI.",
+                subtitle: "When interactions are locked, reuse the latest AI lock wallpaper or generate a fresh one from a clean Garden Snapshot.",
                 action: #selector(toggleAIGeneratedLockSnapshot(_:)),
                 isOn: { [weak self] in self?.store.state.settings.useAIGeneratedLockSnapshot ?? false }
             ),

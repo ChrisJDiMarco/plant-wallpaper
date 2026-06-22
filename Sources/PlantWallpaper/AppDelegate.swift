@@ -76,6 +76,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         statusMenu.progressionLevelCelebrationHandler = { [weak momentNotifier] level, title, isFinalLevel in
             momentNotifier?.celebrateProgressionLevel(level: level, title: title, isFinalLevel: isFinalLevel)
         }
+        statusMenu.regenerateSmartLockWallpaperHandler = { [weak self] in
+            self?.regenerateSmartLockWallpaper()
+        }
 
         overlayController.show()
         scheduleScreenSaverSnapshotPublish(delay: 0.15)
@@ -516,7 +519,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    private func startSmartLockWallpaperGenerationIfNeeded() {
+    private func regenerateSmartLockWallpaper() {
+        guard store?.state.settings.isGardenInteractionLocked == true else {
+            return
+        }
+        startSmartLockWallpaperGenerationIfNeeded(reuseCachedWallpaper: false)
+    }
+
+    private func startSmartLockWallpaperGenerationIfNeeded(reuseCachedWallpaper: Bool = true) {
         guard let store,
               let wallpaperManager,
               store.state.settings.useAIGeneratedLockSnapshot,
@@ -524,16 +534,39 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
 
+        smartLockWallpaperTask?.cancel()
+        smartLockWallpaperTask = nil
+        let targetScreens = targetScreens(from: NSScreen.screens, settings: store.state.settings)
+        let smartLockSceneKey = wallpaperManager.selectedWallpaperSceneKey
+        if reuseCachedWallpaper {
+            do {
+                if try wallpaperManager.applyLatestSmartLockWallpaper(to: targetScreens, sceneKey: smartLockSceneKey) != nil {
+                    isSmartLockWallpaperActive = true
+                    overlayController?.arePlantsHiddenForAILockView = true
+                    scheduleScreenSaverSnapshotPublish(delay: 0.2)
+                    return
+                }
+            } catch {
+                NSLog("Plant Wallpaper could not reuse cached AI lock view: \(error.localizedDescription)")
+            }
+        } else if isSmartLockWallpaperActive {
+            isSmartLockWallpaperActive = false
+            overlayController?.arePlantsHiddenForAILockView = false
+            wallpaperManager.restoreSelectedWallpaperAfterSmartLock(to: targetScreens)
+        }
+
         guard let apiKey = OpenAIAPIKeyStore.load() else {
             NSLog("Plant Wallpaper AI lock view skipped: OpenAI API key is not configured.")
             return
         }
 
-        smartLockWallpaperTask?.cancel()
-        let targetScreens = targetScreens(from: NSScreen.screens, settings: store.state.settings)
         let sourceImageData: Data
         do {
-            sourceImageData = try GardenSmartLockSnapshotRenderer.sourceImageData(store: store)
+            sourceImageData = try GardenSmartLockSnapshotRenderer.sourceImageData(
+                store: store,
+                screen: targetScreens.first,
+                wallpaperImageURL: wallpaperManager.currentWallpaperImageURL
+            )
         } catch {
             NSLog("Plant Wallpaper could not capture AI lock source image: \(error.localizedDescription)")
             return
@@ -550,7 +583,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     apiKey: apiKey,
                     to: targetScreens,
                     at: date,
-                    quality: store?.state.settings.wallpaperGenerationQuality ?? .twoK
+                    quality: store?.state.settings.wallpaperGenerationQuality ?? .twoK,
+                    sceneKey: smartLockSceneKey
                 )
                 let wasCancelled = Task.isCancelled
                 await MainActor.run {
@@ -611,7 +645,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let directoryURL = store.persistence.directoryURL
         let imageURL = GardenScreenSaverSnapshot.primaryImageURL(directoryURL: directoryURL)
         do {
-            try GardenDesktopSnapshotRenderer.writeSnapshotPNG(store: store, to: imageURL)
+            try GardenDesktopSnapshotRenderer.writeSnapshotPNG(
+                store: store,
+                to: imageURL,
+                wallpaperImageURL: wallpaperManager?.currentWallpaperImageURL
+            )
         } catch {
             NSLog("Plant Wallpaper could not render screen saver garden snapshot: \(error.localizedDescription)")
         }

@@ -238,6 +238,7 @@ final class GardenStatusMenu: NSObject {
     private let focusActionItem = NSMenuItem()
     private let lockInteractionItem = NSMenuItem()
     private let aiLockViewItem = NSMenuItem()
+    private let aiLockRegenerateItem = NSMenuItem()
     private let pauseItem = NSMenuItem()
     private var currentStatusSymbolName = "leaf.fill"
     private let ambientSoundMenuItem = NSMenuItem()
@@ -292,6 +293,7 @@ final class GardenStatusMenu: NSObject {
     /// journal entry through the shared GardenMomentNotifier. Args: level,
     /// level title, isFinalLevel.
     var progressionLevelCelebrationHandler: ((Int, String, Bool) -> Void)?
+    var regenerateSmartLockWallpaperHandler: (() -> Void)?
     private var wallpaperVersionItems: [NSMenuItem] = []
     private weak var wallpaperVersionsSubmenu: NSMenu?
     private var wallpaperSceneItems: [NSMenuItem] = []
@@ -488,6 +490,10 @@ final class GardenStatusMenu: NSObject {
         aiLockViewItem.action = #selector(toggleAILockView)
         aiLockViewItem.keyEquivalent = ""
         menu.addItem(aiLockViewItem)
+        aiLockRegenerateItem.target = self
+        aiLockRegenerateItem.action = #selector(regenerateAILockView)
+        aiLockRegenerateItem.keyEquivalent = ""
+        menu.addItem(aiLockRegenerateItem)
 
         menu.addItem(sectionHeaderItem("Keepsakes"))
         configureMenuItem(
@@ -2112,11 +2118,22 @@ final class GardenStatusMenu: NSObject {
         aiLockViewItem.title = "AI Lock View"
         aiLockViewItem.state = isAILockViewEnabled ? .on : .off
         aiLockViewItem.toolTip = isAILockViewEnabled
-            ? "When interactions are locked, generate and apply a hyper-realistic time-of-day wallpaper from a clean Garden Snapshot."
+            ? "When interactions are locked, reuse the latest AI lock wallpaper; regenerate from the menu when you want a fresh one."
             : "Regular lock stays instant. Turn this on to generate an AI lock wallpaper when interactions are locked."
         aiLockViewItem.image = NSImage(
             systemSymbolName: isAILockViewEnabled ? "sparkles.rectangle.stack.fill" : "sparkles",
             accessibilityDescription: aiLockViewItem.title
+        )
+        aiLockRegenerateItem.title = "Regenerate AI Lock View..."
+        aiLockRegenerateItem.isEnabled = isLocked
+            && isAILockViewEnabled
+            && GardenEntitlements.shared.isUnlocked(.aiLockView)
+        aiLockRegenerateItem.toolTip = aiLockRegenerateItem.isEnabled
+            ? "Generate a fresh AI lock wallpaper instead of reusing the last one."
+            : "Lock interactions with AI Lock View on, then regenerate from here."
+        aiLockRegenerateItem.image = NSImage(
+            systemSymbolName: "arrow.triangle.2.circlepath",
+            accessibilityDescription: aiLockRegenerateItem.title
         )
         pauseItem.title = store.state.isPaused ? "Growth Paused" : "Pause Growth"
         pauseItem.state = store.state.isPaused ? .on : .off
@@ -2722,7 +2739,11 @@ final class GardenStatusMenu: NSObject {
         }
 
         do {
-            let writtenURLs = try GardenDesktopSnapshotRenderer.writeSnapshotPNGs(store: store, to: url)
+            let writtenURLs = try GardenDesktopSnapshotRenderer.writeSnapshotPNGs(
+                store: store,
+                to: url,
+                wallpaperImageURL: wallpaperManager.currentWallpaperImageURL
+            )
             NSWorkspace.shared.activateFileViewerSelecting(writtenURLs)
         } catch {
             showError(title: "Could not save snapshot", message: error.localizedDescription)
@@ -3464,6 +3485,13 @@ final class GardenStatusMenu: NSObject {
         store.updateSettings(
             settings.updating(useAIGeneratedLockSnapshot: !settings.useAIGeneratedLockSnapshot)
         )
+    }
+
+    @objc private func regenerateAILockView() {
+        guard requireProFeature(.aiLockView) else {
+            return
+        }
+        regenerateSmartLockWallpaperHandler?()
     }
 
     @objc private func showTodayInGarden() {

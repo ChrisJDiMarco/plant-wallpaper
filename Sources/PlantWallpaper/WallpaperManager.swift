@@ -380,6 +380,10 @@ final class WallpaperManager {
         customWallpaperDirectoryURL
     }
 
+    var smartLockWallpaperDataDirectoryURL: URL {
+        smartLockWallpaperDirectoryURL
+    }
+
     var currentWallpaperImageURL: URL? {
         guard let path = defaults.string(forKey: currentWallpaperImageDefaultsKey), !path.isEmpty else {
             return nil
@@ -660,7 +664,8 @@ final class WallpaperManager {
         apiKey: String,
         to screens: [NSScreen] = NSScreen.screens,
         at date: Date = Date(),
-        quality: GardenWallpaperGenerationQuality = .twoK
+        quality: GardenWallpaperGenerationQuality = .twoK,
+        sceneKey: String? = nil
     ) async throws -> URL {
         try ensureDirectoryExists()
         try fileManager.createDirectory(at: smartLockWallpaperDirectoryURL, withIntermediateDirectories: true)
@@ -680,7 +685,9 @@ final class WallpaperManager {
         }
 
         let baseURL = smartLockWallpaperDirectoryURL
-            .appendingPathComponent("smart-lock-\(Int(date.timeIntervalSince1970))")
+            .appendingPathComponent(
+                "smart-lock-\(smartLockSceneFilenameComponent(sceneKey ?? selectedWallpaperSceneKey))-\(Int(date.timeIntervalSince1970))"
+            )
             .appendingPathExtension("png")
         let wallpaperURL = try renderSmartLockWallpaper(image, to: baseURL, screens: screens)
         try applyTemporaryWallpaperImage(wallpaperURL, to: screens)
@@ -689,6 +696,19 @@ final class WallpaperManager {
 
     func restoreSelectedWallpaperAfterSmartLock(to screens: [NSScreen] = NSScreen.screens, at date: Date = Date()) {
         _ = applyWallpaperSceneKey(selectedWallpaperSceneKey, to: screens, at: date, persistSelection: false)
+    }
+
+    @discardableResult
+    func applyLatestSmartLockWallpaper(
+        to screens: [NSScreen] = NSScreen.screens,
+        sceneKey: String? = nil
+    ) throws -> URL? {
+        guard let wallpaperURL = latestSmartLockWallpaperURL(sceneKey: sceneKey ?? selectedWallpaperSceneKey) else {
+            return nil
+        }
+
+        try applyTemporaryWallpaperImage(wallpaperURL, to: screens)
+        return wallpaperURL
     }
 
     @discardableResult
@@ -1574,6 +1594,31 @@ final class WallpaperManager {
         if !fileManager.fileExists(atPath: customWallpaperDirectoryURL.path) {
             try fileManager.createDirectory(at: customWallpaperDirectoryURL, withIntermediateDirectories: true)
         }
+    }
+
+    private func latestSmartLockWallpaperURL(sceneKey: String) -> URL? {
+        let filenamePrefix = "smart-lock-\(smartLockSceneFilenameComponent(sceneKey))-"
+        let files = (try? fileManager.contentsOfDirectory(
+            at: smartLockWallpaperDirectoryURL,
+            includingPropertiesForKeys: [.contentModificationDateKey, .isDirectoryKey]
+        )) ?? []
+
+        return files
+            .filter { fileURL in
+                fileURL.pathExtension.lowercased() == "png"
+                    && fileURL.deletingPathExtension().lastPathComponent.hasPrefix(filenamePrefix)
+                    && (try? fileURL.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) != true
+            }
+            .max { lhs, rhs in
+                let lhsDate = (try? lhs.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast
+                let rhsDate = (try? rhs.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast
+                return lhsDate < rhsDate
+            }
+    }
+
+    private func smartLockSceneFilenameComponent(_ sceneKey: String) -> String {
+        let safeSceneKey = safeFilenameComponent(GardenWallpaperScene.canonicalKey(for: sceneKey))
+        return safeSceneKey.isEmpty ? "scene" : safeSceneKey
     }
 
     private func saveCurrentWallpaperSnapshotsIfNeeded(for screens: [NSScreen]) throws {

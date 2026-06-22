@@ -16,10 +16,13 @@ struct GardenDesktopSnapshotRendererTests {
         let sourceURL = projectRoot
             .appendingPathComponent("Sources/PlantWallpaper/GardenSmartLockSnapshotRenderer.swift")
         let source = try String(contentsOf: sourceURL)
+        let appDelegateSource = try String(contentsOf: projectRoot
+            .appendingPathComponent("Sources/PlantWallpaper/AppDelegate.swift"))
 
         #expect(source.contains("GardenDesktopSnapshotRenderer.snapshotPNGData"))
         #expect(!source.contains("CGWindowListCreateImage"))
         #expect(!source.contains("screenCapturePNGData"))
+        #expect(appDelegateSource.contains("screen: targetScreens.first"))
     }
 
     @Test("screen saver snapshot renderer keeps placed radio companions")
@@ -70,5 +73,72 @@ struct GardenDesktopSnapshotRendererTests {
         let scale = max(1, screen.backingScaleFactor)
         #expect(Int(image.size.width.rounded()) == Int((screen.frame.width * scale).rounded()))
         #expect(Int(image.size.height.rounded()) == Int((screen.frame.height * scale).rounded()))
+    }
+
+    @Test("desktop snapshot includes placed plants over the wallpaper")
+    func desktopSnapshotIncludesPlacedPlantsOverWallpaper() throws {
+        guard let screen = NSScreen.main ?? NSScreen.screens.first,
+              NSWorkspace.shared.desktopImageURL(for: screen) != nil else {
+            return
+        }
+
+        let screenIndex = NSScreen.screens.firstIndex(of: screen) ?? 0
+        let directoryURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("garden-desktop-snapshot-plants-\(UUID().uuidString)", isDirectory: true)
+        defer {
+            try? FileManager.default.removeItem(at: directoryURL)
+        }
+
+        let plant = Plant(
+            species: .japaneseMaple,
+            screenIndex: screenIndex,
+            position: GardenPoint(x: 0.50, y: 0.78),
+            growth: 1,
+            hydration: 0.9,
+            health: 0.9,
+            scale: 1.5
+        )
+        let persistence = GardenPersistence(directoryURL: directoryURL)
+        let emptyStore = GardenStore(
+            state: GardenState(isAmbientWildlifeEnabled: false),
+            persistence: persistence,
+            activeSceneKey: GardenWallpaperScene.emptyConservatoryHall.rawValue
+        )
+        let plantedStore = GardenStore(
+            state: GardenState(plants: [plant], isAmbientWildlifeEnabled: false),
+            persistence: persistence,
+            activeSceneKey: GardenWallpaperScene.emptyConservatoryHall.rawValue
+        )
+
+        let emptyBitmap = try GardenDesktopSnapshotRenderer.makeSnapshotBitmap(
+            store: emptyStore,
+            screen: screen,
+            screenIndex: screenIndex
+        )
+        let plantedBitmap = try GardenDesktopSnapshotRenderer.makeSnapshotBitmap(
+            store: plantedStore,
+            screen: screen,
+            screenIndex: screenIndex
+        )
+
+        #expect(hasPixelDifferences(plantedBitmap, emptyBitmap, minimum: 500))
+    }
+
+    private func hasPixelDifferences(_ lhs: NSBitmapImageRep, _ rhs: NSBitmapImageRep, minimum: Int) -> Bool {
+        let width = min(lhs.pixelsWide, rhs.pixelsWide)
+        let height = min(lhs.pixelsHigh, rhs.pixelsHigh)
+        var count = 0
+
+        for y in 0..<height {
+            for x in 0..<width {
+                if lhs.colorAt(x: x, y: y) != rhs.colorAt(x: x, y: y) {
+                    count += 1
+                    if count > minimum {
+                        return true
+                    }
+                }
+            }
+        }
+        return false
     }
 }

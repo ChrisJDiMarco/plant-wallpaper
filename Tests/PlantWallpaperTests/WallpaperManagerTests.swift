@@ -401,6 +401,36 @@ struct WallpaperManagerTests {
         #expect(prompt.contains("live animated bugs above this generated lock view"))
     }
 
+    @Test("smart lock wallpaper reuses newest cached render for current scene")
+    func smartLockWallpaperReusesNewestCachedRenderForCurrentScene() throws {
+        let fixture = try TemporaryWallpaperFixture()
+        defer { fixture.cleanup() }
+
+        let manager = WallpaperManager(
+            baseDirectoryURL: fixture.directoryURL,
+            defaults: fixture.defaults
+        )
+        let directoryURL = manager.smartLockWallpaperDataDirectoryURL
+        try FileManager.default.createDirectory(at: directoryURL, withIntermediateDirectories: true)
+        let currentSceneKey = GardenWallpaperScene.emptyConservatoryHall.rawValue
+        let otherSceneKey = GardenWallpaperScene.swedishPatioGarden.rawValue
+        let oldURL = directoryURL.appendingPathComponent("smart-lock-\(currentSceneKey)-old.png")
+        let sceneURL = directoryURL.appendingPathComponent("smart-lock-\(currentSceneKey)-new.png")
+        let otherSceneURL = directoryURL.appendingPathComponent("smart-lock-\(otherSceneKey)-newest.png")
+        try fixture.writePNG(to: oldURL)
+        try fixture.writePNG(to: sceneURL)
+        try fixture.writePNG(to: otherSceneURL)
+        try FileManager.default.setAttributes([.modificationDate: Date(timeIntervalSince1970: 1)], ofItemAtPath: oldURL.path)
+        try FileManager.default.setAttributes([.modificationDate: Date(timeIntervalSince1970: 2)], ofItemAtPath: sceneURL.path)
+        try FileManager.default.setAttributes([.modificationDate: Date(timeIntervalSince1970: 3)], ofItemAtPath: otherSceneURL.path)
+
+        let reusedURL = try manager.applyLatestSmartLockWallpaper(to: [], sceneKey: currentSceneKey)
+
+        #expect(reusedURL?.standardizedFileURL == sceneURL.standardizedFileURL)
+        #expect(manager.currentWallpaperImageURL?.standardizedFileURL == sceneURL.standardizedFileURL)
+        #expect(try manager.applyLatestSmartLockWallpaper(to: [], sceneKey: "missing-scene") == nil)
+    }
+
     @Test("edited wallpapers create a newest-first version history with the original scene")
     func editedWallpapersCreateVersionHistoryWithOriginalScene() throws {
         let fixture = try TemporaryWallpaperFixture()
