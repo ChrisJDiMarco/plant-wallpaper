@@ -324,6 +324,7 @@ final class GardenStatusMenu: NSObject {
     private var lastDesktopPlantingTarget: PlantingTarget?
     private var lastMouseSampleTime = ContinuousClock.now
     private var isMenuVisible = false
+    private var needsMenuRebuildAfterClose = false
     private var isGnomeZoneDrawingMode = false
     private var isBirdSkyZoneDrawingMode = false
     private var isSoilBrushMode = false
@@ -409,6 +410,7 @@ final class GardenStatusMenu: NSObject {
     }
 
     private func buildMenu() {
+        needsMenuRebuildAfterClose = false
         detachReusableMenuItems()
         lastRenderedExperienceMode = store.state.settings.experienceMode
         lastRenderedAssistantMenuItemEnabled = store.state.settings.isAssistantMenuItemEnabled
@@ -597,6 +599,7 @@ final class GardenStatusMenu: NSObject {
             focusActionItem,
             lockInteractionItem,
             aiLockViewItem,
+            aiLockRegenerateItem,
             pauseItem,
             ambientSoundMenuItem,
             ambientSoundMasterItem,
@@ -770,6 +773,24 @@ final class GardenStatusMenu: NSObject {
 
     func selectExperienceModeForSelfTest(_ mode: GardenExperienceMode) {
         switchExperienceMode(to: mode, bypassingPaywall: true)
+    }
+
+    func menuObjectIdentifierForSelfTest() -> ObjectIdentifier? {
+        statusItem.menu.map(ObjectIdentifier.init)
+    }
+
+    func markMenuOpenForSelfTest() {
+        guard let menu = statusItem.menu else {
+            return
+        }
+        menuWillOpen(menu)
+    }
+
+    func markMenuClosedForSelfTest() {
+        guard let menu = statusItem.menu else {
+            return
+        }
+        menuDidClose(menu)
     }
 
     private func menuItem(title: String, symbol: String, action: Selector) -> NSMenuItem {
@@ -2662,7 +2683,7 @@ final class GardenStatusMenu: NSObject {
         refreshStatusIcon()
         if lastRenderedExperienceMode != store.state.settings.experienceMode
             || lastRenderedAssistantMenuItemEnabled != store.state.settings.isAssistantMenuItemEnabled {
-            buildMenu()
+            requestMenuRebuild()
             return
         }
 
@@ -2675,6 +2696,15 @@ final class GardenStatusMenu: NSObject {
         }
 
         updateDynamicItems()
+    }
+
+    private func requestMenuRebuild() {
+        guard !isMenuVisible else {
+            needsMenuRebuildAfterClose = true
+            return
+        }
+
+        buildMenu()
     }
 
     /// Swaps the menu bar icon to reflect the garden at a glance:
@@ -3088,7 +3118,7 @@ final class GardenStatusMenu: NSObject {
         } else {
             store.updateSettings(nextSettings)
         }
-        buildMenu()
+        requestMenuRebuild()
     }
 
     @objc private func createCustomRoomObjectAsset(_ sender: NSMenuItem) {
@@ -5305,7 +5335,7 @@ private extension GardenStatusMenu {
         isMenuVisible = true
         if lastRenderedExperienceMode != store.state.settings.experienceMode
             || lastRenderedAssistantMenuItemEnabled != store.state.settings.isAssistantMenuItemEnabled {
-            buildMenu()
+            needsMenuRebuildAfterClose = true
         }
         updateDynamicItems()
         refreshPlantingMenus()
@@ -5322,6 +5352,9 @@ private extension GardenStatusMenu {
 
     func menuDidClose(_ menu: NSMenu) {
         isMenuVisible = false
+        if needsMenuRebuildAfterClose {
+            buildMenu()
+        }
         NotificationCenter.default.post(name: .gardenStatusMenuDidClose, object: self)
     }
 }

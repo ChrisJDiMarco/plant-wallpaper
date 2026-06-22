@@ -49,6 +49,24 @@ struct GardenStatusMenuModeSwitchTests {
         #expect(!fixture.menu.primaryWallpaperSceneTitlesForSelfTest().contains("Empty Conservatory Hall"))
     }
 
+    @Test("switching to Room Studio while the dropdown is open rebuilds after close")
+    func switchingToRoomStudioWhileDropdownIsOpenRebuildsAfterClose() throws {
+        let fixture = try StatusMenuModeFixture()
+        defer { fixture.cleanup() }
+        let initialMenu = try #require(fixture.menu.menuObjectIdentifierForSelfTest())
+
+        fixture.menu.markMenuOpenForSelfTest()
+        fixture.menu.selectExperienceModeForSelfTest(.roomStudio)
+
+        #expect(fixture.store.state.settings.experienceMode == .roomStudio)
+        #expect(fixture.menu.menuObjectIdentifierForSelfTest() == initialMenu)
+
+        fixture.menu.markMenuClosedForSelfTest()
+
+        #expect(fixture.menu.menuObjectIdentifierForSelfTest() != initialMenu)
+        #expect(fixture.menu.visibleMenuTitlesForSelfTest().contains("Mode: Room Studio"))
+    }
+
     @Test("switching to Alien UFO rebuilds menu around alien planting actions")
     func switchingToAlienUFORebuildsMenuAroundAlienPlantingActions() throws {
         let fixture = try StatusMenuModeFixture()
