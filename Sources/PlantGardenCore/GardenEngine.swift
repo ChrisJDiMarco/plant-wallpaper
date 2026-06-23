@@ -604,6 +604,7 @@ public enum GardenEngine {
             resetPlant.health = max(0.88, plant.health).clampedUnit
             resetPlant.bloomProgress = 0
             resetPlant.lastStageChangedAt = date
+            resetPlant.lastWateredAt = nil
             resetPlant.lastNourishedAt = nil
             resetPlant.diedAt = nil
             didResetPlant = didResetPlant || resetPlant != plant
@@ -995,6 +996,7 @@ public enum GardenEngine {
         wateredPlant.hydration = (plant.hydration + amount).clampedUnit
         wateredPlant.health = (plant.health + 0.055).clampedUnit
         wateredPlant.lastTendedAt = date
+        wateredPlant.lastWateredAt = date
         return wateredPlant
     }
 

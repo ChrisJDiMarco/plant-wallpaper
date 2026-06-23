@@ -13,6 +13,7 @@ final class PlantWallpaperScreenSaverView: ScreenSaverView, WKNavigationDelegate
     private var gardenState = GardenState.defaultGarden()
     private var selectedSceneKey = ScreenSaverGardenScene.defaultKey
     private var currentSnapshot: GardenScreenSaverSnapshot?
+    private var loadedSnapshotSavedAt: Date?
     private var lastReloadAt = Date.distantPast
     private var startedAt = Date()
     private var configurationWindow: NSWindow?
@@ -71,7 +72,6 @@ final class PlantWallpaperScreenSaverView: ScreenSaverView, WKNavigationDelegate
             in: bounds,
             date: Date(),
             desktopWallpaperImageURL: effectiveDesktopWallpaperImageURL(),
-            gardenSnapshotImageURL: effectiveGardenSnapshotImageURL(),
             animationElapsed: Date().timeIntervalSince(startedAt),
             isPreview: isPreview
         )
@@ -108,7 +108,14 @@ final class PlantWallpaperScreenSaverView: ScreenSaverView, WKNavigationDelegate
 
     private func reloadGardenIfNeeded() {
         let nextSceneKey = effectiveSceneKey()
-        guard nextSceneKey != selectedSceneKey || Date().timeIntervalSince(lastReloadAt) > 6 else {
+        if nextSceneKey != selectedSceneKey {
+            reloadGarden(force: true)
+            return
+        }
+
+        guard Date().timeIntervalSince(lastReloadAt) > 6,
+              let snapshot = effectiveScreenSaverSnapshot(),
+              snapshot.savedAt != loadedSnapshotSavedAt else {
             return
         }
 
@@ -123,6 +130,7 @@ final class PlantWallpaperScreenSaverView: ScreenSaverView, WKNavigationDelegate
 
         if let snapshot = effectiveScreenSaverSnapshot() {
             currentSnapshot = snapshot
+            loadedSnapshotSavedAt = snapshot.savedAt
             selectedSceneKey = snapshot.sceneKey.map(canonicalSceneKey) ?? nextSceneKey
             let screenCount = max(1, NSScreen.screens.count)
             gardenState = GardenEngine.constrainPlantsToScreenCount(snapshot.state, screenCount: screenCount)
@@ -131,6 +139,7 @@ final class PlantWallpaperScreenSaverView: ScreenSaverView, WKNavigationDelegate
         }
 
         currentSnapshot = nil
+        loadedSnapshotSavedAt = nil
         selectedSceneKey = nextSceneKey
         let screenCount = max(1, NSScreen.screens.count)
         let loadedState = (try? persistence.load(sceneKey: nextSceneKey))
@@ -197,7 +206,7 @@ final class PlantWallpaperScreenSaverView: ScreenSaverView, WKNavigationDelegate
     }
 
     private func effectiveDesktopWallpaperImageURL() -> URL? {
-        wallpaperImageURL(
+        wallpaperImageURL(from: currentSnapshot?.wallpaperImagePath) ?? wallpaperImageURL(
             from: appDefaults.object(forKey: ScreenSaverGardenConstants.desktopWallpaperImageDefaultsKey)
         ) ?? wallpaperImageURL(
             from: UserDefaults.standard.object(forKey: ScreenSaverGardenConstants.desktopWallpaperImageDefaultsKey)
@@ -227,19 +236,6 @@ final class PlantWallpaperScreenSaverView: ScreenSaverView, WKNavigationDelegate
         }
 
         return nil
-    }
-
-    private func effectiveGardenSnapshotImageURL() -> URL? {
-        guard let path = currentSnapshot?.compositedImagePath, !path.isEmpty else {
-            return nil
-        }
-
-        let url = URL(fileURLWithPath: path)
-        guard FileManager.default.fileExists(atPath: url.path) else {
-            return nil
-        }
-
-        return url
     }
 
     private func effectiveCatEnabled() -> Bool {
@@ -347,6 +343,7 @@ final class PlantWallpaperScreenSaverView: ScreenSaverView, WKNavigationDelegate
         })
         """
         catWebView.evaluateJavaScript(script)
+        restoreCatMemoryIfNeeded()
     }
 
     private func setCatPaused(_ isPaused: Bool) {
@@ -367,6 +364,15 @@ final class PlantWallpaperScreenSaverView: ScreenSaverView, WKNavigationDelegate
         catWebViewLoaded = true
         configureCatWebViewIfReady()
         setCatPaused(!isAnimating)
+    }
+
+    private func restoreCatMemoryIfNeeded() {
+        guard let memoryJSON = appDefaults.string(forKey: ScreenSaverGardenConstants.catMemoryDefaultsKey),
+              !memoryJSON.isEmpty else {
+            return
+        }
+
+        catWebView?.evaluateJavaScript("window.catBridge && window.catBridge.restoreCatMemory(\(memoryJSON))")
     }
 
     private func resolvedScreenIndex() -> Int {
@@ -471,6 +477,7 @@ private enum ScreenSaverGardenConstants {
     static let desktopSceneDefaultsKey = "PlantWallpaper.selectedWallpaperScene"
     static let desktopWallpaperImageDefaultsKey = "PlantWallpaper.currentWallpaperImageURL"
     static let catEnabledDefaultsKey = "catCompanionEnabled"
+    static let catMemoryDefaultsKey = "catRuntimeMemory"
     static let screenSaverSceneSelectionKey = "PlantWallpaperScreenSaver.sceneSelection"
     static let followDesktopSelection = "follow-desktop"
 }
@@ -598,19 +605,10 @@ private final class ScreenSaverGardenRenderer {
         in bounds: NSRect,
         date: Date,
         desktopWallpaperImageURL: URL?,
-        gardenSnapshotImageURL: URL?,
         animationElapsed: TimeInterval,
         isPreview: Bool
     ) {
         guard bounds.width > 0, bounds.height > 0 else {
-            return
-        }
-
-        if let gardenSnapshotImageURL,
-           let snapshotImage = NSImage(contentsOf: gardenSnapshotImageURL),
-           snapshotImage.size.width > 0,
-           snapshotImage.size.height > 0 {
-            drawAspectFill(snapshotImage, in: bounds)
             return
         }
 

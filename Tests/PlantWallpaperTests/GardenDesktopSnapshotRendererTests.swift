@@ -43,6 +43,20 @@ struct GardenDesktopSnapshotRendererTests {
         #expect(canvasSource.contains("drawsInteractiveChrome || drawsSceneObjectsWhenChromeHidden"))
     }
 
+    @Test("scene transitions freeze the current composited scene")
+    func sceneTransitionsFreezeTheCurrentCompositedScene() throws {
+        let testURL = URL(fileURLWithPath: #filePath)
+        let projectRoot = testURL
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let source = try String(contentsOf: projectRoot
+            .appendingPathComponent("Sources/PlantWallpaper/GardenOverlayController.swift"))
+
+        #expect(source.contains("GardenDesktopSnapshotRenderer.makeSnapshotBitmap"))
+        #expect(!source.contains("NSGradient(colors: ["))
+    }
+
     @Test("desktop snapshot composites wallpaper and plants and exports PNG data")
     func desktopSnapshotCompositesAndExports() throws {
         guard let screen = NSScreen.main ?? NSScreen.screens.first,

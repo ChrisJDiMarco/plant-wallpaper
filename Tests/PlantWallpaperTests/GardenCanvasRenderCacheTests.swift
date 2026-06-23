@@ -226,12 +226,44 @@ struct GardenCanvasRenderCacheTests {
         #expect(!alienCanvas.drawsGardenAtmosphericCanvasEffectsForSelfTest())
     }
 
-    private func canvas(for mode: GardenExperienceMode) -> GardenCanvasView {
+    @Test("progression level zero draws the waiting overlay")
+    func progressionLevelZeroDrawsTheWaitingOverlay() {
+        let profile = GardenProgressionProfile(
+            lifestyleFantasy: "quiet artist life",
+            placeInWorld: "misty lakeside",
+            ageBracket: "starter",
+            vibe: "calm"
+        )
+        let waitingCanvas = canvas(
+            for: .garden,
+            progression: GardenSceneProgression(isEnabled: true, level: 0, profile: profile)
+        )
+        let generatedCanvas = canvas(
+            for: .garden,
+            progression: GardenSceneProgression(isEnabled: true, level: 1, profile: profile)
+        )
+        let pausedCanvas = canvas(
+            for: .garden,
+            progression: GardenSceneProgression(isEnabled: false, level: 0, profile: profile)
+        )
+
+        #expect(waitingCanvas.drawsProgressionWaitingOverlayForSelfTest())
+        #expect(!generatedCanvas.drawsProgressionWaitingOverlayForSelfTest())
+        #expect(!pausedCanvas.drawsProgressionWaitingOverlayForSelfTest())
+    }
+
+    private func canvas(
+        for mode: GardenExperienceMode,
+        progression: GardenSceneProgression? = nil
+    ) -> GardenCanvasView {
         GardenCanvasView(
             frame: NSRect(x: 0, y: 0, width: 960, height: 540),
             screenIndex: 0,
             store: GardenStore(
-                state: GardenState(settings: .default.updating(experienceMode: mode)),
+                state: GardenState(
+                    settings: .default.updating(experienceMode: mode),
+                    progression: progression
+                ),
                 persistence: GardenPersistence(
                     directoryURL: FileManager.default.temporaryDirectory
                         .appendingPathComponent("garden-atmosphere-test-\(UUID().uuidString)", isDirectory: true)

@@ -68,6 +68,7 @@ public struct Plant: Codable, Equatable, Identifiable, Sendable {
     public var health: Double
     public var bloomProgress: Double
     public var lastStageChangedAt: Date?
+    public var lastWateredAt: Date?
     public var lastNourishedAt: Date?
     public var diedAt: Date?
     public var nickname: String
@@ -75,6 +76,7 @@ public struct Plant: Codable, Equatable, Identifiable, Sendable {
     public var scale: Double
     public var customAssetID: String?
     public var placementLocked: Bool
+    public var isFavorite: Bool
 
     public init(
         id: UUID = UUID(),
@@ -89,13 +91,15 @@ public struct Plant: Codable, Equatable, Identifiable, Sendable {
         health: Double = 0.86,
         bloomProgress: Double = 0,
         lastStageChangedAt: Date? = nil,
+        lastWateredAt: Date? = nil,
         lastNourishedAt: Date? = nil,
         diedAt: Date? = nil,
         nickname: String? = nil,
         swaySeed: Double = Double.random(in: 0...10_000),
         scale: Double? = nil,
         customAssetID: String? = nil,
-        placementLocked: Bool = false
+        placementLocked: Bool = false,
+        isFavorite: Bool = false
     ) {
         self.id = id
         self.species = species
@@ -109,6 +113,7 @@ public struct Plant: Codable, Equatable, Identifiable, Sendable {
         self.health = health.clampedUnit
         self.bloomProgress = bloomProgress.clampedUnit
         self.lastStageChangedAt = lastStageChangedAt
+        self.lastWateredAt = lastWateredAt
         self.lastNourishedAt = lastNourishedAt
         self.diedAt = diedAt
         self.nickname = nickname ?? species.displayName
@@ -116,6 +121,7 @@ public struct Plant: Codable, Equatable, Identifiable, Sendable {
         self.scale = scale ?? Double.random(in: species.defaultScaleRange)
         self.customAssetID = customAssetID
         self.placementLocked = placementLocked
+        self.isFavorite = isFavorite
     }
 
     enum CodingKeys: String, CodingKey {
@@ -131,6 +137,7 @@ public struct Plant: Codable, Equatable, Identifiable, Sendable {
         case health
         case bloomProgress
         case lastStageChangedAt
+        case lastWateredAt
         case lastNourishedAt
         case diedAt
         case nickname
@@ -138,6 +145,7 @@ public struct Plant: Codable, Equatable, Identifiable, Sendable {
         case scale
         case customAssetID
         case placementLocked
+        case isFavorite
     }
 
     public init(from decoder: Decoder) throws {
@@ -155,13 +163,15 @@ public struct Plant: Codable, Equatable, Identifiable, Sendable {
             health: try container.decode(Double.self, forKey: .health),
             bloomProgress: try container.decode(Double.self, forKey: .bloomProgress),
             lastStageChangedAt: try container.decodeIfPresent(Date.self, forKey: .lastStageChangedAt),
+            lastWateredAt: try container.decodeIfPresent(Date.self, forKey: .lastWateredAt),
             lastNourishedAt: try container.decodeIfPresent(Date.self, forKey: .lastNourishedAt),
             diedAt: try container.decodeIfPresent(Date.self, forKey: .diedAt),
             nickname: try container.decode(String.self, forKey: .nickname),
             swaySeed: try container.decode(Double.self, forKey: .swaySeed),
             scale: try container.decode(Double.self, forKey: .scale),
             customAssetID: try container.decodeIfPresent(String.self, forKey: .customAssetID),
-            placementLocked: try container.decodeIfPresent(Bool.self, forKey: .placementLocked) ?? false
+            placementLocked: try container.decodeIfPresent(Bool.self, forKey: .placementLocked) ?? false,
+            isFavorite: try container.decodeIfPresent(Bool.self, forKey: .isFavorite) ?? false
         )
     }
 

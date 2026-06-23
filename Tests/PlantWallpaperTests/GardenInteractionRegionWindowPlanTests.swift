@@ -113,4 +113,31 @@ final class GardenInteractionRegionWindowPlanTests: XCTestCase {
         XCTAssertEqual(optimizedFrames.count, 4)
         XCTAssertTrue(optimizedFrames.allSatisfy { $0.width >= 36 && $0.height >= 36 })
     }
+
+    func testDesktopEventTapIgnoresClicksInsideInteractionWindows() throws {
+        let testURL = URL(fileURLWithPath: #filePath)
+        let projectRoot = testURL
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let source = try String(contentsOf: projectRoot
+            .appendingPathComponent("Sources/PlantWallpaper/GardenOverlayController.swift"))
+
+        XCTAssertTrue(source.contains("guard !isPointInsideInteractionWindow(screenPoint),"))
+        XCTAssertTrue(source.contains("interactionWindows.contains { $0.frame.contains(screenPoint) }"))
+    }
+
+    func testInspectorRegionClicksCannotOpenDesktopPlantingMenu() throws {
+        let testURL = URL(fileURLWithPath: #filePath)
+        let projectRoot = testURL
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let source = try String(contentsOf: projectRoot
+            .appendingPathComponent("Sources/PlantWallpaper/GardenOverlayController.swift"))
+
+        XCTAssertTrue(source.contains("allowsDesktopPlantingMenu: false"))
+        XCTAssertTrue(source.contains("!isPointOnGardenInteractionSurface(screenPoint)"))
+        XCTAssertTrue(source.contains("canvasView.containsSelectionSurface(at: $0)"))
+    }
 }

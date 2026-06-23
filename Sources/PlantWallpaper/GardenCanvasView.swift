@@ -44,7 +44,7 @@ final class GardenCanvasView: NSView {
         var accessibilityLabel: String {
             switch self {
             case .care:
-                "Smart Care"
+                "Favorite"
             case .water:
                 "Water"
             case .nourish:
@@ -319,6 +319,10 @@ final class GardenCanvasView: NSView {
 
     override func draw(_ dirtyRect: NSRect) {
         super.draw(dirtyRect)
+        if shouldDrawProgressionWaitingOverlay() {
+            drawProgressionWaitingOverlay(in: bounds)
+            return
+        }
         let profile = sceneVisualProfile()
         let drawsGardenAtmosphere = drawsGardenAtmosphericCanvasEffects()
         if drawsGardenAtmosphere {
@@ -376,6 +380,76 @@ final class GardenCanvasView: NSView {
 
     private func drawsGardenAtmosphericCanvasEffects() -> Bool {
         store.state.settings.experienceMode == .garden
+    }
+
+    private static func shouldDrawProgressionWaitingOverlay(for state: GardenState) -> Bool {
+        guard let progression = state.progression else {
+            return false
+        }
+
+        return progression.isEnabled && progression.level == 0
+    }
+
+    private func shouldDrawProgressionWaitingOverlay() -> Bool {
+        Self.shouldDrawProgressionWaitingOverlay(for: store.state)
+    }
+
+    private func drawProgressionWaitingOverlay(in rect: NSRect) {
+        plantsLayerImage = nil
+        plantsLayerRect = .zero
+        plantsLayerSignature = 0
+
+        NSGraphicsContext.saveGraphicsState()
+        NSGradient(colors: [
+            NSColor(calibratedRed: 0.91, green: 0.97, blue: 0.91, alpha: 1),
+            NSColor(calibratedRed: 0.86, green: 0.94, blue: 0.98, alpha: 1),
+            NSColor(calibratedRed: 0.96, green: 0.93, blue: 0.86, alpha: 1)
+        ])?.draw(in: rect, angle: 82)
+
+        let time = currentDateProvider().timeIntervalSinceReferenceDate
+        let center = NSPoint(x: rect.midX, y: rect.midY)
+        let diameter = min(max(min(rect.width, rect.height) * 0.34, 220), 420)
+        let radiusStep = diameter / 16
+        let baseRadius = diameter / 7
+        let rotation = CGFloat(time.truncatingRemainder(dividingBy: 12) / 12) * 360
+        let colors = [
+            NSColor(calibratedRed: 0.26, green: 0.67, blue: 0.48, alpha: 1),
+            NSColor(calibratedRed: 0.30, green: 0.55, blue: 0.82, alpha: 1),
+            NSColor(calibratedRed: 0.94, green: 0.70, blue: 0.34, alpha: 1),
+            NSColor(calibratedRed: 0.56, green: 0.75, blue: 0.32, alpha: 1)
+        ]
+
+        for index in 0..<8 {
+            let radius = baseRadius + CGFloat(index) * radiusStep
+            let startAngle = rotation + CGFloat(index * 43)
+            let endAngle = startAngle + 164 - CGFloat(index * 7)
+            let path = NSBezierPath()
+            path.appendArc(
+                withCenter: center,
+                radius: radius,
+                startAngle: startAngle,
+                endAngle: endAngle,
+                clockwise: false
+            )
+            path.lineWidth = max(6, diameter * 0.018)
+            path.lineCapStyle = .round
+            colors[index % colors.count]
+                .withAlphaComponent(0.34 + CGFloat(index % 3) * 0.08)
+                .setStroke()
+            path.stroke()
+        }
+
+        let coreRect = NSRect(
+            x: center.x - diameter * 0.11,
+            y: center.y - diameter * 0.11,
+            width: diameter * 0.22,
+            height: diameter * 0.22
+        )
+        NSColor.white.withAlphaComponent(0.58).setFill()
+        NSBezierPath(ovalIn: coreRect.insetBy(dx: -diameter * 0.04, dy: -diameter * 0.04)).fill()
+        NSColor(calibratedRed: 0.28, green: 0.70, blue: 0.52, alpha: 0.82).setFill()
+        NSBezierPath(ovalIn: coreRect).fill()
+        NSGraphicsContext.restoreGraphicsState()
     }
 
     private func drawPlants(_ plants: [Plant], profile: GardenSceneVisualProfile, dirtyRect: NSRect) {
@@ -774,6 +848,10 @@ final class GardenCanvasView: NSView {
 
     func drawsGardenAtmosphericCanvasEffectsForSelfTest() -> Bool {
         drawsGardenAtmosphericCanvasEffects()
+    }
+
+    func drawsProgressionWaitingOverlayForSelfTest() -> Bool {
+        shouldDrawProgressionWaitingOverlay()
     }
 
     func plantLayerAverageBrightnessForSelfTest(

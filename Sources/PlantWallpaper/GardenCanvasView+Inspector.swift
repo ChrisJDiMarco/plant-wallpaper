@@ -308,7 +308,7 @@ extension GardenCanvasView {
         clearInspectorActionHover()
         switch action {
         case .care:
-            store.performRecommendedCareForSelectedPlant()
+            store.toggleSelectedPlantFavorite()
         case .water:
             store.waterSelectedPlant()
         case .nourish:
@@ -373,18 +373,31 @@ extension GardenCanvasView {
         let path = NSBezierPath(roundedRect: rect, xRadius: 9, yRadius: 9)
         let isDestructive = action == .remove
         let isLocked = action == .lockPlacement && plant.placementLocked
+        let isFavorite = action == .care && plant.isFavorite
+        let isRecentlyWatered = plant.lastWateredAt.map {
+            currentDateProvider().timeIntervalSince($0) < 6 * 3_600
+        } ?? false
+        let isWatered = action == .water && (isRecentlyWatered || plant.hydration >= 0.98)
         (isDestructive
             ? color(red: 239, green: 213, blue: 202, alpha: 0.96)
             : isLocked
                 ? color(red: 52, green: 69, blue: 45, alpha: 0.96)
-                : color(red: 255, green: 252, blue: 238, alpha: 0.96)
+                : isFavorite
+                    ? color(red: 255, green: 232, blue: 234, alpha: 0.98)
+                    : isWatered
+                        ? color(red: 224, green: 242, blue: 255, alpha: 0.98)
+                        : color(red: 255, green: 252, blue: 238, alpha: 0.96)
         ).setFill()
         path.fill()
         (isDestructive
             ? color(red: 164, green: 91, blue: 72, alpha: 0.58)
             : isLocked
                 ? color(red: 210, green: 227, blue: 184, alpha: 0.62)
-                : color(red: 124, green: 145, blue: 105, alpha: 0.46)
+                : isFavorite
+                    ? color(red: 218, green: 69, blue: 83, alpha: 0.70)
+                    : isWatered
+                        ? color(red: 47, green: 132, blue: 201, alpha: 0.70)
+                        : color(red: 124, green: 145, blue: 105, alpha: 0.46)
         ).setStroke()
         path.lineWidth = 1.1
         path.stroke()
@@ -408,7 +421,11 @@ extension GardenCanvasView {
             ? color(red: 85, green: 44, blue: 35, alpha: 0.96)
             : isLocked
                 ? color(red: 247, green: 252, blue: 232, alpha: 0.98)
-                : color(red: 35, green: 42, blue: 31, alpha: 0.96)
+                : isFavorite
+                    ? color(red: 204, green: 35, blue: 54, alpha: 0.98)
+                    : isWatered
+                        ? color(red: 0, green: 105, blue: 190, alpha: 0.98)
+                        : color(red: 35, green: 42, blue: 31, alpha: 0.96)
         tint.set()
         image.draw(
             in: iconRect,
@@ -437,7 +454,7 @@ extension GardenCanvasView {
     func tooltip(for action: InspectorAction, plant: Plant) -> String {
         switch action {
         case .care:
-            "Do recommended care"
+            plant.isFavorite ? "Remove from favorites" : "Add to favorites"
         case .water:
             "Water this plant"
         case .nourish:

@@ -25,8 +25,8 @@ struct GardenEngineTests {
         #expect(unlocked.plants.first { $0.id == plant.id }?.placementLocked == false)
     }
 
-    @Test("plants decode missing placement lock as unlocked")
-    func plantsDecodeMissingPlacementLockAsUnlocked() throws {
+    @Test("plants decode missing optional interaction state")
+    func plantsDecodeMissingOptionalInteractionState() throws {
         let json = """
         {
           "id": "00000000-0000-0000-0000-000000000123",
@@ -51,6 +51,8 @@ struct GardenEngineTests {
         let plant = try decoder.decode(Plant.self, from: json)
 
         #expect(!plant.placementLocked)
+        #expect(!plant.isFavorite)
+        #expect(plant.lastWateredAt == nil)
     }
 
     @Test("hydrated plants grow and keep healthy")
@@ -376,6 +378,7 @@ struct GardenEngineTests {
         #expect(wateredPlant.hydration == 1)
         #expect(wateredPlant.health > plant.health)
         #expect(wateredPlant.lastTendedAt == wateredDate)
+        #expect(wateredPlant.lastWateredAt == wateredDate)
     }
 
     @Test("watering thirsty plants with no thirsty plants leaves state untouched")
@@ -1193,8 +1196,10 @@ struct GardenEngineTests {
 
         #expect(wateredThirstyPlant.hydration > thirstyPlant.hydration)
         #expect(wateredThirstyPlant.lastTendedAt == tendedDate)
+        #expect(wateredThirstyPlant.lastWateredAt == tendedDate)
         #expect(unchangedSteadyPlant.hydration == steadyPlant.hydration)
         #expect(unchangedSteadyPlant.lastTendedAt == steadyPlant.lastTendedAt)
+        #expect(unchangedSteadyPlant.lastWateredAt == steadyPlant.lastWateredAt)
         #expect(watered.lastUpdatedAt == tendedDate)
     }
 

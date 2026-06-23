@@ -49,8 +49,8 @@ struct GardenStatusMenuModeSwitchTests {
         #expect(!fixture.menu.primaryWallpaperSceneTitlesForSelfTest().contains("Empty Conservatory Hall"))
     }
 
-    @Test("switching to Room Studio while the dropdown is open rebuilds after close")
-    func switchingToRoomStudioWhileDropdownIsOpenRebuildsAfterClose() throws {
+    @Test("switching to Room Studio while the dropdown is open rebuilds after the close callback")
+    func switchingToRoomStudioWhileDropdownIsOpenRebuildsAfterCloseCallback() throws {
         let fixture = try StatusMenuModeFixture()
         defer { fixture.cleanup() }
         let initialMenu = try #require(fixture.menu.menuObjectIdentifierForSelfTest())
@@ -63,8 +63,34 @@ struct GardenStatusMenuModeSwitchTests {
 
         fixture.menu.markMenuClosedForSelfTest()
 
+        #expect(fixture.menu.menuObjectIdentifierForSelfTest() == initialMenu)
+
+        fixture.menu.flushDeferredMenuRebuildForSelfTest()
+
         #expect(fixture.menu.menuObjectIdentifierForSelfTest() != initialMenu)
         #expect(fixture.menu.visibleMenuTitlesForSelfTest().contains("Mode: Room Studio"))
+    }
+
+    @Test("scene switches run through the visual transition handler")
+    func sceneSwitchesRunThroughTheVisualTransitionHandler() throws {
+        let fixture = try StatusMenuModeFixture()
+        defer { fixture.cleanup() }
+        var didTransition = false
+        var modeBeforeTransition: GardenExperienceMode?
+        var modeAfterTransition: GardenExperienceMode?
+        fixture.menu.sceneTransitionHandler = { updateScene in
+            didTransition = true
+            modeBeforeTransition = fixture.store.state.settings.experienceMode
+            updateScene()
+            modeAfterTransition = fixture.store.state.settings.experienceMode
+        }
+
+        fixture.menu.selectExperienceModeForSelfTest(.roomStudio)
+
+        #expect(didTransition)
+        #expect(modeBeforeTransition == .garden)
+        #expect(modeAfterTransition == .roomStudio)
+        #expect(fixture.store.activeSceneKey == GardenWallpaperScene.roomModernBedroomCanvas.rawValue)
     }
 
     @Test("switching to Alien UFO rebuilds menu around alien planting actions")
@@ -135,6 +161,67 @@ struct GardenStatusMenuModeSwitchTests {
         #expect(titles.contains("Alien Crater Greenhouse"))
         #expect(!titles.contains("Empty Conservatory Hall"))
         #expect(!titles.contains("Modern Bedroom Canvas"))
+    }
+
+    @Test("Room Studio generated scene selection opens the latest version")
+    func roomStudioGeneratedSceneSelectionOpensLatestVersion() throws {
+        let fixture = try StatusMenuModeFixture()
+        defer { fixture.cleanup() }
+
+        fixture.menu.selectExperienceModeForSelfTest(.roomStudio)
+        let rootRecord = try fixture.createChosenWallpaper(named: "room neon corner", mode: .roomStudio)
+        let firstRecord = try fixture.createEditedWallpaper(
+            updatePrompt: "add soft window light",
+            parentSceneKey: rootRecord.key,
+            editedFromKey: rootRecord.key,
+            createdAt: Date(timeIntervalSince1970: 10)
+        )
+        let secondRecord = try fixture.createEditedWallpaper(
+            updatePrompt: "move the shelf plants higher",
+            parentSceneKey: rootRecord.key,
+            editedFromKey: firstRecord.key,
+            createdAt: Date(timeIntervalSince1970: 20)
+        )
+
+        fixture.menu.refreshWallpaperScenesMenuForSelfTest()
+        #expect(fixture.menu.primaryWallpaperSceneTitlesForSelfTest().contains(rootRecord.displayName))
+
+        fixture.menu.applyWallpaperSceneRootForSelfTest(rootRecord.key)
+
+        #expect(fixture.wallpaperManager.selectedWallpaperSceneKey == secondRecord.key)
+        #expect(fixture.store.activeSceneKey == secondRecord.key)
+        #expect(fixture.wallpaperManager.wallpaperSceneRootKey() == rootRecord.key)
+        #expect(fixture.wallpaperManager.latestWallpaperKey(forSceneRootKey: rootRecord.key) == secondRecord.key)
+    }
+
+    @Test("progression menu lists generated progression scenes")
+    func progressionMenuListsGeneratedProgressionScenes() throws {
+        let fixture = try StatusMenuModeFixture()
+        defer { fixture.cleanup() }
+        fixture.menu.selectExperienceModeForSelfTest(.roomStudio)
+        let rootKey = GardenWallpaperScene.roomModernBedroomCanvas.rawValue
+        let progressionRecord = try fixture.createEditedWallpaper(
+            updatePrompt: "Progression Level 1: Bare First Room",
+            parentSceneKey: rootKey,
+            editedFromKey: rootKey,
+            createdAt: Date(timeIntervalSince1970: 10)
+        )
+        _ = try fixture.createEditedWallpaper(
+            updatePrompt: "add a warmer lamp",
+            parentSceneKey: rootKey,
+            editedFromKey: rootKey,
+            createdAt: Date(timeIntervalSince1970: 20)
+        )
+
+        fixture.menu.refreshWallpaperScenesMenuForSelfTest()
+        let titles = fixture.menu.submenuTitlesForSelfTest(named: "Progression Scenes")
+
+        #expect(titles.contains("Progression Level 1: Bare First Room"))
+        #expect(!titles.contains("add a warmer lamp"))
+
+        fixture.menu.applyWallpaperVersionForSelfTest(progressionRecord.key)
+
+        #expect(fixture.store.activeSceneKey == progressionRecord.key)
     }
 
     @Test("garden wallpaper tools include seedling restart only in garden mode")
@@ -338,6 +425,33 @@ struct GardenStatusMenuModeSwitchTests {
         #expect(fixture.store.activeSceneKey == rootKey)
         #expect(fixture.wallpaperManager.wallpaperSceneRootKey() == rootKey)
         #expect(fixture.wallpaperManager.latestWallpaperKey(forSceneRootKey: rootKey) == secondRecord.key)
+    }
+
+    @Test("favorite plants menu lists plants hearted from the inspector")
+    func favoritePlantsMenuListsPlantsHeartedFromTheInspector() throws {
+        let fixture = try StatusMenuModeFixture()
+        defer { fixture.cleanup() }
+
+        fixture.store.addPlant(
+            species: .rose,
+            screenIndex: 0,
+            position: GardenPoint(x: 0.35, y: 0.62)
+        )
+        let favoriteID = try #require(fixture.store.selectedPlantID)
+        fixture.store.toggleSelectedPlantFavorite()
+        fixture.store.addPlant(
+            species: .fern,
+            screenIndex: 0,
+            position: GardenPoint(x: 0.55, y: 0.62)
+        )
+
+        let titles = fixture.menu.submenuTitlesForSelfTest(named: "Favorite Plants")
+
+        #expect(titles.contains("Rose"))
+        #expect(!titles.contains("Fern"))
+
+        fixture.store.selectPlant(id: favoriteID)
+        #expect(fixture.menu.submenuAvailabilityForSelfTest(named: "Favorite Plants")["Rose"] == true)
     }
 }
 

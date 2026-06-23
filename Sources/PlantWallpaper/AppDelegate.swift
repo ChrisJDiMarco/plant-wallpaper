@@ -76,6 +76,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         statusMenu.progressionLevelCelebrationHandler = { [weak momentNotifier] level, title, isFinalLevel in
             momentNotifier?.celebrateProgressionLevel(level: level, title: title, isFinalLevel: isFinalLevel)
         }
+        statusMenu.sceneTransitionHandler = { [weak overlayController] updateScene in
+            overlayController?.performSceneTransition(updateScene) ?? updateScene()
+        }
         statusMenu.regenerateSmartLockWallpaperHandler = { [weak self] in
             self?.regenerateSmartLockWallpaper()
         }
@@ -341,7 +344,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func updateDisplayCadence(at date: Date = Date()) {
         let interval: TimeInterval
-        if store?.hasPendingCustomPlantAssets == true {
+        if let progression = store?.state.progression, progression.isEnabled, progression.level == 0 {
+            interval = GardenDisplayCadence.activeRefreshInterval
+        } else if store?.hasPendingCustomPlantAssets == true {
             interval = GardenDisplayCadence.activeRefreshInterval
         } else if let settings = store?.state.settings {
             let baseInterval = store?.state.displayCadence(at: date).refreshInterval

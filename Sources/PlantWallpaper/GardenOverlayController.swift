@@ -1,5 +1,6 @@
 import AppKit
 import PlantGardenCore
+import QuartzCore
 
 /// Records whether the desktop CGEvent tap could be installed. Creation
 /// fails when the app lacks Input Monitoring permission; the status menu
@@ -29,11 +30,46 @@ private final class GardenOverlayEventRelay: @unchecked Sendable {
     }
 }
 
+private final class GardenSceneTransitionView: NSView {
+    private let image: NSImage?
+
+    init(frame frameRect: NSRect, image: NSImage?) {
+        self.image = image
+        super.init(frame: frameRect)
+    }
+
+    required init?(coder: NSCoder) {
+        nil
+    }
+
+    override var isFlipped: Bool {
+        true
+    }
+
+    override func draw(_ dirtyRect: NSRect) {
+        super.draw(dirtyRect)
+        guard let image else {
+            return
+        }
+
+        image.draw(
+            in: bounds,
+            from: NSRect(origin: .zero, size: image.size),
+            operation: .copy,
+            fraction: 1,
+            respectFlipped: true,
+            hints: [.interpolation: NSImageInterpolation.high]
+        )
+    }
+}
+
 @MainActor
 final class GardenOverlayController {
     private let store: GardenStore
     private let musicPlayer: GardenMusicPlaybackControlling
     private var windows: [GardenWindow] = []
+    private var sceneTransitionWindows: [GardenWindow] = []
+    private var sceneTransitionGeneration = 0
 
     /// Driven by AppDelegate during AI Lock View: hides every canvas's placed
     /// plants while the generated wallpaper is showing, then restores them.
@@ -182,6 +218,37 @@ final class GardenOverlayController {
         rebuildWindows()
     }
 
+    func performSceneTransition(_ updateScene: @escaping () -> Void) {
+        sceneTransitionGeneration += 1
+        let generation = sceneTransitionGeneration
+        showSceneTransitionCover()
+        windows.forEach { $0.alphaValue = 0 }
+        updateScene()
+        windows.forEach { $0.alphaValue = 0 }
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.70) { [weak self] in
+            MainActor.assumeIsolated {
+                guard let self, generation == self.sceneTransitionGeneration else {
+                    return
+                }
+
+                NSAnimationContext.runAnimationGroup { context in
+                    context.duration = 0.50
+                    context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+                    self.windows.forEach { $0.animator().alphaValue = 1 }
+                    self.sceneTransitionWindows.forEach { $0.animator().alphaValue = 0 }
+                } completionHandler: {
+                    MainActor.assumeIsolated {
+                        guard generation == self.sceneTransitionGeneration else {
+                            return
+                        }
+                        self.closeSceneTransitionCover()
+                    }
+                }
+            }
+        }
+    }
+
     func containsForegroundGardenElement(at screenPoint: NSPoint) -> Bool {
         guard !isStatusMenuOpen, !isGardenInteractionLocked else {
             return false
@@ -258,9 +325,11 @@ final class GardenOverlayController {
                     return false
                 }
 
+                let screenPoint = window.convertPoint(toScreen: event.locationInWindow)
                 return self.handleMouseDown(
-                    at: window.convertPoint(toScreen: event.locationInWindow),
-                    clickCount: event.clickCount
+                    at: screenPoint,
+                    clickCount: event.clickCount,
+                    allowsDesktopPlantingMenu: !self.isPointOnGardenInteractionSurface(screenPoint)
                 )
             }
             canvasView.mouseDraggedHandler = { [weak self, weak window] event in
@@ -325,6 +394,40 @@ final class GardenOverlayController {
         windows.compactMap { $0.contentView as? GardenCanvasView }.forEach { view in
             view.needsDisplay = true
         }
+    }
+
+    private func showSceneTransitionCover() {
+        closeSceneTransitionCover()
+        sceneTransitionWindows = NSScreen.screens.enumerated().map { screenIndex, screen in
+            let window = GardenWindow(screen: screen)
+            window.level = GardenDesktopWindowLevels.plantSpotlight
+            window.alphaValue = 1
+            window.contentView = GardenSceneTransitionView(
+                frame: NSRect(origin: .zero, size: screen.frame.size),
+                image: currentSceneTransitionImage(for: screen, screenIndex: screenIndex)
+            )
+            window.orderFrontRegardless()
+            return window
+        }
+    }
+
+    private func currentSceneTransitionImage(for screen: NSScreen, screenIndex: Int) -> NSImage? {
+        guard let bitmap = try? GardenDesktopSnapshotRenderer.makeSnapshotBitmap(
+            store: store,
+            screen: screen,
+            screenIndex: screenIndex
+        ) else {
+            return nil
+        }
+
+        let image = NSImage(size: bitmap.size)
+        image.addRepresentation(bitmap)
+        return image
+    }
+
+    private func closeSceneTransitionCover() {
+        sceneTransitionWindows.forEach { $0.close() }
+        sceneTransitionWindows = []
     }
 
     nonisolated static func shouldInstallBugSystems(for state: GardenState) -> Bool {
@@ -609,6 +712,10 @@ final class GardenOverlayController {
             let clickCount = event.clickCount
             relay.dispatch { controller in
                 let screenPoint = NSEvent.mouseLocation
+                guard !controller.isPointInsideInteractionWindow(screenPoint),
+                      !controller.isPointOnGardenInteractionSurface(screenPoint) else {
+                    return
+                }
                 guard controller.canHandleDesktopMouse(at: screenPoint, forceFreshSnapshot: true) else {
                     return
                 }
@@ -714,6 +821,10 @@ final class GardenOverlayController {
         case .mouseMoved:
             updateMouseRouting(at: screenPoint)
         case .leftMouseDown:
+            guard !isPointInsideInteractionWindow(screenPoint),
+                  !isPointOnGardenInteractionSurface(screenPoint) else {
+                return
+            }
             guard canHandleDesktopMouse(
                 at: screenPoint,
                 quartzLocation: quartzLocation,
@@ -750,6 +861,25 @@ final class GardenOverlayController {
         default:
             return
         }
+    }
+
+    private func isPointInsideInteractionWindow(_ screenPoint: NSPoint) -> Bool {
+        interactionWindows.contains { $0.frame.contains(screenPoint) }
+    }
+
+    private func isPointOnGardenInteractionSurface(_ screenPoint: NSPoint) -> Bool {
+        for window in windows where window.frame.contains(screenPoint) {
+            guard let canvasView = window.contentView as? GardenCanvasView else {
+                continue
+            }
+
+            if viewPointCandidates(for: screenPoint, in: window, canvasView: canvasView)
+                .contains(where: { canvasView.containsSelectionSurface(at: $0) }) {
+                return true
+            }
+        }
+
+        return false
     }
 
     private func startPointerRoutingTimer() {
@@ -810,7 +940,8 @@ final class GardenOverlayController {
 
                         _ = self.handleMouseDown(
                             at: regionWindow.convertPoint(toScreen: event.locationInWindow),
-                            clickCount: event.clickCount
+                            clickCount: event.clickCount,
+                            allowsDesktopPlantingMenu: false
                         )
                     },
                     mouseDraggedHandler: { [weak self] event, regionWindow in
@@ -1055,7 +1186,8 @@ final class GardenOverlayController {
     private func handleMouseDown(
         at screenPoint: NSPoint,
         clickCount: Int,
-        allowsDoubleClickWatering: Bool = true
+        allowsDoubleClickWatering: Bool = true,
+        allowsDesktopPlantingMenu: Bool = true
     ) -> Bool {
         guard !isGardenInteractionLocked else {
             return false
@@ -1079,7 +1211,8 @@ final class GardenOverlayController {
             return true
         }
 
-        if openDesktopPlantingMenuIfNeeded(at: screenPoint, clickCount: clickCount) {
+        if allowsDesktopPlantingMenu,
+           openDesktopPlantingMenuIfNeeded(at: screenPoint, clickCount: clickCount) {
             return true
         }
 
@@ -1137,6 +1270,8 @@ final class GardenOverlayController {
               !isBirdSkyZoneDrawingMode,
               !isSoilBrushMode,
               !isStatusMenuOpen,
+              !isPointInsideInteractionWindow(screenPoint),
+              !isPointOnGardenInteractionSurface(screenPoint),
               let desktopPlantingMenuRequestHandler,
               Self.canOpenPlantingMenu(at: screenPoint) else {
             return false

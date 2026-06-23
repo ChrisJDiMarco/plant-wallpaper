@@ -239,6 +239,7 @@ struct GardenPersistenceTests {
 
         #expect(loadedPlant.nickname == "Legacy Tulip")
         #expect(loadedPlant.lastStageChangedAt == nil)
+        #expect(loadedPlant.lastWateredAt == nil)
         #expect(loadedPlant.lastNourishedAt == nil)
         #expect(loadedState.isAmbientWildlifeEnabled)
         #expect(loadedState.musicButton == nil)

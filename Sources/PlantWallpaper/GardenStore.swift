@@ -114,6 +114,29 @@ final class GardenStore: NSObject {
         replaceState(GardenEngine.waterPlant(state, id: id), shouldSave: true)
     }
 
+    func toggleSelectedPlantFavorite() {
+        guard let selectedPlantID else {
+            return
+        }
+
+        var nextState = state
+        guard let index = nextState.plants.firstIndex(where: { $0.id == selectedPlantID }) else {
+            return
+        }
+
+        nextState.plants[index].isFavorite.toggle()
+        nextState.lastUpdatedAt = Date()
+        replaceState(nextState, shouldSave: true)
+    }
+
+    func selectPlant(id: UUID) {
+        guard state.plants.contains(where: { $0.id == id }) else {
+            return
+        }
+
+        setSelectedPlant(id)
+    }
+
     func pruneSelectedPlant() {
         guard let selectedPlantID else {
             return

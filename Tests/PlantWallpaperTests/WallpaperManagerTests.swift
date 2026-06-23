@@ -2105,6 +2105,7 @@ struct GardenStoreSceneSwitchingTests {
             health: 0.01,
             bloomProgress: 0.92,
             lastStageChangedAt: plantedAt,
+            lastWateredAt: plantedAt,
             lastNourishedAt: plantedAt,
             diedAt: plantedAt,
             nickname: "Preview fern",
@@ -2139,6 +2140,7 @@ struct GardenStoreSceneSwitchingTests {
         #expect(resetPlant.ageSeconds == 0)
         #expect(resetPlant.bloomProgress == 0)
         #expect(resetPlant.diedAt == nil)
+        #expect(resetPlant.lastWateredAt == nil)
         #expect(resetPlant.lastNourishedAt == nil)
         #expect(resetPlant.health >= 0.88)
         #expect(resetPlant.hydration >= 0.82)

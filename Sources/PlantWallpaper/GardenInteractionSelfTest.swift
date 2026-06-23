@@ -111,9 +111,9 @@ enum GardenInteractionSelfTest {
             throw Failure.message("heart action did not handle click")
         }
         guard let heartPlant = heartStore.state.plants.first,
-              heartPlant.lastTendedAt != thrivingPlant.lastTendedAt,
-              heartPlant.health >= thrivingPlant.health else {
-            throw Failure.message("heart action did not tend a thriving selected plant")
+              heartPlant.isFavorite,
+              heartPlant.lastTendedAt == thrivingPlant.lastTendedAt else {
+            throw Failure.message("heart action did not favorite the selected plant")
         }
 
         let dryPlant = Plant(
@@ -138,7 +138,8 @@ enum GardenInteractionSelfTest {
             throw Failure.message("water action did not handle click")
         }
         guard let wateredPlant = waterStore.state.plants.first,
-              wateredPlant.hydration > dryPlant.hydration else {
+              wateredPlant.hydration > dryPlant.hydration,
+              wateredPlant.lastWateredAt != nil else {
             throw Failure.message("water action did not increase selected plant hydration")
         }
     }

@@ -276,6 +276,8 @@ final class GardenStatusMenu: NSObject {
     private let roomCollectiblesItem = NSMenuItem()
     private let roomLoungeGearItem = NSMenuItem()
     private var roomCategorySubmenus: [RoomObjectCategory: NSMenu] = [:]
+    private var favoritePlantItems: [NSMenuItem] = []
+    private weak var favoritePlantsSubmenu: NSMenu?
     private var lastRenderedExperienceMode: GardenExperienceMode?
     private var lastRenderedAssistantMenuItemEnabled: Bool?
     private let updateWallpaperItem = NSMenuItem()
@@ -289,12 +291,15 @@ final class GardenStatusMenu: NSObject {
     private let progressionSetupItem = NSMenuItem()
     private let progressionResetItem = NSMenuItem()
     private var progressionAutoAdvanceChoiceItems: [NSMenuItem] = []
+    private var progressionSceneItems: [NSMenuItem] = []
     private weak var progressionModeParentItem: NSMenuItem?
+    private weak var progressionScenesSubmenu: NSMenu?
     /// Set by AppDelegate so a level-up can post a celebration notification +
     /// journal entry through the shared GardenMomentNotifier. Args: level,
     /// level title, isFinalLevel.
     var progressionLevelCelebrationHandler: ((Int, String, Bool) -> Void)?
     var regenerateSmartLockWallpaperHandler: (() -> Void)?
+    var sceneTransitionHandler: ((@escaping () -> Void) -> Void)?
     private var wallpaperVersionItems: [NSMenuItem] = []
     private weak var wallpaperVersionsSubmenu: NSMenu?
     private var wallpaperSceneItems: [NSMenuItem] = []
@@ -325,6 +330,7 @@ final class GardenStatusMenu: NSObject {
     private var lastMouseSampleTime = ContinuousClock.now
     private var isMenuVisible = false
     private var needsMenuRebuildAfterClose = false
+    private var isMenuRebuildScheduled = false
     private var isGnomeZoneDrawingMode = false
     private var isBirdSkyZoneDrawingMode = false
     private var isSoilBrushMode = false
@@ -373,7 +379,7 @@ final class GardenStatusMenu: NSObject {
 
     private func entitlementsDidChange() {
         // Rebuild so Pro/locked badges across the menu reflect the new tier.
-        buildMenu()
+        requestMenuRebuild()
     }
 
     private func configureStatusButton() {
@@ -411,6 +417,7 @@ final class GardenStatusMenu: NSObject {
 
     private func buildMenu() {
         needsMenuRebuildAfterClose = false
+        isMenuRebuildScheduled = false
         detachReusableMenuItems()
         lastRenderedExperienceMode = store.state.settings.experienceMode
         lastRenderedAssistantMenuItemEnabled = store.state.settings.isAssistantMenuItemEnabled
@@ -467,6 +474,7 @@ final class GardenStatusMenu: NSObject {
             menu.addItem(waterThirstyItem)
         }
         menu.addItem(plantingMenu())
+        menu.addItem(favoritePlantsMenu())
         focusStatusItem.isEnabled = false
         menu.addItem(focusStatusItem)
         configureMenuItem(focusActionItem, title: "Start Focus Session", symbol: "timer", action: #selector(noOpFocusPlaceholder))
@@ -643,7 +651,14 @@ final class GardenStatusMenu: NSObject {
             seedPouchItem,
             harvestCropsItem
         ]
-        for item in items + Array(ambientSoundLayerItems.values) + radioCompanionChoiceItems + wallpaperVersionItems + wallpaperSceneItems + progressionAutoAdvanceChoiceItems {
+        for item in items
+            + Array(ambientSoundLayerItems.values)
+            + radioCompanionChoiceItems
+            + wallpaperVersionItems
+            + wallpaperSceneItems
+            + progressionAutoAdvanceChoiceItems
+            + progressionSceneItems
+            + favoritePlantItems {
             item.menu?.removeItem(item)
             item.submenu = nil
         }
@@ -694,6 +709,10 @@ final class GardenStatusMenu: NSObject {
 
     func applyWallpaperVersionForSelfTest(_ sceneKey: String) {
         applyWallpaperSceneKey(sceneKey, screensOverride: [])
+    }
+
+    func applyWallpaperSceneRootForSelfTest(_ sceneKey: String) {
+        applyWallpaperSceneRootKey(sceneKey, screensOverride: [])
     }
 
     func refreshWallpaperScenesMenuForSelfTest() {
@@ -791,6 +810,10 @@ final class GardenStatusMenu: NSObject {
             return
         }
         menuDidClose(menu)
+    }
+
+    func flushDeferredMenuRebuildForSelfTest() {
+        performDeferredMenuRebuildIfPossible()
     }
 
     private func menuItem(title: String, symbol: String, action: Selector) -> NSMenuItem {
@@ -1416,6 +1439,43 @@ final class GardenStatusMenu: NSObject {
         return submenuItem(title: title, symbol: symbol, submenu: submenu)
     }
 
+    private func favoritePlantsMenu() -> NSMenuItem {
+        let submenu = NSMenu(title: "Favorite Plants")
+        submenu.autoenablesItems = false
+        favoritePlantsSubmenu = submenu
+        populateFavoritePlantsSubmenu(submenu)
+        return submenuItem(title: "Favorite Plants", symbol: "heart.fill", submenu: submenu)
+    }
+
+    private func populateFavoritePlantsSubmenu(_ submenu: NSMenu) {
+        submenu.removeAllItems()
+        favoritePlantItems.removeAll()
+
+        let plants = store.state.plants
+            .filter(\.isFavorite)
+            .sorted { $0.nickname.localizedCaseInsensitiveCompare($1.nickname) == .orderedAscending }
+
+        guard !plants.isEmpty else {
+            let item = NSMenuItem(title: "No Favorites Yet", action: nil, keyEquivalent: "")
+            item.isEnabled = false
+            submenu.addItem(item)
+            return
+        }
+
+        for plant in plants {
+            let item = NSMenuItem(title: plant.nickname, action: #selector(selectFavoritePlant(_:)), keyEquivalent: "")
+            item.target = self
+            item.representedObject = plant.id.uuidString
+            item.state = store.selectedPlantID == plant.id ? .on : .off
+            if let image = NSImage(systemSymbolName: "heart.fill", accessibilityDescription: plant.nickname) {
+                image.isTemplate = true
+                item.image = image
+            }
+            favoritePlantItems.append(item)
+            submenu.addItem(item)
+        }
+    }
+
     /// Merges the cat companion visibility toggle and its settings into one row.
     private func catCompanionMenu() -> NSMenuItem {
         let submenu = NSMenu(title: "Cat Companion")
@@ -1506,6 +1566,8 @@ final class GardenStatusMenu: NSObject {
         progressionStatusItem.isEnabled = false
         submenu.addItem(progressionStatusItem)
         submenu.addItem(NSMenuItem.separator())
+        submenu.addItem(progressionScenesMenu())
+        submenu.addItem(NSMenuItem.separator())
 
         configureMenuItem(
             progressionSetupItem,
@@ -1546,6 +1608,14 @@ final class GardenStatusMenu: NSObject {
         let parentItem = submenuItem(title: "Progression Mode", symbol: "trophy.fill", submenu: submenu)
         progressionModeParentItem = parentItem
         return parentItem
+    }
+
+    private func progressionScenesMenu() -> NSMenuItem {
+        let submenu = NSMenu(title: "Progression Scenes")
+        submenu.autoenablesItems = false
+        progressionScenesSubmenu = submenu
+        populateProgressionScenesSubmenu(submenu)
+        return submenuItem(title: "Progression Scenes", symbol: "photo.stack.fill", submenu: submenu)
     }
 
     private func progressionAutoAdvanceMenu() -> NSMenuItem {
@@ -1725,7 +1795,57 @@ final class GardenStatusMenu: NSObject {
         if let wallpaperVersionsSubmenu {
             populateWallpaperVersionsSubmenu(wallpaperVersionsSubmenu)
         }
+        if let progressionScenesSubmenu {
+            populateProgressionScenesSubmenu(progressionScenesSubmenu)
+        }
         updateDynamicItems()
+    }
+
+    private func populateProgressionScenesSubmenu(_ submenu: NSMenu) {
+        submenu.removeAllItems()
+        progressionSceneItems.removeAll()
+
+        let records = wallpaperManager.customWallpapers
+            .filter { $0.isAssociated(with: store.state.settings.experienceMode) && Self.isProgressionWallpaper($0) }
+            .sorted { lhs, rhs in
+                if (lhs.versionIndex ?? 0) != (rhs.versionIndex ?? 0) {
+                    return (lhs.versionIndex ?? 0) > (rhs.versionIndex ?? 0)
+                }
+                return lhs.createdAt > rhs.createdAt
+            }
+
+        guard !records.isEmpty else {
+            let item = NSMenuItem(title: "No Progression Scenes Yet", action: nil, keyEquivalent: "")
+            item.isEnabled = false
+            submenu.addItem(item)
+            return
+        }
+
+        for record in records {
+            let title = record.editPrompt ?? record.displayName
+            let item = NSMenuItem(
+                title: GardenMenuTitleFormatter.compactStatusTitle(
+                    title,
+                    maxLength: GardenMenuTitleFormatter.sceneTitleMaxLength
+                ),
+                action: #selector(applyWallpaperVersion(_:)),
+                keyEquivalent: ""
+            )
+            item.target = self
+            item.representedObject = record.key
+            item.toolTip = title
+            item.state = wallpaperManager.selectedWallpaperSceneKey == record.key ? .on : .off
+            if let image = NSImage(systemSymbolName: "sparkles.rectangle.stack", accessibilityDescription: title) {
+                image.isTemplate = true
+                item.image = image
+            }
+            progressionSceneItems.append(item)
+            submenu.addItem(item)
+        }
+    }
+
+    private static func isProgressionWallpaper(_ record: CustomWallpaperRecord) -> Bool {
+        record.editPrompt?.hasPrefix("Progression Level ") == true
     }
 
     private func plantCategoryMenuItem(
@@ -1983,6 +2103,9 @@ final class GardenStatusMenu: NSObject {
         if let roomIndoorPlantSubmenu {
             populateRoomIndoorPlantSubmenu(roomIndoorPlantSubmenu)
         }
+        if let favoritePlantsSubmenu {
+            populateFavoritePlantsSubmenu(favoritePlantsSubmenu)
+        }
     }
 
     private func refreshRoomStudioMenus() {
@@ -2008,6 +2131,9 @@ final class GardenStatusMenu: NSObject {
 
     private func updateDynamicItems() {
         let now = Date()
+        if let favoritePlantsSubmenu {
+            populateFavoritePlantsSubmenu(favoritePlantsSubmenu)
+        }
         let hidesLiveCareHeader = GardenStatusHeaderVisibility.hidesLiveCareHeader(
             isPaused: store.state.isPaused,
             experienceMode: store.state.settings.experienceMode
@@ -2707,6 +2833,27 @@ final class GardenStatusMenu: NSObject {
         buildMenu()
     }
 
+    private func scheduleDeferredMenuRebuild() {
+        guard !isMenuRebuildScheduled else {
+            return
+        }
+
+        isMenuRebuildScheduled = true
+        DispatchQueue.main.async { [weak self] in
+            self?.performDeferredMenuRebuildIfPossible()
+        }
+    }
+
+    private func performDeferredMenuRebuildIfPossible() {
+        isMenuRebuildScheduled = false
+        guard needsMenuRebuildAfterClose,
+              !isMenuVisible else {
+            return
+        }
+
+        buildMenu()
+    }
+
     /// Swaps the menu bar icon to reflect the garden at a glance:
     /// timer while focusing, a water drop when plants are thirsty.
     private func refreshStatusIcon() {
@@ -2841,6 +2988,16 @@ final class GardenStatusMenu: NSObject {
     @objc private func performRecommendedCare() {
         let targetScreenIndex = lastDesktopPlantingTarget?.screenIndex ?? 0
         store.performRecommendedCare(screenIndex: targetScreenIndex)
+    }
+
+    @objc private func selectFavoritePlant(_ sender: NSMenuItem) {
+        guard let uuidString = sender.representedObject as? String,
+              let plantID = UUID(uuidString: uuidString) else {
+            return
+        }
+
+        store.selectPlant(id: plantID)
+        updateDynamicItems()
     }
 
     @objc private func plantFlower() {
@@ -4114,7 +4271,7 @@ final class GardenStatusMenu: NSObject {
             return
         }
 
-        applyWallpaperSceneKey(wallpaperManager.latestWallpaperKey(forSceneRootKey: sceneKey))
+        applyWallpaperSceneRootKey(sceneKey)
     }
 
     @objc private func applyWallpaperSceneRoot(_ sender: NSMenuItem) {
@@ -4122,7 +4279,7 @@ final class GardenStatusMenu: NSObject {
             return
         }
 
-        applyWallpaperSceneKey(wallpaperManager.latestWallpaperKey(forSceneRootKey: sceneKey))
+        applyWallpaperSceneRootKey(sceneKey)
     }
 
     @objc private func applyWallpaperVersion(_ sender: NSMenuItem) {
@@ -4143,6 +4300,13 @@ final class GardenStatusMenu: NSObject {
         applyWallpaperSceneKey(wallpaperManager.latestWallpaperKey(forSceneRootKey: sceneKey))
     }
 
+    private func applyWallpaperSceneRootKey(_ sceneKey: String, screensOverride: [NSScreen]? = nil) {
+        applyWallpaperSceneKey(
+            wallpaperManager.latestWallpaperKey(forSceneRootKey: sceneKey),
+            screensOverride: screensOverride
+        )
+    }
+
     private func applyWallpaperSceneKey(
         _ sceneKey: String,
         settingsOverride: GardenSettings? = nil,
@@ -4151,17 +4315,28 @@ final class GardenStatusMenu: NSObject {
         let playingRadioStation = GardenRadioPlayer.shared.playingRadioStation
         let playingRadioStream = GardenRadioPlayer.shared.playingRadioStream
         let screens = screensOverride ?? targetScreens()
-        let appliedSceneKey = wallpaperManager.applyWallpaperSceneKey(sceneKey, to: screens)
-        store.switchGardenScene(
-            to: appliedSceneKey,
-            screenCount: screens.count,
-            playingRadioStation: playingRadioStation,
-            playingRadioStream: playingRadioStream,
-            settingsOverride: settingsOverride
-        )
-        store.removePlantsWithoutDisplayableAssets()
-        refreshPlantingMenus()
-        updateDynamicItems()
+        performSceneTransition {
+            let appliedSceneKey = self.wallpaperManager.applyWallpaperSceneKey(sceneKey, to: screens)
+            self.store.switchGardenScene(
+                to: appliedSceneKey,
+                screenCount: screens.count,
+                playingRadioStation: playingRadioStation,
+                playingRadioStream: playingRadioStream,
+                settingsOverride: settingsOverride
+            )
+            self.store.removePlantsWithoutDisplayableAssets()
+            self.refreshPlantingMenus()
+            self.updateDynamicItems()
+        }
+    }
+
+    private func performSceneTransition(_ updateScene: @escaping () -> Void) {
+        guard let sceneTransitionHandler else {
+            updateScene()
+            return
+        }
+
+        sceneTransitionHandler(updateScene)
     }
 
     @objc private func chooseWallpaper() {
@@ -4558,14 +4733,16 @@ final class GardenStatusMenu: NSObject {
                 var stateToCarry = store.activeSceneKey == startingSceneKey ? store.state : startingState
                 stateToCarry.progression = advancing ? progression.advanced() : progression
                 try? store.persistence.save(stateToCarry, sceneKey: record.key)
-                store.switchGardenScene(
-                    to: record.key,
-                    screenCount: screens.count,
-                    playingRadioStation: GardenRadioPlayer.shared.playingRadioStation,
-                    playingRadioStream: GardenRadioPlayer.shared.playingRadioStream
-                )
-                store.removePlantsWithoutDisplayableAssets()
-                refreshPlantingMenus()
+                performSceneTransition {
+                    self.store.switchGardenScene(
+                        to: record.key,
+                        screenCount: screens.count,
+                        playingRadioStation: GardenRadioPlayer.shared.playingRadioStation,
+                        playingRadioStream: GardenRadioPlayer.shared.playingRadioStream
+                    )
+                    self.store.removePlantsWithoutDisplayableAssets()
+                    self.refreshPlantingMenus()
+                }
 
                 if advancing {
                     progressionLevelCelebrationHandler?(
@@ -5353,7 +5530,7 @@ private extension GardenStatusMenu {
     func menuDidClose(_ menu: NSMenu) {
         isMenuVisible = false
         if needsMenuRebuildAfterClose {
-            buildMenu()
+            scheduleDeferredMenuRebuild()
         }
         NotificationCenter.default.post(name: .gardenStatusMenuDidClose, object: self)
     }
