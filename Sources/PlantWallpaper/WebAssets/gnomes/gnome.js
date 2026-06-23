@@ -187,10 +187,12 @@ function makeGnome(opts) {
   mustL.scale.set(1.3, 0.55, 0.8); mustR.scale.set(1.3, 0.55, 0.8);
   mustL.rotation.z = 0.4; mustR.rotation.z = -0.4;
 
-  // BIG LAYERED BEARD — stacked rounded masses tapering to a coned point
+  // BIG LAYERED BEARD — stacked rounded masses, no cone-point silhouette.
   add(head, new THREE.SphereGeometry(3.2, 16, 12), matBeard,  0, -0.6, 1.4).scale.set(1.15, 1.0, 0.95); // upper jaw mass
   add(head, new THREE.SphereGeometry(2.7, 14, 12), matBeardD, 0, -2.6, 1.7).scale.set(1.05, 1.1, 0.85); // mid (shadow tone)
-  add(head, new THREE.ConeGeometry(2.2, 4.0, 14),  matBeard,  0, -5.0, 1.6);                            // flowing point
+  add(head, new THREE.SphereGeometry(2.0, 14, 10), matBeard,  0, -4.1, 1.7).scale.set(0.95, 1.25, 0.72); // lower flow
+  add(head, new THREE.SphereGeometry(1.25, 10, 8), matBeardD, -1.0, -4.5, 1.45).scale.set(0.95, 0.9, 0.68);
+  add(head, new THREE.SphereGeometry(1.25, 10, 8), matBeard,   1.0, -4.5, 1.45).scale.set(0.95, 0.9, 0.68);
   add(head, new THREE.SphereGeometry(1.2, 10, 8),  matBeard, -2.9, -0.2, 1.0).scale.set(0.7, 1.2, 0.9); // cheek chops
   add(head, new THREE.SphereGeometry(1.2, 10, 8),  matBeard,  2.9, -0.2, 1.0).scale.set(0.7, 1.2, 0.9);
 

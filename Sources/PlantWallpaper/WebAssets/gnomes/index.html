@@ -18,10 +18,53 @@
     height: 100vh;
     background: transparent;
   }
+
+  #gnome-inspector {
+    position: fixed;
+    min-width: 220px;
+    max-width: 280px;
+    padding: 12px;
+    border: 1px solid rgba(74, 93, 58, 0.28);
+    border-radius: 10px;
+    background: rgba(250, 247, 224, 0.92);
+    color: #263421;
+    font: 14px/1.35 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    box-shadow: 0 14px 38px rgba(0, 0, 0, 0.24);
+    backdrop-filter: blur(10px);
+    pointer-events: auto;
+    display: none;
+    z-index: 5;
+  }
+
+  #gnome-inspector h2 {
+    margin: 0 0 5px;
+    font-size: 18px;
+  }
+
+  #gnome-inspector p {
+    margin: 2px 0;
+  }
+
+  #gnome-inspector .buttons {
+    display: flex;
+    gap: 8px;
+    margin-top: 10px;
+    flex-wrap: wrap;
+  }
+
+  #gnome-inspector button {
+    border: 1px solid rgba(74, 93, 58, 0.32);
+    border-radius: 8px;
+    background: rgba(255, 255, 248, 0.86);
+    color: #263421;
+    padding: 7px 9px;
+    font: inherit;
+  }
 </style>
 </head>
 <body>
 <canvas id="gnome-canvas"></canvas>
+<div id="gnome-inspector"></div>
 <script src="../cat/three.min.js"></script>
 <script src="projection.js"></script>
 <script src="materials.js"></script>

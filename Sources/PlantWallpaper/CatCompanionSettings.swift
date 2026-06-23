@@ -148,6 +148,7 @@ final class CatCompanionSettingsWindowController: NSWindowController {
     private let mouseSwitch = NSSwitch()
     private let purrSwitch = NSSwitch()
     private weak var visualizerWebView: WKWebView?
+    private weak var controlsScrollView: NSScrollView?
     private var visualizerNavigationDelegate: MainActorWebNavigationDelegate?
 
     nonisolated static func neuralVisualizerIndexURL() -> URL? {
@@ -185,6 +186,9 @@ final class CatCompanionSettingsWindowController: NSWindowController {
         window?.center()
         window?.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
+        DispatchQueue.main.async { [weak self] in
+            self?.resetControlsScrollPosition()
+        }
     }
 
     private func buildContent() {
@@ -337,6 +341,7 @@ final class CatCompanionSettingsWindowController: NSWindowController {
         scrollView.borderType = .noBorder
         scrollView.automaticallyAdjustsContentInsets = false
         scrollView.translatesAutoresizingMaskIntoConstraints = false
+        controlsScrollView = scrollView
 
         let stack = NSStackView()
         stack.orientation = .vertical
@@ -406,6 +411,14 @@ final class CatCompanionSettingsWindowController: NSWindowController {
         constrainWidth(footer, to: stack)
 
         return scrollView
+    }
+
+    private func resetControlsScrollPosition() {
+        guard let scrollView = controlsScrollView, let documentView = scrollView.documentView else { return }
+        scrollView.layoutSubtreeIfNeeded()
+        let y = documentView.isFlipped ? 0 : max(0, documentView.bounds.height - scrollView.contentView.bounds.height)
+        scrollView.contentView.scroll(to: NSPoint(x: 0, y: y))
+        scrollView.reflectScrolledClipView(scrollView.contentView)
     }
 
     private func makeVisualizerWebView() -> WKWebView {

@@ -129,6 +129,7 @@ final class GnomeTribeController: NSObject {
     private var routineRefreshTimer: Timer?
     private var storeObserver: NSObjectProtocol?
     private var navigationDelegates: [MainActorWebNavigationDelegate] = []
+    private var pointerRoutingTimer: Timer?
 
     init(store: GardenStore) {
         self.store = store
@@ -176,6 +177,7 @@ final class GnomeTribeController: NSObject {
             screens.append(screen)
         }
         startRoutineRefreshTimer()
+        startPointerRoutingTimer()
     }
 
     func refresh(force: Bool = false) {
@@ -292,6 +294,44 @@ final class GnomeTribeController: NSObject {
         navigationDelegates = []
         lastPayloadFingerprints = [:]
         stopRoutineRefreshTimer()
+        stopPointerRoutingTimer()
+    }
+
+    private func startPointerRoutingTimer() {
+        pointerRoutingTimer?.invalidate()
+        pointerRoutingTimer = Timer.scheduledTimer(
+            withTimeInterval: 0.08,
+            repeats: true
+        ) { [weak self] _ in
+            MainActor.assumeIsolated {
+                self?.updatePointerRouting()
+            }
+        }
+        pointerRoutingTimer?.tolerance = 0.03
+    }
+
+    private func stopPointerRoutingTimer() {
+        pointerRoutingTimer?.invalidate()
+        pointerRoutingTimer = nil
+    }
+
+    private func updatePointerRouting() {
+        let screenPoint = NSEvent.mouseLocation
+        for (index, window) in windows.enumerated() {
+            guard index < webViews.count, window.frame.contains(screenPoint) else {
+                window.ignoresMouseEvents = true
+                continue
+            }
+            let local = window.convertPoint(fromScreen: screenPoint)
+            let cssX = max(0, min(window.frame.width, local.x))
+            let cssY = max(0, min(window.frame.height, window.frame.height - local.y))
+            let script = "Boolean(window.gnomeBridge && window.gnomeBridge.hitTest(\(cssX), \(cssY)))"
+            webViews[index].evaluateJavaScript(script) { [weak window] result, _ in
+                DispatchQueue.main.async {
+                    window?.ignoresMouseEvents = !((result as? Bool) ?? false)
+                }
+            }
+        }
     }
 
     private func payload(forScreenIndex screenIndex: Int, screen: NSScreen) -> Payload {

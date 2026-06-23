@@ -244,4 +244,20 @@ final class CatCompanionAssetTests: XCTestCase {
         XCTAssertTrue(CatCompanionSettingsCopy.sensoryToggles.contains("Purr when petted"))
         XCTAssertTrue(CatCompanionSettings().purringEnabled)
     }
+
+    func testCatSettingsPanelResetsRightPaneScrollOnOpen() throws {
+        let source = try String(
+            contentsOf: URL(fileURLWithPath: #filePath)
+                .deletingLastPathComponent()
+                .deletingLastPathComponent()
+                .deletingLastPathComponent()
+                .appendingPathComponent("Sources/PlantWallpaper/CatCompanionSettings.swift"),
+            encoding: .utf8
+        )
+
+        XCTAssertTrue(source.contains("resetControlsScrollPosition()"))
+        XCTAssertTrue(source.contains("controlsScrollView = scrollView"))
+        XCTAssertTrue(source.contains("documentView.isFlipped ? 0"))
+        XCTAssertTrue(source.contains("reflectScrolledClipView"))
+    }
 }

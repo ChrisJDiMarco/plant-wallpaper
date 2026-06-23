@@ -371,7 +371,7 @@
    * ##  PART 2 — TOWN ROUTING (agent behavior, no THREE dependency)         ##
    * ##  Drives gnomes between POIs and deposits wear under their feet so     ##
    * ##  emergent desire paths + a hub plaza form. Every emitted action is a  ##
-   * ##  pose poseGnome() handles: walk|idle|build|cheer|carry|chat|forage    ##
+   * ##  pose poseGnome() handles: walk|idle|build|cheer|carry|chat|forage|nap##
    * ##  plus expedition poses such as grappleShoot|zipline|rappel|sample.    ##
    * ######################################################################## */
 
@@ -435,6 +435,7 @@
     var BOUNDARY_PROBE = Math.max(EDGE_PAD * 1.45, Math.min(18, SPAN * 0.045));
     var STUCK_REPLAN_AT = 0.95;
     var PERSONAL_SPACE = Math.max(10, Math.min(18, SPAN * 0.052));
+    var GREET_DISTANCE = Math.max(PERSONAL_SPACE * 1.6, Math.min(42, SPAN * 0.11));
     var DWELL = {};
     var PLAZA_RELAY = {};
     var residents = [];
@@ -486,6 +487,7 @@
       SPEED_JITTER = clampN(0.12 + behaviorLiveliness * 0.10, 0.12, 0.34);
       MEANDER_AMPL = Math.min(9, SPAN * (0.014 + behaviorLiveliness * 0.006));
       MEANDER_FREQ = 0.72 + behaviorLiveliness * 0.22;
+      GREET_DISTANCE = Math.max(PERSONAL_SPACE * 1.6, Math.min(42, SPAN * (0.085 + cooperationMultiplier * 0.015)));
       var dwellScale = clampN(1.22 - behaviorLiveliness * 0.18, 0.55, 1.25);
       DWELL = {
         idle: [2.0 * dwellScale, 5.0 * dwellScale],
@@ -897,7 +899,7 @@
       if (gnome.action === 'chat' || gnome.action === 'cheer') n.social = clampN(n.social - dt * 0.050, 0, 1);
       if (gnome.action === 'forage' || gnome.action === 'inspect' || gnome.action === 'sample' || gnome.action === 'canopyInspect' || gnome.action === 'extractTap' || gnome.action === 'sampleBundle' || gnome.action === 'catalogSample' || gnome.action === 'butterflyMount' || gnome.action === 'butterflyRide' || gnome.action === 'butterflyRelease') n.curiosity = clampN(n.curiosity - dt * 0.045, 0, 1);
       if (gnome.action === 'carry') n.supplies = clampN(n.supplies - dt * 0.025, 0, 1);
-      if (gnome.restingInside || gnome.action === 'idle') n.rest = clampN(n.rest - dt * 0.018, 0, 1);
+      if (gnome.restingInside || gnome.action === 'idle' || gnome.action === 'nap') n.rest = clampN(n.rest - dt * (gnome.action === 'nap' ? 0.060 : 0.018), 0, 1);
       return mind;
     }
 
@@ -974,6 +976,74 @@
         other.action = 'chat';
       }
       return true;
+    }
+
+    function neighborGreeting(gnome) {
+      var best = null;
+      var bestD2 = GREET_DISTANCE * GREET_DISTANCE;
+      for (var i = 0; i < residents.length; i++) {
+        var other = residents[i];
+        if (!other || other === gnome || other.restingInside || other.missionPhase || other.tunnelPhase || other.sampleCarried) continue;
+        var dx = other.x - gnome.x;
+        var dz = other.z - gnome.z;
+        var d2 = dx * dx + dz * dz;
+        if (!isFinite(d2) || d2 <= 0.0001 || d2 > bestD2) continue;
+        bestD2 = d2;
+        best = other;
+      }
+      return best ? { nearest: best, nearestDistance: Math.sqrt(bestD2), x: best.x - gnome.x, z: best.z - gnome.z } : null;
+    }
+
+    function maybeGreetingPause(gnome, dt) {
+      if (!gnome || gnome.dwell > 0 || gnome.missionPhase || gnome.tunnelPhase || gnome.sampleCarried || gnome.restingInside) return false;
+      if (gnome.role === 'build' && dailyRoutine.buildBias > 0.58 && rng() < 0.72) return false;
+      var greeting = neighborGreeting(gnome);
+      if (!greeting) return false;
+      var mind = ensureMind(gnome);
+      var socialNeed = mind.needs ? (mind.needs.social || 0) : 0.35;
+      var closeStart = PERSONAL_SPACE * 0.75;
+      var distanceScore = 1 - clampN((greeting.nearestDistance - closeStart) / Math.max(1, GREET_DISTANCE - closeStart), 0, 1);
+      var chance = dt * clampN((0.04 + socialNeed * 0.18 + dailyRoutine.socialBias * 0.16 + distanceScore * 0.12) * cooperationMultiplier, 0, 0.38);
+      if (rng() > chance) return false;
+
+      gnome.dwell = rand(1.0, 2.6);
+      gnome.action = rng() < 0.15 ? 'cheer' : 'chat';
+      mind.intent = { kind: 'greeting', reason: 'walking over to greet a nearby neighbor', since: gnome.missionClock || 0 };
+      mind.needs.social = clampN((mind.needs.social || 0) - 0.20, 0, 1);
+      gnome.heading = turnToward(gnome.heading || 0, Math.atan2(greeting.x, greeting.z), 4.0, dt);
+
+      var other = greeting.nearest;
+      if (other && !other.missionPhase && !other.tunnelPhase && !other.sampleCarried && !other.restingInside && (other.dwell || 0) <= 0) {
+        var otherMind = ensureMind(other);
+        otherMind.intent = { kind: 'greeting', reason: 'answering a nearby neighbor', since: other.missionClock || 0 };
+        otherMind.needs.social = clampN((otherMind.needs.social || 0) - 0.16, 0, 1);
+        other.dwell = rand(0.9, 2.1);
+        other.action = 'chat';
+        other.heading = Math.atan2(gnome.x - other.x, gnome.z - other.z);
+      }
+      return true;
+    }
+
+    function isTreePOI(plant) {
+      var species = String((plant && plant.species) || '').toLowerCase();
+      return !!(plant && (plant.canClimb || Number(plant.canopyHeight || 0) > 0.18 || species.indexOf('tree') >= 0 || species.indexOf('maple') >= 0 || species.indexOf('oak') >= 0 || species.indexOf('pine') >= 0));
+    }
+
+    function pickTreePOI() {
+      var treePlants = [];
+      var sourcePlants = plants.concat(expeditionPlants);
+      for (var i = 0; i < sourcePlants.length; i++) if (isTreePOI(sourcePlants[i])) treePlants.push(sourcePlants[i]);
+      return treePlants.length ? tag(pick(treePlants), 'plant') : null;
+    }
+
+    function plantDwellAction(gnome) {
+      var target = gnome.goal || {};
+      var mind = ensureMind(gnome);
+      var restNeed = mind.needs ? (mind.needs.rest || 0) : 0.25;
+      var treeLike = isTreePOI(target);
+      if (treeLike && (restNeed > 0.52 || dailyRoutine.sleepBias > 0.36) && rng() < 0.24 + restNeed * 0.22 + dailyRoutine.sleepBias * 0.36) return 'nap';
+      if (treeLike && rng() < 0.22 + plantInteractionMultiplier * 0.10) return 'climb';
+      return rng() < 0.64 ? 'forage' : 'inspect';
     }
 
     /* tag a POI with a 'kind' so we can choose dwell action on arrival */
@@ -1665,6 +1735,7 @@
       }
       // idle: loiter home <-> plaza <-> a neighbor. Plaza-heavy.
       if ((needs.rest || 0) > 0.84 && r < 0.74) return tag(home, 'home');
+      if ((needs.rest || 0) > 0.58 && r < 0.30 + dailyRoutine.forageBias * 0.10) { var shadeTree = pickTreePOI(); if (shadeTree) return shadeTree; }
       if ((needs.curiosity || 0) > 0.72) { var curiousPlant = pickPlantPOI(); if (curiousPlant && r < 0.70) return curiousPlant; }
       if ((needs.social || 0) > 0.72 && r < 0.78) return plazaPOI;
       if (r < dailyRoutine.sleepBias * 0.62) return tag(home, 'home');
@@ -1740,8 +1811,8 @@
         gnome.nextMissionAt = (gnome.missionClock || 0) + rand(60, 180);
       }
       else if (kind === 'plant') {
-        d = DWELL.plant;
-        act = rng() < 0.26 && gnome.goal && gnome.goal.canClimb ? 'climb' : (rng() < 0.64 ? 'forage' : 'inspect');
+        act = plantDwellAction(gnome);
+        d = act === 'nap' ? [4.5, 8.0] : (act === 'climb' ? [2.4, 5.2] : DWELL.plant);
       }
       else if (kind === 'plaza') {
         d = DWELL.plaza;
@@ -1956,6 +2027,10 @@
       }
       if (maybeSocialPause(gnome, socialAwareness, dt)) {
         if (typeof deposit === 'function') deposit(gnome.x, gnome.z, DEPOSIT_BASE * 0.2 * dt);
+        return;
+      }
+      if (maybeGreetingPause(gnome, dt)) {
+        if (typeof deposit === 'function') deposit(gnome.x, gnome.z, DEPOSIT_BASE * 0.18 * dt);
         return;
       }
 

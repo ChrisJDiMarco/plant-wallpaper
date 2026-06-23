@@ -288,6 +288,69 @@ struct GnomeTribeIntegrationTests {
         #expect(!emergence.contains("grey cobble"))
     }
 
+    @Test("gnome society has spatial greetings tree naps and non cone silhouettes")
+    func gnomeSocietyHasSpatialGreetingsTreeNapsAndNonConeSilhouettes() throws {
+        let indexURL = try #require(GnomeTribeController.webAssetsIndexURL())
+        let directoryURL = indexURL.deletingLastPathComponent()
+        let main = try String(contentsOf: directoryURL.appendingPathComponent("main.js"), encoding: .utf8)
+        let emergence = try String(contentsOf: directoryURL.appendingPathComponent("emergence.js"), encoding: .utf8)
+        let pose = try String(contentsOf: directoryURL.appendingPathComponent("pose.js"), encoding: .utf8)
+        let gnome = try String(contentsOf: directoryURL.appendingPathComponent("gnome.js"), encoding: .utf8)
+        let rendererSource = [main, emergence, pose, gnome].joined(separator: "\n")
+
+        for requiredFragment in [
+            "GREET_DISTANCE",
+            "function neighborGreeting",
+            "nearestDistance",
+            "function maybeGreetingPause",
+            "function pickTreePOI",
+            "function plantDwellAction",
+            "action === 'nap'",
+            "fieldTrowelHead",
+            "fieldTrowelScoop",
+            "no cone-point silhouette"
+        ] {
+            #expect(rendererSource.contains(requiredFragment))
+        }
+        #expect(!gnome.contains("new THREE.ConeGeometry(2.2, 4.0, 14)"))
+        #expect(!main.contains("new THREE.ConeGeometry(0.32, 1.1, 8)"))
+    }
+
+    @Test("gnome inspector supports first person view and structure moving")
+    func gnomeInspectorSupportsFirstPersonViewAndStructureMoving() throws {
+        let indexURL = try #require(GnomeTribeController.webAssetsIndexURL())
+        let directoryURL = indexURL.deletingLastPathComponent()
+        let html = try String(contentsOf: indexURL, encoding: .utf8)
+        let main = try String(contentsOf: directoryURL.appendingPathComponent("main.js"), encoding: .utf8)
+        let controller = try String(
+            contentsOf: URL(fileURLWithPath: #filePath)
+                .deletingLastPathComponent()
+                .deletingLastPathComponent()
+                .deletingLastPathComponent()
+                .appendingPathComponent("Sources/PlantWallpaper/GnomeTribeController.swift"),
+            encoding: .utf8
+        )
+        let source = [html, main, controller].joined(separator: "\n")
+
+        for requiredFragment in [
+            "gnome-inspector",
+            "function pickAt",
+            "registerInspectable",
+            "First Person View",
+            "function updateFirstPersonCamera",
+            "move-structure",
+            "Tower home",
+            "Village hall",
+            "moving.data.site",
+            "gnomeStructureSelector",
+            "hitTest(x, y)",
+            "startPointerRoutingTimer",
+            "window.gnomeBridge.hitTest"
+        ] {
+            #expect(source.contains(requiredFragment))
+        }
+    }
+
     @Test("gnome daily routine follows real local time")
     func gnomeDailyRoutineFollowsRealLocalTime() throws {
         var calendar = Calendar(identifier: .gregorian)

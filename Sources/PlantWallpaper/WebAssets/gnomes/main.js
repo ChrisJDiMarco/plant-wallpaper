@@ -28,6 +28,8 @@
   const MAX_FIRE_LIGHTS = 4;      // cap real bonfire point-lights for perf
   const gnomeHatColors = [0xb8512f, 0x3f6b9c, 0x6a8f3a, 0xb08a2e, 0x824a8c, 0xb84a6a, 0x3f7d6b];
   const gnomeTunicColors = [0x2e6f4e, 0x6a4a86, 0x8a5a2a, 0x356b86, 0x7a3a3a, 0x4a5a86];
+  const gnomeNames = ['Pip', 'Moss', 'Brindle', 'Tansy', 'Nim', 'Lark', 'Bram', 'Juniper', 'Fig', 'Wicket', 'Mallow', 'Basil'];
+  const gnomeTraits = ['dew cartographer', 'lantern keeper', 'root listener', 'mushroom negotiator', 'tiny engineer', 'tea scout'];
 
   const state = {
     width: window.innerWidth,
@@ -43,7 +45,14 @@
     plants: [],
     villages: new Map(),
     tunnelLinks: new Map(),
-    fireLightCount: 0
+    fireLightCount: 0,
+    inspector: {
+      selected: null,
+      firstPersonGnome: null,
+      movingStructure: null,
+      moveArmed: false,
+      moveOffset: { x: 0, z: 0 }
+    }
   };
 
   const renderer = new THREE.WebGLRenderer({ canvas, alpha: true, antialias: true, premultipliedAlpha: false });
@@ -57,6 +66,12 @@
 
   const scene = new THREE.Scene();
   const camera = new THREE.PerspectiveCamera(FOV, 1, 1, 6000);
+  const raycaster = new THREE.Raycaster();
+  const pointerNdc = new THREE.Vector2();
+  const groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+  const groundHit = new THREE.Vector3();
+  const inspectorEl = document.getElementById('gnome-inspector');
+  let selectorBox = null;
 
   /* ---- lighting (dusk 3-point) — intensities scaled by circadian lightLevel ---- */
   const hemi = new THREE.HemisphereLight(0x9bb0ff, 0x241826, 0.32);
@@ -349,6 +364,169 @@
     return material;
   }
 
+  function cssPointToNdc(x, y) {
+    pointerNdc.set((x / Math.max(1, state.width)) * 2 - 1, -(y / Math.max(1, state.height)) * 2 + 1);
+    raycaster.setFromCamera(pointerNdc, camera);
+  }
+
+  function registerInspectable(group, data) {
+    if (!group) return;
+    group.userData.gnomeInspectable = data;
+    group.traverse(child => { child.userData.gnomeInspectableRoot = group; });
+  }
+
+  function inspectableRoot(object) {
+    let node = object;
+    while (node) {
+      if (node.userData && node.userData.gnomeInspectable) return node;
+      if (node.userData && node.userData.gnomeInspectableRoot) return node.userData.gnomeInspectableRoot;
+      node = node.parent;
+    }
+    return null;
+  }
+
+  function pickables() {
+    const items = [];
+    for (const v of state.villages.values()) {
+      v.gnomes.forEach(rec => items.push(rec.group));
+      (v.inspectableStructures || []).forEach(item => items.push(item.group));
+    }
+    return items;
+  }
+
+  function pickAt(x, y) {
+    cssPointToNdc(x, y);
+    const hits = raycaster.intersectObjects(pickables(), true);
+    for (const hit of hits) {
+      const root = inspectableRoot(hit.object);
+      if (root && root.userData.gnomeInspectable) {
+        return { root, data: root.userData.gnomeInspectable };
+      }
+    }
+    return null;
+  }
+
+  function groundPointAt(x, y) {
+    cssPointToNdc(x, y);
+    return raycaster.ray.intersectPlane(groundPlane, groundHit) ? groundHit : null;
+  }
+
+  function hideInspector() {
+    if (inspectorEl) inspectorEl.style.display = 'none';
+    state.inspector.selected = null;
+    setSelector(null);
+  }
+
+  function setSelector(root) {
+    if (selectorBox) {
+      scene.remove(selectorBox);
+      selectorBox.geometry && selectorBox.geometry.dispose();
+      selectorBox.material && selectorBox.material.dispose();
+      selectorBox = null;
+    }
+    if (!root) return;
+    selectorBox = new THREE.BoxHelper(root, 0xf2e8a0);
+    selectorBox.name = 'gnomeStructureSelector';
+    if (THREE.LineDashedMaterial) {
+      selectorBox.material = new THREE.LineDashedMaterial({ color: 0xf2e8a0, dashSize: 4, gapSize: 3, transparent: true, opacity: 0.9 });
+      selectorBox.computeLineDistances();
+    }
+    scene.add(selectorBox);
+  }
+
+  function gnomeSummary(rec) {
+    const intent = rec.mind && rec.mind.intent ? rec.mind.intent.reason : 'wandering with purpose';
+    const water = rec.sampleCarried ? 'carrying a plant sample' : intent;
+    return [
+      `Role: ${rec.role || 'idle'} · ${rec.action || 'idle'}`,
+      `Mood: ${rec.trait || 'garden citizen'}`,
+      `Now: ${water}`
+    ];
+  }
+
+  function showInspector(pick, x, y) {
+    if (!inspectorEl || !pick) return;
+    const data = pick.data;
+    state.inspector.selected = pick;
+    if (data.type === 'structure') setSelector(pick.root);
+    else setSelector(null);
+    const rec = data.rec;
+    const title = data.type === 'gnome' ? rec.displayName : data.title;
+    const lines = data.type === 'gnome'
+      ? gnomeSummary(rec)
+      : [`Type: ${data.kind}`, `Village: ${data.village ? data.village.id.slice(0, 8) : 'unknown'}`, 'Drag: use Move, then drag on the desktop'];
+    const buttons = data.type === 'gnome'
+      ? '<button data-action="first-person">First Person View</button><button data-action="close">Close</button>'
+      : '<button data-action="move-structure">Move</button><button data-action="close">Close</button>';
+    inspectorEl.innerHTML = `<h2>${title}</h2>${lines.map(line => `<p>${line}</p>`).join('')}<div class="buttons">${buttons}</div>`;
+    inspectorEl.style.left = `${clamp(x + 14, 12, state.width - 300)}px`;
+    inspectorEl.style.top = `${clamp(y + 14, 12, state.height - 170)}px`;
+    inspectorEl.style.display = 'block';
+  }
+
+  function beginStructureMove(x, y) {
+    const selected = state.inspector.selected;
+    if (!selected || selected.data.type !== 'structure') return;
+    const point = groundPointAt(x, y);
+    if (!point) return;
+    const group = selected.root;
+    state.inspector.movingStructure = selected;
+    state.inspector.moveOffset.x = group.position.x - point.x;
+    state.inspector.moveOffset.z = group.position.z - point.z;
+  }
+
+  function updateStructureMove(x, y) {
+    const moving = state.inspector.movingStructure;
+    if (!moving) return;
+    const point = groundPointAt(x, y);
+    if (!point) return;
+    const root = moving.root;
+    root.position.x = point.x + state.inspector.moveOffset.x;
+    root.position.z = point.z + state.inspector.moveOffset.z;
+    if (moving.data.buildSite) {
+      moving.data.buildSite.site.group.position.copy(root.position);
+      moving.data.village.gnomes.forEach(rec => {
+        if (rec.assignedSite === moving.data.buildSite) rec.work = { x: root.position.x, z: root.position.z };
+      });
+    } else if (moving.data.site) {
+      moving.data.site.x = root.position.x;
+      moving.data.site.z = root.position.z;
+    }
+    if (selectorBox) {
+      selectorBox.update();
+      if (selectorBox.computeLineDistances) selectorBox.computeLineDistances();
+    }
+  }
+
+  function stopStructureMove() {
+    state.inspector.movingStructure = null;
+  }
+
+  function startFirstPerson(rec) {
+    state.inspector.firstPersonGnome = rec;
+    if (inspectorEl) {
+      inspectorEl.innerHTML = `<h2>${rec.displayName}</h2><p>First person view is following their day.</p><div class="buttons"><button data-action="exit-first-person">Exit View</button></div>`;
+      inspectorEl.style.display = 'block';
+      inspectorEl.style.left = '14px';
+      inspectorEl.style.top = '14px';
+    }
+  }
+
+  function updateFirstPersonCamera() {
+    const rec = state.inspector.firstPersonGnome;
+    if (!rec || !rec.group || !rec.group.parent) {
+      state.inspector.firstPersonGnome = null;
+      frameCamera();
+      return;
+    }
+    const scale = rec.group.scale ? rec.group.scale.x : 1;
+    const eyeY = finiteNumber(rec.ziplineHeight, 0) + 18 * scale;
+    const heading = rec.heading != null ? rec.heading : rec.group.rotation.y;
+    camera.position.set(rec.x, eyeY, rec.z);
+    camera.lookAt(rec.x + Math.sin(heading) * 42, eyeY - 1.5, rec.z + Math.cos(heading) * 42);
+    camera.updateMatrixWorld(true);
+  }
+
   function makeBonfire(plaza) {
     const fire = new THREE.Group();
     for (let i = 0; i < 4; i++) {
@@ -423,11 +601,20 @@
     handle.rotation.z = Math.PI / 2;
     handle.castShadow = true;
     toolBlade.add(handle);
-    const blade = new THREE.Mesh(new THREE.ConeGeometry(0.32, 1.1, 8), metal);
-    blade.position.x = 1.35;
-    blade.rotation.z = -Math.PI / 2;
-    blade.castShadow = true;
-    toolBlade.add(blade);
+    const trowelHead = new THREE.Group();
+    trowelHead.name = 'fieldTrowelHead';
+    const socket = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.20, 0.48, 8), metal);
+    socket.position.x = 0.98;
+    socket.rotation.z = Math.PI / 2;
+    socket.castShadow = true;
+    trowelHead.add(socket);
+    const scoop = new THREE.Mesh(new THREE.SphereGeometry(0.48, 12, 8), metal);
+    scoop.name = 'fieldTrowelScoop';
+    scoop.position.x = 1.45;
+    scoop.scale.set(1.15, 0.16, 0.58);
+    scoop.castShadow = true;
+    trowelHead.add(scoop);
+    toolBlade.add(trowelHead);
     const brush = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.28, 0.9, 8), rope);
     brush.name = 'fieldBrushTip';
     brush.position.x = -1.25;
@@ -1004,8 +1191,11 @@
     if (faceX !== undefined) g.group.rotation.y = Math.atan2(faceX - x, faceZ - z);
     village.group.add(g.group);
     const rec = { group: g.group, parts: g.parts, action, role, phase: i * 1.7 };
+    rec.displayName = `${gnomeNames[(village.colorBase + i) % gnomeNames.length]} ${i + 1}`;
+    rec.trait = gnomeTraits[(village.colorBase * 3 + i) % gnomeTraits.length];
     rec.expeditionKit = createExpeditionKit();
     g.group.add(rec.expeditionKit);
+    registerInspectable(g.group, { type: 'gnome', rec, village });
     village.gnomes.push(rec);
     return rec;
   }
@@ -1834,7 +2024,8 @@
       tunnelEntrances: [],
       tunnelLinks: [],
       tunnelExits: [],
-      tunnelDirt: []
+      tunnelDirt: [],
+      inspectableStructures: []
     };
 
     const siteCount = Math.max(
@@ -1861,6 +2052,15 @@
 
     // finished houses + props — roads + plaza are now EMERGENT, so suppress them
     const zoneGroup = buildZone(description, { houseScale, noRoads: true, noPlaza: true });
+    let houseChildIndex = 0;
+    description.sites.forEach((site, index) => {
+      if (site.type === 'build') return;
+      const house = zoneGroup.children[houseChildIndex++];
+      if (!house) return;
+      const kind = site.type === 'tower' ? 'Tower home' : (site.type === 'hall' ? 'Village hall' : 'Gnome home');
+      registerInspectable(house, { type: 'structure', kind, title: `${kind} ${index + 1}`, village, site });
+      village.inspectableStructures.push({ group: house, site });
+    });
     collectRoutineLights(zoneGroup, village);
     group.add(zoneGroup);
 
@@ -1893,7 +2093,7 @@
         lifecycle.initialBuildCap
       );
       site.setProgress(init, 0);
-      village.buildSites.push({
+      const buildSite = {
         site,
         idx,
         progress: init,
@@ -1901,17 +2101,24 @@
         resourceGate: lifecycle.resourceGate,
         detailed: false,
         smokeBound: false
-      });
+      };
+      village.buildSites.push(buildSite);
+      registerInspectable(site.group, { type: 'structure', kind: 'Build site', title: `Build Site ${k + 1}`, village, buildSite });
+      village.inspectableStructures.push({ group: site.group, buildSite });
     });
 
     // bonfire at the plaza
     const bf = makeBonfire(description.plaza);
     group.add(bf.group);
     village.fires.push(bf);
+    registerInspectable(bf.group, { type: 'structure', kind: 'Bonfire', title: 'Village Bonfire', village });
+    village.inspectableStructures.push({ group: bf.group });
 
     village.collectionDepot = makeCollectionDepot(description.plaza, Math.max(0.45, village.buildScale * 0.72));
     village.collectionDepot.group.visible = lifecycle.depotOpen;
     group.add(village.collectionDepot.group);
+    registerInspectable(village.collectionDepot.group, { type: 'structure', kind: 'Depot', title: 'Sample Depot', village });
+    village.inspectableStructures.push({ group: village.collectionDepot.group });
 
     village.resourceYard = makeResourceYard(
       description.plaza,
@@ -1922,6 +2129,8 @@
     village.tunnelTradeDepot = village.resourceYard.borrowDepot;
     village.resourceYard.setStock(Math.round(lifecycle.resourceMaturity * 4 + lifecycle.borrowBoost * 5), null);
     group.add(village.resourceYard.group);
+    registerInspectable(village.resourceYard.group, { type: 'structure', kind: 'Resource yard', title: 'Resource Yard', village });
+    village.inspectableStructures.push({ group: village.resourceYard.group });
 
     const tunnelEntrance = makeTunnelEntrance(
       description.plaza,
@@ -1931,6 +2140,8 @@
     tunnelEntrance.visible = lifecycle.tunnelOpen;
     group.add(tunnelEntrance);
     village.tunnelEntrances.push(tunnelEntrance);
+    registerInspectable(tunnelEntrance, { type: 'structure', kind: 'Tunnel', title: 'Tunnel Entrance', village });
+    village.inspectableStructures.push({ group: tunnelEntrance });
 
     // smoke sprites (re-anchored to a chimney once a build finishes)
     for (let i = 0; i < 6; i++) {
@@ -2409,6 +2620,11 @@
     // have been stepped (reparenting mid-loop would corrupt the iteration).
     for (const h of tunnelHandoffs) performVillageHandoff(h.sourceVillage, h.rec);
 
+    if (selectorBox) {
+      selectorBox.update();
+      if (selectorBox.computeLineDistances) selectorBox.computeLineDistances();
+    }
+    if (state.inspector.firstPersonGnome) updateFirstPersonCamera();
     renderer.render(scene, camera);
   }
 
@@ -2418,6 +2634,68 @@
     g.addColorStop(0, 'rgba(255,255,255,1)'); g.addColorStop(0.28, 'rgba(255,255,255,0.55)'); g.addColorStop(1, 'rgba(255,255,255,0)');
     ctx.fillStyle = g; ctx.fillRect(0, 0, 128, 128); return new THREE.CanvasTexture(c);
   }
+
+  function inspectorContains(x, y) {
+    if (!inspectorEl || inspectorEl.style.display === 'none') return false;
+    const r = inspectorEl.getBoundingClientRect();
+    return x >= r.left && x <= r.right && y >= r.top && y <= r.bottom;
+  }
+
+  function canReceivePointerAt(x, y) {
+    return !!state.inspector.movingStructure
+      || state.inspector.moveArmed
+      || inspectorContains(x, y)
+      || !!pickAt(x, y);
+  }
+
+  if (inspectorEl) {
+    inspectorEl.addEventListener('pointerdown', event => event.stopPropagation());
+    inspectorEl.addEventListener('click', event => {
+      event.stopPropagation();
+      const button = event.target.closest('button[data-action]');
+      if (!button) return;
+      const action = button.dataset.action;
+      const selected = state.inspector.selected;
+      if (action === 'close') {
+        hideInspector();
+      } else if (action === 'first-person' && selected && selected.data.type === 'gnome') {
+        startFirstPerson(selected.data.rec);
+      } else if (action === 'exit-first-person') {
+        state.inspector.firstPersonGnome = null;
+        hideInspector();
+        frameCamera();
+      } else if (action === 'move-structure' && selected && selected.data.type === 'structure') {
+        state.inspector.moveArmed = true;
+        inspectorEl.querySelector('.buttons').innerHTML = '<button data-action="close">Done</button>';
+      }
+    });
+  }
+
+  canvas.addEventListener('pointerdown', event => {
+    if (state.inspector.moveArmed && state.inspector.selected && state.inspector.selected.data.type === 'structure') {
+      state.inspector.moveArmed = false;
+      beginStructureMove(event.clientX, event.clientY);
+      event.preventDefault();
+      return;
+    }
+    const pick = pickAt(event.clientX, event.clientY);
+    if (pick) {
+      showInspector(pick, event.clientX, event.clientY);
+      event.preventDefault();
+    } else if (!inspectorContains(event.clientX, event.clientY)) {
+      hideInspector();
+    }
+  });
+
+  canvas.addEventListener('pointermove', event => {
+    if (state.inspector.movingStructure) {
+      updateStructureMove(event.clientX, event.clientY);
+      event.preventDefault();
+    }
+  });
+
+  canvas.addEventListener('pointerup', stopStructureMove);
+  canvas.addEventListener('pointercancel', stopStructureMove);
 
   /* ---- bridge ---- */
   window.gnomeBridge = {
@@ -2434,6 +2712,7 @@
       applyDailyRoutine(performance.now() / 1000);
     },
     setPaused(paused) { state.paused = !!paused; },
+    hitTest(x, y) { return canReceivePointerAt(Number(x), Number(y)); },
     status() {
       let gnomes = 0, sites = 0;
       for (const v of state.villages.values()) { gnomes += v.gnomes.length; sites += v.buildSites.length; }

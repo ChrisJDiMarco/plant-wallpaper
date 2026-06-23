@@ -3,7 +3,7 @@
  *   parts  : named bone hierarchy from makeGnome().parts
  *   t      : time in SECONDS
  *   action : 'idle' | 'walk' | 'carry' | 'build' | 'lift' | 'cheer'
- *            | 'chat' | 'forage' | 'inspect' | 'climb' | 'sample'
+ *            | 'chat' | 'forage' | 'inspect' | 'climb' | 'nap' | 'sample'
  *            | 'grappleAim' | 'grappleShoot' | 'zipline' | 'rappel'
  *            | 'canopyInspect' | 'extractTap' | 'sampleBundle' | 'catalogSample'
  *            | 'butterflyMount' | 'butterflyRide' | 'butterflyRelease'
@@ -145,6 +145,24 @@ function poseGnome(parts, t, action, opts) {
     rot(p.rightForeArm, -0.75 - talk * 0.16, 0, 0.18);
     rot(p.leftHand, 0.12, 0, talk * 0.22);
     rot(p.rightHand, 0.18, 0, -talk * 0.24);
+
+  } else if (action === 'nap') {
+    var snooze = Math.sin(t * 1.35 * speed) * 0.05;
+    if (p.root) p.root.position.y = -1.35 + snooze;
+    rot(p.pelvis, -0.18, 0, -0.16);
+    rot(p.torso, 0.82 + breathe * 0.5, 0.05, 0.28);
+    rot(p.neck, -0.12, 0, -0.08);
+    rot(p.head, -0.52 + snooze, 0.08, -0.28);
+    rot(p.leftUpperArm, -0.35, 0, rest.leftUpperArmZ + 0.38);
+    rot(p.rightUpperArm, -0.48, 0, rest.rightUpperArmZ - 0.34);
+    rot(p.leftForeArm, -1.18, 0, -0.28);
+    rot(p.rightForeArm, -1.05, 0, 0.24);
+    rot(p.leftThigh, -0.82, 0, 0.16);
+    rot(p.rightThigh, -0.62, 0, -0.18);
+    rot(p.leftShin, 1.34, 0, 0);
+    rot(p.rightShin, 1.10, 0, 0);
+    rot(p.leftFoot, -0.24, 0, 0.08);
+    rot(p.rightFoot, -0.18, 0, -0.08);
 
   } else if (action === 'forage') {
     var reach = Math.sin(t * 2.1 * speed) * 0.5 + 0.5;
