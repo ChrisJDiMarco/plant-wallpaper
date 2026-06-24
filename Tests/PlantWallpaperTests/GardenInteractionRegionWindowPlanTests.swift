@@ -127,7 +127,7 @@ final class GardenInteractionRegionWindowPlanTests: XCTestCase {
         XCTAssertTrue(source.contains("interactionWindows.contains { $0.frame.contains(screenPoint) }"))
     }
 
-    func testInspectorRegionClicksCannotOpenDesktopPlantingMenu() throws {
+    func testInteractionRegionClicksOnlyOpenDesktopMenuWhenPointIsEmpty() throws {
         let testURL = URL(fileURLWithPath: #filePath)
         let projectRoot = testURL
             .deletingLastPathComponent()
@@ -136,8 +136,26 @@ final class GardenInteractionRegionWindowPlanTests: XCTestCase {
         let source = try String(contentsOf: projectRoot
             .appendingPathComponent("Sources/PlantWallpaper/GardenOverlayController.swift"))
 
-        XCTAssertTrue(source.contains("allowsDesktopPlantingMenu: false"))
+        XCTAssertTrue(source.contains("allowsDesktopPlantingMenu: !self.isPointOnGardenInteractionSurface(screenPoint)"))
+        XCTAssertTrue(source.contains("allowsInteractionWindowOrigin: true"))
+        XCTAssertTrue(source.contains("(allowsInteractionWindowOrigin || !isPointInsideInteractionWindow(screenPoint))"))
         XCTAssertTrue(source.contains("!isPointOnGardenInteractionSurface(screenPoint)"))
         XCTAssertTrue(source.contains("canvasView.containsSelectionSurface(at: $0)"))
+    }
+
+    func testSessionBoundaryClearsStaleDesktopInteractionState() throws {
+        let testURL = URL(fileURLWithPath: #filePath)
+        let projectRoot = testURL
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let source = try String(contentsOf: projectRoot
+            .appendingPathComponent("Sources/PlantWallpaper/GardenOverlayController.swift"))
+
+        let staleMenuResets = source.components(separatedBy: "isStatusMenuOpen = false").count - 1
+        XCTAssertGreaterThanOrEqual(staleMenuResets, 3)
+        XCTAssertTrue(source.contains("interactionWindows.forEach { $0.close() }"))
+        XCTAssertTrue(source.contains("interactionRegionFrames = []"))
+        XCTAssertTrue(source.contains("desktopInputSessionDidResume()"))
     }
 }

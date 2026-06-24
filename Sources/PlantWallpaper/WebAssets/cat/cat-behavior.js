@@ -56,6 +56,9 @@ const CatBehavior = (() => {
   const GNOME_RIDE_EDGE_PADDING = 0.20;
   const GNOME_MISSION_MIN_RESOURCE = 0.32;
   const GNOME_MISSION_COLLECT_SECONDS = 1.35;
+  const PLANT_CURIOSITY_RANGE = 2.6;
+  const PLANT_SNIFF_OFFSET = 0.34;
+  const ATTENTION_SWITCH_MARGIN = 0.18;
 
   function pickWeighted(random, options) {
     let total = 0;
@@ -75,6 +78,9 @@ const CatBehavior = (() => {
   function create(animator, random, personalityOpts) {
     const onBugCaught = typeof (personalityOpts && personalityOpts.onBugCaught) === 'function'
       ? personalityOpts.onBugCaught
+      : () => {};
+    const setAnimatorLookOverride = typeof animator.setLookOverride === 'function'
+      ? animator.setLookOverride.bind(animator)
       : () => {};
     const personality = {
       activity: 0.5,
@@ -148,6 +154,21 @@ const CatBehavior = (() => {
         collectProgress: 0
       },
       gnomeRideDirection: 1,
+      plantFocus: null,
+      plantCooldown: 24 + random() * 48,
+      attentionTarget: null,
+      attentionSurprise: 0,
+      attentionCommitment: 0,
+      attentionHabituation: {},
+      attentionLast: null,
+      frameLookTarget: null,
+      intent: {
+        reason: 'idle',
+        state: 'idle',
+        since: 0,
+        hesitation: 0,
+        lookBack: null
+      },
       petScore: 0,
       petDir: 0,
       petIdle: 0,
@@ -156,6 +177,18 @@ const CatBehavior = (() => {
       novelty: 1,            // 1 = the cursor is fresh/interesting; falls with repeated catches → boredom
       lastMouse: null,       // last-seen cursor spot, for "where did it go?" object permanence
       lostTimer: 0,
+      investigation: null,
+      // ponytail: one favorite spot + one decaying POI; use a ring buffer once several simultaneous memories matter.
+      memory: {
+        trust: 0.40 + random() * 0.25,
+        favoriteX: 0,
+        favoriteWeight: 0,
+        poiKind: 'none',
+        poiX: 0,
+        poiY: 0,
+        poiWeight: 0,
+        poiAge: 0
+      },
       reflexGuard: false,
       reflexGuardTimer: 0,
       glanceTimer: 2,
@@ -197,6 +230,18 @@ const CatBehavior = (() => {
       }
     };
 
+    animator.setLookOverride = (target) => {
+      if (!target || !Number.isFinite(target.x) || !Number.isFinite(target.y)) {
+        state.frameLookTarget = null;
+        return;
+      }
+      state.frameLookTarget = {
+        ...classifyLookTarget(target),
+        x: target.x,
+        y: target.y
+      };
+    };
+
     // Lazy cats nap longer; busy cats keep things short. A tired cat naps
     // longer still.
     function lazyScale() {
@@ -231,9 +276,10 @@ const CatBehavior = (() => {
     }
 
     const GROOMING_STATES = ['groomPaw', 'groomFace', 'groomFlank', 'groomBelly', 'groomTail', 'groomHaunch'];
-    const RESTING_STATES = ['sleep', 'lie', 'loaf', 'bellyUp', 'bellyPet', 'dockRest'];
+    const RESTING_STATES = ['sleep', 'lie', 'loaf', 'bellyUp', 'bellyPet', 'dockRest', 'plantRest'];
     const BUG_STATES = ['bugWatch', 'bugStalk', 'bugCoil', 'bugSwat', 'bugLunge', 'bugEat'];
     const GNOME_STATES = ['gnomeApproach', 'gnomeWatch', 'gnomeRide', 'gnomeDismount'];
+    const PLANT_STATES = ['plantApproach', 'plantInspect', 'plantRest'];
     const MOUSE_STRIKE_STATES = ['stalkMouse', 'crouchPounce', 'mouseProbe', 'mouseFeint', 'pounce',
       'swipe', 'lunge', 'lungeRecover', 'mouseCling'];
     const EXERTING_STATES = ['zoomies', 'lunge', 'pounce', 'stalkMouse', 'wallScratch', 'playOnBack',
@@ -304,6 +350,32 @@ const CatBehavior = (() => {
       return GROOMING_STATES.includes(state.name);
     }
 
+    function intentReasonFor(name) {
+      if (MOUSE_STRIKE_STATES.includes(name) || name === 'lostMouse' || name === 'alert') return 'hunt';
+      if (BUG_STATES.includes(name)) return 'hunt';
+      if (PLANT_STATES.includes(name) || name === 'investigateSpot'
+          || name === 'wallInspect' || name === 'dockInspect') return 'inspect';
+      if (name === 'returnToFavorite' || RESTING_STATES.includes(name)) return 'rest';
+      if (name === 'seekAttention' || name === 'petted' || name === 'bellyPet') return 'seekAttention';
+      if (GROOMING_STATES.includes(name)) return 'selfSoothe';
+      if (name === 'wander' && state.petOverstim > 0.25) return 'avoidOverstim';
+      if (GNOME_STATES.includes(name)) return 'inspect';
+      if (name === 'wallRub' || name === 'wallScratch' || name === 'dockPaw') return 'inspect';
+      return 'idle';
+    }
+
+    function setIntent(name) {
+      const reason = intentReasonFor(name);
+      if (state.intent.state !== name) {
+        state.intent.since = 0;
+        state.intent.hesitation = (name === 'plantApproach' || name === 'gnomeApproach' || name === 'seekAttention')
+          ? 0.18 + random() * 0.28
+          : 0;
+      }
+      state.intent.state = name;
+      state.intent.reason = reason;
+    }
+
     function tickNeeds(dt) {
       const needs = state.needs;
       const name = state.name;
@@ -366,6 +438,7 @@ const CatBehavior = (() => {
     function enter(name) {
       if (name === 'groom') name = chooseGroomingState('default');
       state.name = name;
+      setIntent(name);
       // A hunting or playing cat is a different animal: it accelerates and
       // turns with feline snap instead of the ambling default.
       const nimbleStates = ['stalkMouse', 'mouseProbe', 'mouseFeint', 'pounce', 'swipe', 'lunge', 'lungeRecover',
@@ -389,6 +462,36 @@ const CatBehavior = (() => {
           animator.setPose('walk');
           state.targetX = state.minX + random() * (state.maxX - state.minX);
           state.timer = 30;
+          break;
+        case 'returnToFavorite':
+          animator.setPose('walk');
+          state.targetX = favoriteSpotX();
+          state.timer = 18;
+          break;
+        case 'investigateSpot':
+          animator.setPose('walk');
+          state.targetX = state.investigation
+            ? safeXOutsideGnomeTerritories(state.investigation.x)
+            : state.worldX;
+          state.timer = 10;
+          break;
+        case 'plantApproach':
+          animator.setPose('walk');
+          clearPendingMouseCatch();
+          if (state.plantFocus) state.targetX = plantSniffSpot(state.plantFocus);
+          state.timer = 12;
+          break;
+        case 'plantInspect':
+          animator.setPose(random() < 0.72 ? 'sniff' : 'rubObject');
+          animator.setLocomotion(0, 'walk');
+          clearPendingMouseCatch();
+          state.timer = 2.0 + random() * 2.4;
+          break;
+        case 'plantRest':
+          animator.setPose(random() < 0.55 ? 'loaf' : 'lie');
+          animator.setLocomotion(0, 'walk');
+          clearPendingMouseCatch();
+          state.timer = (7 + random() * 12) * lazyScale();
           break;
         case 'zoomies':
           animator.setPose('trot');
@@ -759,13 +862,16 @@ const CatBehavior = (() => {
       const p = personality;
       const needs = state.needs;
       if (maybeEnterGnomeInteraction()) return;
+      if (maybeInvestigateMemory()) return;
       // Missing company: a socially hungry cat goes and sits near the
       // cursor, asking for attention.
       if (needs.social > 0.72 && mouseIsFresh() && mouseDistance() > 1.1
-          && state.mood !== 'sleepy' && random() < 0.45) {
+          && state.mood !== 'sleepy' && random() < 0.25 + state.memory.trust * 0.35) {
         enter('seekAttention');
         return;
       }
+      if (maybeReturnToFavoriteSpot()) return;
+      if (maybeEnterPlantCuriosity()) return;
       if (state.scratchCooldown <= 0 && state.wallCooldown <= 0
           && random() < 0.10 + p.playfulness * 0.10) {
         startScratchingPostTrip();
@@ -785,7 +891,7 @@ const CatBehavior = (() => {
         [chooseGroomingState('default'), 0.06 * (0.6 + p.curiosity * 0.7) * tired * (0.7 + needs.groomNeed * 2.2)],
         ['loaf', 0.09 * tired * (1 + sleepPress * 2.0)],
         ['lie', 0.11 * tired * (1 + sleepPress * 3.0)],
-        ['bellyUp', 0.07 * (0.6 + needs.social * 0.8) * day],
+        ['bellyUp', 0.07 * (0.4 + needs.social * 0.7 + state.memory.trust * 0.9) * day],
         ['zoomies', 0.07 * (0.3 + p.playfulness * 1.6) * (needs.play + 0.2) * lively * (0.15 + day * 1.5)],
         ['scratchEar', 0.05],
         ['idle', 0.12 * (1 + sleepPress)]
@@ -817,6 +923,27 @@ const CatBehavior = (() => {
       return false;
     }
 
+    function holdForHesitation(dt, target) {
+      if (state.intent.hesitation <= 0) return false;
+      if (Math.abs(state.targetX - state.worldX) < 0.12) {
+        state.intent.hesitation = 0;
+        return false;
+      }
+      state.intent.hesitation = Math.max(0, state.intent.hesitation - dt);
+      animator.setLocomotion(0, 'walk');
+      if (target) animator.setLookOverride(target);
+      return true;
+    }
+
+    function rememberLookBack(target) {
+      if (!target || !Number.isFinite(target.x) || !Number.isFinite(target.y)) return;
+      state.intent.lookBack = {
+        x: target.x,
+        y: target.y,
+        timer: 1.1 + random() * 1.2
+      };
+    }
+
     function mouseIsFresh() {
       return state.mouse && state.mouse.age < MOUSE_STALE_SECONDS;
     }
@@ -836,7 +963,8 @@ const CatBehavior = (() => {
     function isResting() {
       return state.name === 'loaf' || state.name === 'lie'
         || state.name === 'sleep' || state.name === 'dockRest'
-        || state.name === 'bellyUp' || state.name === 'bellyPet';
+        || state.name === 'bellyUp' || state.name === 'bellyPet'
+        || state.name === 'plantRest';
     }
 
     function isBellyExposed() {
@@ -865,7 +993,8 @@ const CatBehavior = (() => {
       return state.name === 'wallApproach' || state.name === 'wallInspect'
         || state.name === 'wallRub' || state.name === 'wallScratch'
         || state.name === 'dockInspect' || state.name === 'dockPaw'
-        || state.name === 'dockRest' || GNOME_STATES.includes(state.name) || isClimbing();
+        || state.name === 'dockRest' || GNOME_STATES.includes(state.name)
+        || PLANT_STATES.includes(state.name) || isClimbing();
     }
 
     function isClimbing() {
@@ -881,6 +1010,123 @@ const CatBehavior = (() => {
     function isWallContact() {
       return state.name === 'wallInspect' || state.name === 'wallRub'
         || state.name === 'wallScratch' || isClimbing();
+    }
+
+    function favoriteSpotX() {
+      return safeXOutsideGnomeTerritories(
+        THREE.MathUtils.clamp(state.memory.favoriteX, state.minX, state.maxX)
+      );
+    }
+
+    function rememberPointOfInterest(kind, x, y, strength = 0.35) {
+      if (!Number.isFinite(x) || !Number.isFinite(y) || isInsideGnomeTerritory(x, y)) return;
+      const mem = state.memory;
+      const incoming = THREE.MathUtils.clamp(strength, 0, 1);
+      const old = (mem.poiKind === kind || Math.abs(mem.poiX - x) < 0.45)
+        ? mem.poiWeight * 0.7
+        : mem.poiWeight * 0.25;
+      const total = old + incoming;
+      mem.poiX = total > 0 ? (mem.poiX * old + x * incoming) / total : x;
+      mem.poiY = total > 0 ? (mem.poiY * old + y * incoming) / total : y;
+      mem.poiKind = kind;
+      mem.poiWeight = Math.min(1, total);
+      mem.poiAge = 0;
+    }
+
+    function rememberLastMouse(strength = 0.45) {
+      if (state.lastMouse) rememberPointOfInterest('cursor', state.lastMouse.x, state.lastMouse.y, strength);
+    }
+
+    function tickMemory(dt) {
+      const mem = state.memory;
+      if (isResting() && state.name !== 'bellyPet') {
+        if (mem.favoriteWeight <= 0.02) mem.favoriteX = state.worldX;
+        mem.favoriteX = damp(mem.favoriteX, state.worldX, state.name === 'sleep' ? 0.12 : 0.08, dt);
+        mem.favoriteWeight = Math.min(1, mem.favoriteWeight + dt * (state.name === 'sleep' ? 0.010 : 0.006));
+      } else {
+        mem.favoriteWeight = Math.max(0, mem.favoriteWeight - dt * 0.00003);
+      }
+      if (mem.poiWeight > 0) {
+        mem.poiAge += dt;
+        mem.poiWeight = Math.max(0, mem.poiWeight - dt * (mem.poiAge > 45 ? 0.025 : 0.006));
+        if (mem.poiWeight <= 0) mem.poiKind = 'none';
+      }
+      mem.trust = damp(mem.trust, 0.48, 0.0008, dt);
+    }
+
+    function maybeInvestigateMemory() {
+      const mem = state.memory;
+      if (mouseIsFresh() || mem.poiWeight < 0.34 || state.mood === 'sleepy') return false;
+      if (isInsideGnomeTerritory(mem.poiX, mem.poiY)) {
+        mem.poiWeight = 0;
+        mem.poiKind = 'none';
+        return false;
+      }
+      if (random() > mem.poiWeight * (0.18 + personality.curiosity * 0.38)) return false;
+      state.investigation = {
+        kind: mem.poiKind,
+        x: THREE.MathUtils.clamp(mem.poiX, state.minX, state.maxX),
+        y: THREE.MathUtils.clamp(mem.poiY, 0.10, 1.60),
+        settled: false
+      };
+      enter('investigateSpot');
+      return true;
+    }
+
+    function maybeReturnToFavoriteSpot() {
+      const mem = state.memory;
+      if (mem.favoriteWeight < 0.42 || state.mood === 'frisky') return false;
+      const target = favoriteSpotX();
+      if (Math.abs(target - state.worldX) < 0.55) return false;
+      const odds = mem.favoriteWeight * (0.10 + (1 - state.needs.energy) * 0.22 + (state.mood === 'sleepy' ? 0.22 : 0));
+      if (random() > odds) return false;
+      enter('returnToFavorite');
+      return true;
+    }
+
+    function plantSniffSpot(plant) {
+      const side = plant.x >= state.worldX ? -1 : 1;
+      return safeXOutsideGnomeTerritories(
+        THREE.MathUtils.clamp(plant.x + side * PLANT_SNIFF_OFFSET, state.minX, state.maxX),
+        side
+      );
+    }
+
+    function bestPlantCuriosityTarget() {
+      let best = null;
+      let bestScore = -Infinity;
+      for (const plant of state.gnomePlantTargets) {
+        if (!plant || !plant.id || isInsideGnomeTerritory(plant.x, plant.y)) continue;
+        const dx = Math.abs(plant.x - state.worldX);
+        if (dx > PLANT_CURIOSITY_RANGE) continue;
+        const score = (plant.resourceValue || 0) * 0.85
+          + (plant.canopyHeight || 0) * 0.75
+          + (plant.canClimb ? 0.18 : 0)
+          - dx * 0.16;
+        if (score > bestScore) {
+          best = plant;
+          bestScore = score;
+        }
+      }
+      return best;
+    }
+
+    function maybeEnterPlantCuriosity() {
+      if (state.plantCooldown > 0 || state.gnomePlantTargets.length === 0
+          || state.mood === 'sleepy' || isMouseDriven() || isBugDriven()
+          || isEnvironmentDriven()) {
+        return false;
+      }
+      const plant = bestPlantCuriosityTarget();
+      if (!plant) return false;
+      const odds = 0.10 + personality.curiosity * 0.22
+        + (plant.resourceValue || 0) * 0.12
+        + (state.needs.energy < 0.50 ? 0.08 : 0);
+      if (random() > odds) return false;
+      state.plantFocus = plant;
+      state.plantCooldown = 45 + random() * 80;
+      enter('plantApproach');
+      return true;
     }
 
     function territoryBlocksX(territory, x, padding = GNOME_TERRITORY_PADDING) {
@@ -1215,6 +1461,8 @@ const CatBehavior = (() => {
         && !isBugDriven()
         && !isEnvironmentDriven()
         && !isClimbing()
+        && state.name !== 'investigateSpot'
+        && state.name !== 'returnToFavorite'
         && state.name !== 'petted'
         && state.name !== 'bellyPet'
         && state.name !== 'sleep';
@@ -1427,6 +1675,7 @@ const CatBehavior = (() => {
       state.bugStrike = null;
       scheduleBugCooldown(28);
       onBugCaught(bug.id, { species: bug.species });
+      rememberPointOfInterest('caughtBug', bug.x, bug.y, 0.45);
       // A caught bug is a meal: it sates hunger and musses the coat (so the
       // post-meal groom that follows reads as motivated, not random).
       state.needs.hunger = Math.max(0, state.needs.hunger - 0.42);
@@ -1453,6 +1702,7 @@ const CatBehavior = (() => {
       if (state.name === 'sleep' || isBellyExposed()) {
         return false;
       }
+      rememberPointOfInterest('bug', aim.x, aim.y, dt * (0.20 + personality.curiosity * 0.30));
       if (isResting() && random() > 0.15 + personality.curiosity * 0.18) {
         animator.setLookOverride(aim);
         return false;
@@ -1531,6 +1781,7 @@ const CatBehavior = (() => {
         return;
       }
       if (tau >= 1) {
+        rememberPointOfInterest('missedBug', strike.targetPawX, strike.targetPawY, 0.35);
         state.bugStrike = null;
         animator.cancelLunge();
         scheduleBugCooldown(12);
@@ -1920,6 +2171,7 @@ const CatBehavior = (() => {
         }
       }
       if (tau >= 1) {
+        rememberPointOfInterest('missedMouse', lunge.targetPawX, lunge.targetPawY, 0.55);
         state.lunge = null;
         animator.cancelLunge();
         state.catchCooldown = Math.max(state.catchCooldown, 2.5);
@@ -2101,6 +2353,11 @@ const CatBehavior = (() => {
           // going. Less playful / more aloof cats reach their limit sooner.
           const bellyEase = state.name === 'bellyPet' ? 0.34 : 1.0;
           state.petOverstim += dt * (0.55 + (1 - personality.playfulness) * 0.5) * bellyEase;
+          state.memory.trust = THREE.MathUtils.clamp(
+            state.memory.trust + dt * (state.name === 'bellyPet' ? 0.004 : 0.006),
+            0,
+            1
+          );
         } else {
           state.petIdle += dt;
           state.petOverstim = Math.max(0, state.petOverstim - dt * 0.5);
@@ -2108,10 +2365,14 @@ const CatBehavior = (() => {
         // "That's enough." The classic over-petting limit: a tail-lash, then
         // the cat breaks off and walks a step away (and won't be re-petted
         // for a moment).
-        const overstimLimit = state.name === 'bellyPet' ? 2.8 : 1.0;
+        const overstimLimit = state.name === 'bellyPet'
+          ? 2.40 + state.memory.trust * 0.90
+          : 0.78 + state.memory.trust * 0.48;
         if (state.petOverstim > overstimLimit) {
           state.petOverstim = 0;
           state.petScore = 0;
+          state.memory.trust = Math.max(0, state.memory.trust - (state.name === 'bellyPet' ? 0.015 : 0.06));
+          rememberLookBack({ x: mouse.x, y: mouse.y });
           if (state.name === 'bellyPet') {
             enter('playOnBack');
             return true;
@@ -2194,6 +2455,7 @@ const CatBehavior = (() => {
             && (!isMouseDriven() || state.name === 'alert')
             && state.name !== 'lostMouse' && state.name !== 'petted'
             && state.name !== 'bellyPet' && !isResting()) {
+          rememberLastMouse(0.35 + state.mouseInterest * 0.18);
           enter('lostMouse');
           return;
         }
@@ -2296,6 +2558,7 @@ const CatBehavior = (() => {
         if (state.novelty < 0.26 && random() < 0.7) {
           state.mouseInterest = 0;
           state.swipeCooldown = 3 + random() * 3;
+          rememberLookBack({ x: mouse.x, y: mouse.y });
           animator.setLookOverride(null);
           state.targetX = THREE.MathUtils.clamp(
             state.worldX + (random() < 0.5 ? -1 : 1) * (0.8 + random() * 0.7),
@@ -2341,7 +2604,369 @@ const CatBehavior = (() => {
       }
     }
 
+    function classifyLookTarget(target) {
+      if (mouseIsFresh() && Math.hypot(target.x - state.mouse.x, target.y - state.mouse.y) < 0.12) {
+        return {
+          kind: 'cursor',
+          key: 'cursor',
+          speed: state.mouse.speed || 0,
+          score: 1.40,
+          reason: isMouseDriven() ? 'hunt' : 'watch'
+        };
+      }
+      const bug = currentBugTarget();
+      if (bug) {
+        const aim = bugAimPoint(bug);
+        if (Math.hypot(target.x - aim.x, target.y - aim.y) < 0.18) {
+          return {
+            kind: 'bug',
+            key: `bug:${bug.id}`,
+            speed: Math.hypot(bug.vx || 0, bug.vy || 0),
+            score: 1.48,
+            reason: 'hunt'
+          };
+        }
+      }
+      if (state.plantFocus && Math.abs(target.x - state.plantFocus.x) < 0.18) {
+        return {
+          kind: 'plant',
+          key: `plant:${state.plantFocus.id}`,
+          score: 1.18,
+          reason: 'inspect'
+        };
+      }
+      if (state.gnomeFocus && Math.abs(target.x - state.gnomeFocus.centerX) < 0.20) {
+        return {
+          kind: 'gnome',
+          key: `gnome:${state.gnomeFocus.id || state.gnomeFocus.centerX}`,
+          score: 1.16,
+          reason: 'inspect'
+        };
+      }
+      if (state.investigation && Math.abs(target.x - state.investigation.x) < 0.16) {
+        return {
+          kind: 'memory',
+          key: `memory:${state.investigation.kind}`,
+          score: 1.12,
+          reason: 'inspect'
+        };
+      }
+      return {
+        kind: 'state',
+        key: `state:${state.name}`,
+        score: 1.08,
+        reason: state.intent.reason
+      };
+    }
+
+    function attentionKey(candidate) {
+      return candidate && (candidate.key || `${candidate.kind}:${candidate.id || 'main'}`);
+    }
+
+    function pushAttentionCandidate(candidates, candidate) {
+      if (!candidate || !Number.isFinite(candidate.x) || !Number.isFinite(candidate.y)) return;
+      const key = attentionKey(candidate);
+      const habit = state.attentionHabituation[key] || 0;
+      const same = state.attentionTarget && state.attentionTarget.key === key;
+      const committed = same ? state.attentionCommitment * 0.30 : 0;
+      const score = Math.max(0, (candidate.score || 0) * (1 - Math.min(0.72, habit)) + committed);
+      candidates.push({
+        ...candidate,
+        key,
+        score,
+        habit
+      });
+    }
+
+    function attentionCandidates() {
+      const candidates = [];
+      if (state.name === 'petted' || state.name === 'bellyPet') return candidates;
+
+      if (state.frameLookTarget) pushAttentionCandidate(candidates, state.frameLookTarget);
+
+      if (state.intent.lookBack && state.intent.lookBack.timer > 0) {
+        pushAttentionCandidate(candidates, {
+          kind: 'lookBack',
+          key: 'lookBack',
+          x: state.intent.lookBack.x,
+          y: state.intent.lookBack.y,
+          score: 0.86,
+          reason: 'lookBack'
+        });
+      }
+
+      if (mouseIsFresh() && !cursorOnBody()) {
+        const dist = Math.abs(state.mouse.x - state.worldX);
+        if (dist < WATCH_RANGE * 1.35 && state.mouse.y < 1.75 && !mouseInsideGnomeTerritory()) {
+          pushAttentionCandidate(candidates, {
+            kind: 'cursor',
+            key: 'cursor',
+            x: state.mouse.x,
+            y: state.mouse.y,
+            speed: state.mouse.speed || 0,
+            score: 0.30 + Math.min(1.25, state.mouseInterest * 0.38)
+              + Math.min(0.65, (state.mouse.speed || 0) * 0.20)
+              + (isMouseDriven() ? 0.75 : 0)
+              + state.novelty * 0.18
+              - dist * 0.05,
+            reason: isMouseDriven() ? 'hunt' : 'watch'
+          });
+        }
+      }
+
+      const bug = currentBugTarget();
+      if (bug) {
+        const aim = bug.id === state.bugFocus.id && state.bugFocus.lock > 0
+          ? { x: state.bugFocus.smoothX, y: state.bugFocus.smoothY }
+          : bugAimPoint(bug);
+        pushAttentionCandidate(candidates, {
+          kind: 'bug',
+          key: `bug:${bug.id}`,
+          x: aim.x,
+          y: aim.y,
+          speed: Math.hypot(bug.vx || 0, bug.vy || 0),
+          score: 0.90 + state.bugFocus.lock * 0.45 + state.needs.hunger * 0.18
+            + (bug.plantFocused ? 0.12 : 0)
+            + (isBugDriven() ? 0.80 : 0)
+            - Math.abs(bug.x - state.worldX) * 0.08,
+          reason: 'hunt'
+        });
+      }
+
+      const plant = state.plantFocus || bestPlantCuriosityTarget();
+      if (plant) {
+        pushAttentionCandidate(candidates, {
+          kind: 'plant',
+          key: `plant:${plant.id}`,
+          x: plant.x,
+          y: THREE.MathUtils.clamp(plant.y + (plant.canopyHeight || 0) * 0.72, 0.20, 1.58),
+          score: (PLANT_STATES.includes(state.name) ? 0.78 : 0.34)
+            + (plant.resourceValue || 0) * 0.24
+            + (plant.canopyHeight || 0) * 0.30
+            + personality.curiosity * 0.12
+            - Math.abs(plant.x - state.worldX) * 0.05,
+          reason: 'inspect'
+        });
+      }
+
+      const territory = state.gnomeFocus || nearestGnomeTerritory();
+      if (territory) {
+        pushAttentionCandidate(candidates, {
+          kind: 'gnome',
+          key: `gnome:${territory.id || territory.centerX}`,
+          x: territory.centerX,
+          y: THREE.MathUtils.clamp(territory.centerY, 0.24, 1.35),
+          score: (GNOME_STATES.includes(state.name) ? 0.82 : 0.32)
+            + personality.curiosity * 0.16,
+          reason: 'inspect'
+        });
+      }
+
+      if (isWallContact() || distanceToNearestWall() < WALL_REACH * 1.3) {
+        const side = isWallContact() ? state.contactSide : nearestWallSide();
+        pushAttentionCandidate(candidates, {
+          kind: 'wall',
+          key: `wall:${side}`,
+          x: wallEdgeX(side),
+          y: THREE.MathUtils.clamp(state.worldY + 0.55, 0.24, 1.45),
+          score: (isWallContact() ? 0.62 : 0.24) + personality.curiosity * 0.08,
+          reason: 'inspect'
+        });
+      }
+
+      if (state.environment.dockVisible && state.environment.dockSide === 'bottom') {
+        pushAttentionCandidate(candidates, {
+          kind: 'dock',
+          key: 'dock',
+          x: state.worldX,
+          y: 0.13,
+          score: (state.name === 'dockInspect' || state.name === 'dockPaw' || state.name === 'dockRest' ? 0.65 : 0.20)
+            + personality.curiosity * 0.08,
+          reason: 'inspect'
+        });
+      }
+
+      if (state.investigation) {
+        pushAttentionCandidate(candidates, {
+          kind: 'memory',
+          key: `memory:${state.investigation.kind}`,
+          x: state.investigation.x,
+          y: state.investigation.y,
+          score: 0.78 + (state.investigation.settled ? 0.20 : 0),
+          reason: 'inspect'
+        });
+      } else if (state.memory.poiWeight > 0.22 && state.memory.poiKind !== 'none') {
+        pushAttentionCandidate(candidates, {
+          kind: 'memory',
+          key: `memory:${state.memory.poiKind}`,
+          x: state.memory.poiX,
+          y: THREE.MathUtils.clamp(state.memory.poiY, 0.16, 1.55),
+          score: state.memory.poiWeight * (0.34 + personality.curiosity * 0.22),
+          reason: 'inspect'
+        });
+      }
+
+      if (state.memory.favoriteWeight > 0.45 && state.needs.energy < 0.52) {
+        pushAttentionCandidate(candidates, {
+          kind: 'favorite',
+          key: 'favorite',
+          x: favoriteSpotX(),
+          y: 0.36,
+          score: state.memory.favoriteWeight * (0.18 + (1 - state.needs.energy) * 0.20),
+          reason: 'rest'
+        });
+      }
+
+      return candidates;
+    }
+
+    function updateAttentionHabituation(target, dt) {
+      for (const key of Object.keys(state.attentionHabituation)) {
+        state.attentionHabituation[key] = Math.max(0, state.attentionHabituation[key] - dt * 0.035);
+        if (state.attentionHabituation[key] <= 0.001) delete state.attentionHabituation[key];
+      }
+      if (!target) {
+        state.attentionLast = null;
+        return;
+      }
+
+      const last = state.attentionLast;
+      const same = last && last.key === target.key;
+      const move = same ? Math.hypot(target.x - last.x, target.y - last.y) : 1;
+      const speed = target.speed || 0;
+      let habit = state.attentionHabituation[target.key] || 0;
+      if (same && move < 0.055 && speed < 0.20 && target.kind !== 'state' && target.kind !== 'bug') {
+        habit += dt * 0.18;
+      } else {
+        habit -= dt * (0.18 + Math.min(0.45, move * 2.2 + speed * 0.16));
+      }
+      state.attentionHabituation[target.key] = THREE.MathUtils.clamp(habit, 0, 0.85);
+      state.attentionLast = { key: target.key, x: target.x, y: target.y };
+    }
+
+    function chooseAttentionTarget(dt) {
+      const candidates = attentionCandidates();
+      if (candidates.length === 0) {
+        state.attentionTarget = null;
+        state.attentionCommitment = Math.max(0, state.attentionCommitment - dt * 0.9);
+        state.attentionSurprise = damp(state.attentionSurprise, 0, 5, dt);
+        updateAttentionHabituation(null, dt);
+        return null;
+      }
+
+      candidates.sort((a, b) => b.score - a.score);
+      const best = candidates[0];
+      const current = state.attentionTarget
+        ? candidates.find((candidate) => candidate.key === state.attentionTarget.key)
+        : null;
+      const keepCurrent = current
+        && best.key !== current.key
+        && best.score < current.score + ATTENTION_SWITCH_MARGIN + state.attentionCommitment * 0.16;
+      const chosen = keepCurrent ? current : best;
+      const last = state.attentionLast;
+      const same = last && last.key === chosen.key;
+      const move = same ? Math.hypot(chosen.x - last.x, chosen.y - last.y) : 0.3;
+      const novelty = chosen.kind === 'bug' ? 0.40 : chosen.kind === 'cursor' ? Math.min(0.75, (chosen.speed || 0) * 0.24) : 0;
+      const surprise = THREE.MathUtils.clamp(
+        (same ? move * 2.4 : 0.45) + novelty - (chosen.habit || 0) * 0.35,
+        0,
+        1
+      );
+
+      state.attentionTarget = {
+        kind: chosen.kind,
+        key: chosen.key,
+        x: chosen.x,
+        y: chosen.y,
+        score: chosen.score,
+        reason: chosen.reason || state.intent.reason,
+        habit: chosen.habit || 0
+      };
+      state.attentionCommitment = THREE.MathUtils.clamp(
+        same ? state.attentionCommitment + dt * 0.55 : state.attentionCommitment * 0.35 + 0.22,
+        0,
+        1
+      );
+      state.attentionSurprise = damp(state.attentionSurprise, surprise, 5, dt);
+      updateAttentionHabituation(chosen, dt);
+      return state.attentionTarget;
+    }
+
+    function emotionSignals() {
+      const target = state.attentionTarget;
+      const hunting = isMouseDriven() || isBugDriven() || state.name === 'lunge' || state.name === 'bugLunge';
+      const inspecting = target && (target.reason === 'inspect' || target.kind === 'plant'
+        || target.kind === 'memory' || target.kind === 'wall' || target.kind === 'dock');
+      return {
+        curiosity: THREE.MathUtils.clamp(
+          (target ? target.score * 0.34 : 0)
+            + (inspecting ? 0.30 : 0)
+            + personality.curiosity * 0.22
+            - (state.mood === 'sleepy' ? 0.18 : 0),
+          0,
+          1
+        ),
+        tension: THREE.MathUtils.clamp(
+          (hunting ? 0.58 : 0)
+            + state.attentionSurprise * 0.30
+            + Math.min(0.32, state.petOverstim * 0.18)
+            + (state.name === 'startle' ? 0.45 : 0),
+          0,
+          1
+        ),
+        confidence: THREE.MathUtils.clamp(
+          state.memory.trust * 0.48
+            + (isResting() ? 0.22 : 0)
+            + (state.intent.reason === 'seekAttention' ? 0.10 : 0)
+            - state.attentionSurprise * 0.18,
+          0,
+          1
+        ),
+        sleepiness: THREE.MathUtils.clamp(
+          (1 - state.needs.energy) * 0.62
+            + circadianSleepPressure() * 0.30
+            + (state.mood === 'sleepy' ? 0.25 : 0)
+            + (isResting() ? 0.10 : 0),
+          0,
+          1
+        )
+      };
+    }
+
+    function maybeAbortSoftIntent() {
+      if (!['plantApproach', 'plantInspect', 'investigateSpot', 'returnToFavorite', 'seekAttention'].includes(state.name)) {
+        return false;
+      }
+      if (state.name === 'seekAttention' && state.memory.trust > 0.65) return false;
+      if (state.attentionSurprise < 0.82) return false;
+      const target = state.attentionTarget;
+      if (!target || (target.kind !== 'cursor' && target.kind !== 'bug')) return false;
+      state.plantFocus = null;
+      state.investigation = null;
+      enter('alert');
+      return true;
+    }
+
+    function commitFrame(dt) {
+      const target = chooseAttentionTarget(dt);
+      if (animator.setEmotionSignals) animator.setEmotionSignals(emotionSignals());
+      setAnimatorLookOverride(target ? { x: target.x, y: target.y } : null);
+      if (!maybeAbortSoftIntent()) {
+        animator.update(dt, state.worldX, state.worldY);
+      } else {
+        setAnimatorLookOverride(state.attentionTarget ? { x: state.attentionTarget.x, y: state.attentionTarget.y } : null);
+        animator.update(dt, state.worldX, state.worldY);
+      }
+      state.frameLookTarget = null;
+    }
+
     function update(dt) {
+      state.frameLookTarget = null;
+      state.intent.since += dt;
+      if (state.intent.lookBack) {
+        state.intent.lookBack.timer -= dt;
+        if (state.intent.lookBack.timer <= 0) state.intent.lookBack = null;
+      }
       if (state.mouse) state.mouse.age += dt;
       state.wallCooldown = Math.max(0, state.wallCooldown - dt);
       state.dockCooldown = Math.max(0, state.dockCooldown - dt);
@@ -2352,6 +2977,7 @@ const CatBehavior = (() => {
       state.climbCooldown = Math.max(0, state.climbCooldown - dt);
       state.gnomeCooldown = Math.max(0, state.gnomeCooldown - dt);
       state.gnomeRideCooldown = Math.max(0, state.gnomeRideCooldown - dt);
+      state.plantCooldown = Math.max(0, state.plantCooldown - dt);
       // Novelty (the cure for boredom) recovers fast once the cursor goes
       // quiet/leaves, but only crawls back while it's still right there — so
       // teasing the same jiggle over and over wears the cat down.
@@ -2362,20 +2988,21 @@ const CatBehavior = (() => {
         state.petOverstim = Math.max(0, state.petOverstim - dt * 0.4);
       }
       tickNeeds(dt);
+      tickMemory(dt);
 
       if (state.name === 'mouseCling') {
         updateMouseCling(dt);
-        animator.update(dt, state.worldX, state.worldY);
+        commitFrame(dt);
         return;
       }
       if (state.name === 'lunge') {
         updateLunge(dt);
-        animator.update(dt, state.worldX, state.worldY);
+        commitFrame(dt);
         return;
       }
       if (state.name === 'bugLunge') {
         updateBugLunge(dt);
-        animator.update(dt, state.worldX, state.worldY);
+        commitFrame(dt);
         return;
       }
 
@@ -2387,11 +3014,11 @@ const CatBehavior = (() => {
       }
       reactToMouse(dt);
       if (maybeReactToBugs(dt)) {
-        animator.update(dt, state.worldX, state.worldY);
+        commitFrame(dt);
         return;
       }
       if (updatePendingMouseCatch(dt)) {
-        animator.update(dt, state.worldX, state.worldY);
+        commitFrame(dt);
         return;
       }
       maybeEnterDockInteraction();
@@ -2409,6 +3036,96 @@ const CatBehavior = (() => {
           }
           break;
         }
+        case 'returnToFavorite': {
+          const arrived = walkToward(dt, WALK_SPEED * 0.82, 'walk');
+          if (arrived || state.timer <= 0) {
+            state.memory.favoriteWeight = Math.min(1, state.memory.favoriteWeight + 0.06);
+            enter(pickWeighted(random, [
+              ['loaf', 0.42], ['lie', 0.25], ['sit', 0.22], [chooseGroomingState('rest'), 0.11]
+            ]));
+          }
+          break;
+        }
+        case 'investigateSpot': {
+          const point = state.investigation;
+          if (!point) {
+            enter('idle');
+            break;
+          }
+          const arrived = point.settled || walkToward(dt, WALK_SPEED * 0.8, 'walk');
+          animator.setLookOverride({ x: point.x, y: point.y });
+          if (arrived && !point.settled) {
+            point.settled = true;
+            animator.setPose(random() < 0.55 ? 'sit' : 'stand');
+            animator.setLocomotion(0, 'walk');
+            state.timer = 2.2 + random() * 2.4;
+          }
+          if (state.timer <= 0) {
+            state.memory.poiWeight = Math.max(0, state.memory.poiWeight - 0.45);
+            state.investigation = null;
+            animator.setLookOverride(null);
+            enter(pickWeighted(random, [['sit', 0.40], [chooseGroomingState('default'), 0.22], ['idle', 0.38]]));
+          }
+          break;
+        }
+        case 'plantApproach': {
+          const plant = state.plantFocus;
+          if (!plant) {
+            enter('idle');
+            break;
+          }
+          state.targetX = plantSniffSpot(plant);
+          const look = {
+            x: plant.x,
+            y: THREE.MathUtils.clamp(plant.y + (plant.canopyHeight || 0) * 0.65, 0.22, 1.55)
+          };
+          animator.setLookOverride(look);
+          if (holdForHesitation(dt, look)) break;
+          const arrived = walkToward(dt, WALK_SPEED * 0.78, 'walk');
+          if (arrived) {
+            enter('plantInspect');
+          } else if (state.timer <= 0) {
+            state.plantFocus = null;
+            animator.setLookOverride(null);
+            enter('idle');
+          }
+          break;
+        }
+        case 'plantInspect': {
+          const plant = state.plantFocus;
+          if (!plant) {
+            enter('idle');
+            break;
+          }
+          animator.setLookOverride({
+            x: plant.x,
+            y: THREE.MathUtils.clamp(plant.y + (plant.canopyHeight || 0) * 0.80, 0.24, 1.60)
+          });
+          if (state.timer <= 0) {
+            const inviting = (plant.resourceValue || 0) + (plant.canopyHeight || 0) + (plant.canClimb ? 0.18 : 0);
+            if (state.needs.energy < 0.55 && inviting > 0.78 && random() < 0.62) {
+              enter('plantRest');
+            } else {
+              state.plantFocus = null;
+              animator.setLookOverride(null);
+              enter(pickWeighted(random, [['sit', 0.42], [chooseGroomingState('default'), 0.20], ['idle', 0.38]]));
+            }
+          }
+          break;
+        }
+        case 'plantRest':
+          if (state.plantFocus) {
+            animator.setLookOverride({
+              x: state.plantFocus.x,
+              y: THREE.MathUtils.clamp(state.plantFocus.y + 0.12, 0.18, 1.10)
+            });
+          }
+          if (state.timer <= 0) {
+            state.plantFocus = null;
+            animator.setLookOverride(null);
+            enter(pickWeighted(random, [['sleep', 0.28], ['rise', 0.46], [chooseGroomingState('rest'), 0.26]]));
+          }
+          break;
         case 'zoomies': {
           const arrived = walkToward(dt, TROT_SPEED, 'trot');
           if (arrived || state.timer <= 0) {
@@ -2423,6 +3140,7 @@ const CatBehavior = (() => {
         }
         case 'stalkMouse': {
           if (!mouseIsFresh()) {
+            rememberLastMouse(0.52);
             enter(state.mouseInterest > 0.7 && state.lastMouse ? 'lostMouse' : 'alert');
             break;
           }
@@ -2441,6 +3159,7 @@ const CatBehavior = (() => {
         }
         case 'crouchPounce': {
           if (!mouseIsFresh()) {
+            rememberLastMouse(0.52);
             enter(state.mouseInterest > 0.7 && state.lastMouse ? 'lostMouse' : 'alert');
             break;
           }
@@ -2638,6 +3357,7 @@ const CatBehavior = (() => {
           // Owned by updatePetting; resting on its back until the hand leaves.
           break;
         case 'seekAttention': {
+          if (mouseIsFresh() && holdForHesitation(dt, { x: state.mouse.x, y: state.mouse.y })) break;
           const arrived = walkToward(dt, WALK_SPEED * 0.9, 'walk');
           if (arrived) {
             // Settle beside the cursor and gaze up at it.
@@ -2647,6 +3367,7 @@ const CatBehavior = (() => {
               animator.setLookOverride({ x: state.mouse.x, y: state.mouse.y });
             }
           } else if (state.timer <= 0 || !mouseIsFresh()) {
+            if (state.timer <= 0) state.memory.trust = Math.max(0, state.memory.trust - 0.025);
             enter('idle');
           }
           break;
@@ -2843,6 +3564,11 @@ const CatBehavior = (() => {
             break;
           }
           state.targetX = territoryWatchSpot(state.gnomeFocus);
+          const look = {
+            x: state.gnomeFocus.centerX,
+            y: THREE.MathUtils.clamp(state.gnomeFocus.centerY, 0.25, 1.35)
+          };
+          if (holdForHesitation(dt, look)) break;
           const arrived = walkToward(dt, WALK_SPEED * 0.78, 'walk');
           faceGnomeTerritory();
           if (arrived || state.timer <= 0) {
@@ -2917,7 +3643,7 @@ const CatBehavior = (() => {
           }
           break;
       }
-      animator.update(dt, state.worldX, state.worldY);
+      commitFrame(dt);
     }
 
     return {
@@ -2944,7 +3670,15 @@ const CatBehavior = (() => {
           groomNeed: state.needs.groomNeed,
           novelty: state.novelty,
           petOverstim: state.petOverstim,
-          mood: state.mood
+          mood: state.mood,
+          trust: state.memory.trust,
+          favoriteX: state.memory.favoriteX,
+          favoriteWeight: state.memory.favoriteWeight,
+          poiKind: state.memory.poiKind,
+          poiX: state.memory.poiX,
+          poiY: state.memory.poiY,
+          poiWeight: state.memory.poiWeight,
+          poiAge: state.memory.poiAge
         };
       },
       restoreMemory(mem) {
@@ -2964,6 +3698,18 @@ const CatBehavior = (() => {
         if (mem.mood === 'frisky' || mem.mood === 'mellow' || mem.mood === 'sleepy') {
           state.mood = mem.mood;
         }
+        state.memory.trust = clamp01(mem.trust, state.memory.trust);
+        const favoriteX = Number(mem.favoriteX);
+        if (Number.isFinite(favoriteX)) state.memory.favoriteX = favoriteX;
+        state.memory.favoriteWeight = clamp01(mem.favoriteWeight, state.memory.favoriteWeight);
+        if (typeof mem.poiKind === 'string') state.memory.poiKind = mem.poiKind;
+        const poiX = Number(mem.poiX);
+        const poiY = Number(mem.poiY);
+        if (Number.isFinite(poiX)) state.memory.poiX = poiX;
+        if (Number.isFinite(poiY)) state.memory.poiY = poiY;
+        state.memory.poiWeight = clamp01(mem.poiWeight, state.memory.poiWeight);
+        const poiAge = Number(mem.poiAge);
+        if (Number.isFinite(poiAge)) state.memory.poiAge = Math.max(0, poiAge);
         return true;
       },
       setPersonality(values) {
@@ -3041,6 +3787,15 @@ const CatBehavior = (() => {
             };
           })
           .filter((item) => item && item.id);
+        if (state.plantFocus) {
+          const refreshedFocus = state.gnomePlantTargets.find((plant) => plant.id === state.plantFocus.id);
+          if (refreshedFocus) {
+            state.plantFocus = refreshedFocus;
+          } else {
+            state.plantFocus = null;
+            if (PLANT_STATES.includes(state.name)) enter('idle');
+          }
+        }
       },
       setBugs(items) {
         const previous = new Map(state.bugs.map((bug) => [bug.id, bug]));

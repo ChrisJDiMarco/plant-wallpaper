@@ -155,6 +155,24 @@ const CatAnim = (() => {
       tailCurl: -0.28, tailSide: 0,
       breath: 1.3, eyes: 1
     },
+    sniff: {
+      // Close inspection without inventing new art: shoulders sink, nose
+      // reaches forward/down, whiskers and front paws do the acting.
+      rootHeight: -0.085, rootPitch: -0.08,
+      spineRz: -0.03, chestRz: 0.02, neckRz: 0.46, headRz: 0.28,
+      frontTargetX: 0.42, frontTargetY: 0.05,
+      tailCurl: -0.18, tailSide: 0.18,
+      breath: 1.16, eyes: 0.95
+    },
+    rubObject: {
+      // Cheek-rub around plants, room objects, and edges: confident,
+      // friendly pressure through the face with the tail lifted.
+      rootHeight: -0.030, rootPitch: -0.06,
+      spineRz: 0.07, chestRz: 0.08, neckRz: 0.14, headRz: 0.10, headRy: -0.18,
+      frontTargetX: 0.38, frontTargetY: 0.05,
+      tailCurl: -0.70, tailSide: 0.58,
+      breath: 1.08, eyes: 0.78
+    },
     scratchEar: {
       // Sit base with the head dipped toward the raised hind paw; the
       // fast scratching oscillation is layered on in update.
@@ -394,11 +412,14 @@ const CatAnim = (() => {
       // Anatomy/physiology layer.
       arousal: 0,          // pupil dilation + alertness, set by behavior
       arousalSmooth: 0,
+      emotion: { curiosity: 0, tension: 0, confidence: 0, sleepiness: 0 },
+      emotionSmooth: { curiosity: 0, tension: 0, confidence: 0, sleepiness: 0 },
       effort: 0,           // muscle load → haunch bulge
       gaitNoise: 0,        // per-stride tempo wobble so steps aren't metronomic
       gaitNoiseTarget: 0,
       gaitNoiseTimer: 0,
       neckLag: 0,          // follow-through on vertical accelerations
+      tailTurnLag: 0,
       clawOut: 0,          // retractable claws: extended while climbing/raking
       // Where the stroking hand is (world units), which way it's moving,
       // and how firmly. Refreshed by behavior; fades if not renewed.
@@ -468,6 +489,12 @@ const CatAnim = (() => {
       const fold = state.foldCh[key];
       for (let i = 0; i < 3; i++) {
         fold[i] = damp(fold[i], target[i], rate, dt);
+      }
+    }
+
+    function updateEmotion(dt) {
+      for (const key of ['curiosity', 'tension', 'confidence', 'sleepiness']) {
+        state.emotionSmooth[key] = damp(state.emotionSmooth[key], state.emotion[key] || 0, 3.8, dt);
       }
     }
 
@@ -548,8 +575,10 @@ const CatAnim = (() => {
         const phaseOffset = state.gait === 'trot' ? TROT_PHASES[legKey] : leg.phase;
         const legPhase = (state.gaitPhase + phaseOffset) % 1;
         const bone = bones[leg.thigh];
+        const preStep = Math.max(0, Math.sin((legPhase + 0.08) * Math.PI * 2));
         bone.position.y = shoulderBaseY[legKey]
-          - Math.cos(legPhase * Math.PI * 2) * 0.022 * walkAmp;
+          - Math.cos(legPhase * Math.PI * 2) * 0.022 * walkAmp
+          - preStep * 0.006 * walkAmp * (0.6 + state.emotionSmooth.confidence * 0.5);
       }
       // Groom: the raised paw bobs as the cat licks it.
       if ((state.poseName === 'groom' || state.poseName === 'groomPaw')
@@ -577,6 +606,7 @@ const CatAnim = (() => {
 
     function applyTail(dt) {
       const ch = state.ch;
+      const emotion = state.emotionSmooth;
       const walkAmp = THREE.MathUtils.clamp(state.speed / 0.5, 0, 1);
       const idleFlick = Math.sin(state.time * 1.3) * 0.5 + Math.sin(state.time * 0.37) * 0.5;
       for (let i = 1; i <= 6; i++) {
@@ -586,11 +616,14 @@ const CatAnim = (() => {
         bone.rotation.z = ch.tailCurl * 0.38 * (i === 1 ? 1.6 : 1) - along * ch.tailCurl * 0.10;
         const sway = Math.sin(state.time * (1.6 + walkAmp * 2.2) - i * 0.85);
         bone.rotation.y = ch.tailSide * 0.34
+          + state.tailTurnLag * along * 0.22
           + sway * (0.05 + walkAmp * 0.10) * along
-          + idleFlick * 0.05 * along * (1 - walkAmp);
+          + idleFlick * (0.05 + emotion.tension * 0.035) * along * (1 - walkAmp);
       }
       // Tail-tip flick while idle: cats telegraph mood with the last joint.
-      bones.tail6.rotation.y += Math.sin(state.time * 2.1 + 1.7) * 0.22 * (1 - walkAmp);
+      bones.tail6.rotation.y += Math.sin(state.time * (2.1 + emotion.tension * 4.0) + 1.7)
+        * (0.18 + emotion.curiosity * 0.08 + emotion.tension * 0.12) * (1 - walkAmp);
+      bones.tail3.rotation.z += emotion.confidence * 0.025 * (1 - walkAmp);
     }
 
     function applyBlink(dt) {
@@ -1003,6 +1036,37 @@ const CatAnim = (() => {
       bones.neck.rotation.z += Math.max(0, -sniff) * 0.025;
     }
 
+    function applySniffObject() {
+      if (state.poseName !== 'sniff') return;
+      const sniff = Math.sin(state.time * 5.1);
+      const inhale = Math.max(0, sniff);
+      bones.root.position.y -= inhale * 0.006;
+      bones.chest.rotation.z += inhale * 0.014;
+      bones.neck.rotation.z += 0.035 + inhale * 0.050;
+      bones.head.rotation.z += 0.020 + inhale * 0.045;
+      bones.head.rotation.x += Math.sin(state.time * 6.4) * 0.014;
+      bones.tail6.rotation.y += Math.sin(state.time * 5.8) * 0.065;
+      if (rig.whiskers) {
+        for (const whisker of rig.whiskers) {
+          whisker.mesh.rotation.y += whisker.side * (0.030 + inhale * 0.030) * (whisker.sensitivity || 1);
+        }
+      }
+    }
+
+    function applyRubObject() {
+      if (state.poseName !== 'rubObject') return;
+      const rub = Math.sin(state.time * 2.5);
+      bones.root.position.x += rub * 0.030 * state.heading;
+      bones.root.rotation.z += rub * 0.030;
+      bones.chest.rotation.z += 0.020 + rub * 0.050;
+      bones.neck.rotation.y += -0.16 + rub * 0.10;
+      bones.head.rotation.y += -0.24 + rub * 0.16;
+      bones.head.rotation.z += rub * 0.060;
+      bones.tail1.rotation.z -= 0.16;
+      bones.tail2.rotation.z -= 0.10;
+      bones.tail6.rotation.y += Math.sin(state.time * 4.3) * 0.10;
+    }
+
     function applyBugEat(dt) {
       if (state.poseName !== 'bugEat') {
         state.bugEat.t = Math.min(1, state.bugEat.t + dt * 2.5);
@@ -1395,9 +1459,10 @@ const CatAnim = (() => {
     }
 
     function applyFaceMicroMotion(dt) {
+      const emotion = state.emotionSmooth;
       state.earFlickTimer -= dt;
       if (state.earFlickTimer <= 0) {
-        state.earFlickTimer = 2.5 + Math.random() * 6.5;
+        state.earFlickTimer = (2.5 + Math.random() * 6.5) * (1 - emotion.tension * 0.35);
         state.earFlickPhase = 0;
       }
       if (state.earFlickPhase < 1) {
@@ -1408,17 +1473,23 @@ const CatAnim = (() => {
         : 0;
       if (rig.innerEars) {
         for (const ear of rig.innerEars) {
-          ear.mesh.rotation.x = ear.baseRotationX + flick * ear.side;
+          ear.mesh.rotation.x = ear.baseRotationX
+            + flick * ear.side
+            - emotion.curiosity * 0.10
+            + emotion.sleepiness * 0.08;
+          ear.mesh.rotation.z = (ear.baseRotationZ || 0)
+            + ear.side * (emotion.tension * 0.10 - emotion.confidence * 0.035);
         }
       }
       if (rig.whiskers) {
-        const twitch = Math.sin(state.time * 3.1) * 0.020 + flick * 0.08;
+        const twitch = Math.sin(state.time * (3.1 + emotion.tension * 2.2)) * 0.020 + flick * 0.08;
         // Whiskers fan forward and spread with arousal — an interested cat
         // pushes them toward what it's watching. A couple of close-inspection
         // poses keep a forward bias even when arousal is low.
         const poseAlert = state.poseName === 'dockInspect' || state.poseName === 'dockPaw'
-          || state.poseName === 'wallInspect' || state.poseName === 'mouseCling' ? 0.045 : 0;
-        const alert = Math.max(poseAlert, state.arousalSmooth * 0.07);
+          || state.poseName === 'wallInspect' || state.poseName === 'mouseCling'
+          || state.poseName === 'sniff' ? 0.045 : 0;
+        const alert = Math.max(poseAlert, state.arousalSmooth * 0.07 + emotion.curiosity * 0.045 + emotion.tension * 0.025);
         // Hair physics: each whisker is a tiny damped spring driven by the
         // body's velocity. Walking makes them trail and bounce with the
         // gait; a direction change whips them around and they settle with
@@ -1464,10 +1535,12 @@ const CatAnim = (() => {
       // turns visibly quicker than an ambling one.
       state.speed = damp(state.speed, state.targetSpeed, 3.0 * state.agility, dt);
 
+      updateEmotion(dt);
       updateChannels(dt);
       applyHeadLook(dt);
 
       const ch = state.ch;
+      const emotion = state.emotionSmooth;
       const walkAmp = THREE.MathUtils.clamp(state.speed / 0.5, 0, 1);
 
       // Advance gait phase so stride matches ground speed (no foot sliding).
@@ -1484,7 +1557,9 @@ const CatAnim = (() => {
         const cycleTime = THREE.MathUtils.clamp(
           gait.stride / (state.speed * gait.stanceFrac), 0.4, 1.8
         );
-        state.gaitPhase = (state.gaitPhase + (dt / cycleTime) * (1 + state.gaitNoise)) % 1;
+        const emotionTempo = 1 + emotion.tension * 0.08 + emotion.curiosity * 0.04
+          - emotion.sleepiness * 0.07;
+        state.gaitPhase = (state.gaitPhase + (dt / cycleTime) * (1 + state.gaitNoise) * emotionTempo) % 1;
       }
 
       // Locomotion body dynamics.
@@ -1497,6 +1572,12 @@ const CatAnim = (() => {
       const root = bones.root;
       const yawTarget = state.heading > 0 ? -0.18 : -(Math.PI - 0.18);
       state.yaw = damp(state.yaw, yawTarget, 3.4 * state.agility, dt);
+      state.tailTurnLag = damp(
+        state.tailTurnLag,
+        THREE.MathUtils.clamp((yawTarget - state.yaw) * 0.55, -0.55, 0.55),
+        4.5,
+        dt
+      );
       root.rotation.order = 'YZX';
       root.rotation.y = state.yaw;
       root.rotation.z = ch.rootPitch + pitchWobble;
@@ -1527,7 +1608,11 @@ const CatAnim = (() => {
 
       // The head leads turns: eyes and ears commit to the new heading a
       // beat before the body comes around.
-      const turnLead = THREE.MathUtils.clamp((yawTarget - state.yaw) * 0.5, -0.45, 0.45);
+      const turnLead = THREE.MathUtils.clamp(
+        (yawTarget - state.yaw) * (0.48 + emotion.curiosity * 0.18 + emotion.tension * 0.12),
+        -0.50,
+        0.50
+      );
 
       bones.hips.rotation.y = -spineSway;
       bones.hips.rotation.x = pelvicRoll;
@@ -1544,9 +1629,15 @@ const CatAnim = (() => {
 
       // Breathing: chest swells, belly follows softly. Kept subtle — at
       // wallpaper scale a visible heave reads as panting.
-      const breath = 1 + Math.sin(state.time * (ch.breath > 1.8 ? 1.1 : 1.9)) * 0.010 * ch.breath;
+      const breathDepth = ch.breath * (1 + emotion.sleepiness * 0.06 + emotion.confidence * 0.025);
+      const breathRate = (ch.breath > 1.8 ? 0.86 : 1.28) + emotion.tension * 0.08 - emotion.sleepiness * 0.10;
+      const breath = 1 + Math.sin(state.time * breathRate) * 0.0065 * breathDepth;
       bones.chest.scale.set(breath, breath, breath);
       bones.spine.scale.set(1 + (breath - 1) * 0.5, 1 + (breath - 1) * 0.5, 1);
+      if (state.poseName === 'loaf' || state.poseName === 'lie' || state.poseName === 'sleep') {
+        bones.chest.rotation.y += Math.sin(state.time * 0.82) * 0.003 * (0.4 + emotion.sleepiness);
+        bones.spine.rotation.y -= Math.sin(state.time * 0.68 + 0.7) * 0.002 * (0.4 + emotion.sleepiness);
+      }
 
       applyLeg('backL', ch.backIkL, dt);
       applyLeg('backR', ch.backIkR, dt);
@@ -1557,6 +1648,8 @@ const CatAnim = (() => {
       applyWallScratch();
       applyWallRub();
       applyDockInspect();
+      applySniffObject();
+      applyRubObject();
       applyBugEat(dt);
       applyWallClimb(dt);
       applyWallHang();
@@ -1613,7 +1706,14 @@ const CatAnim = (() => {
       // playing. The texture only redraws when dilation meaningfully moves.
       state.arousalSmooth = damp(state.arousalSmooth, state.arousal, 2.5, dt);
       if (rig.setPupilDilation) {
-        rig.setPupilDilation(state.arousalSmooth);
+        rig.setPupilDilation(THREE.MathUtils.clamp(
+          state.arousalSmooth
+            + state.emotionSmooth.curiosity * 0.16
+            + state.emotionSmooth.tension * 0.20
+            - state.emotionSmooth.sleepiness * 0.10,
+          0,
+          1
+        ));
       }
 
       // Claws unsheathe for work that needs them: climbing, hanging on,
@@ -1705,6 +1805,12 @@ const CatAnim = (() => {
       // 0 = calm slits, 1 = full hunting pools. Behavior owns the signal.
       setArousal(value) {
         state.arousal = THREE.MathUtils.clamp(value || 0, 0, 1);
+      },
+      setEmotionSignals(values) {
+        const next = values || {};
+        for (const key of ['curiosity', 'tension', 'confidence', 'sleepiness']) {
+          state.emotion[key] = THREE.MathUtils.clamp(Number(next[key]) || 0, 0, 1);
+        }
       },
       // A stroking hand at (x, y) world units moving in direction dir
       // [-1, 1] with firmness amp [0, 1]. Drives the localized fur rustle

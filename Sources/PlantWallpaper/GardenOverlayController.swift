@@ -93,6 +93,7 @@ final class GardenOverlayController {
     private var globalMouseMovedMonitor: Any?
     private var pointerRoutingTimer: Timer?
     private var notificationObservers: [NSObjectProtocol] = []
+    private var workspaceObservers: [NSObjectProtocol] = []
     private var mousePressCoordinator = GardenMousePressCoordinator()
     private var lastDragScreenPoint: NSPoint?
     private var lastPointerRoutingScreenPoint: NSPoint?
@@ -156,6 +157,18 @@ final class GardenOverlayController {
         observeNotification(name: .gardenPlantSpotlightVisibilityChanged) { controller, notification in
             controller.plantSpotlightVisibilityChanged(notification)
         }
+        observeWorkspaceNotification(name: NSWorkspace.sessionDidResignActiveNotification) { controller, _ in
+            controller.desktopInputSessionDidPause()
+        }
+        observeWorkspaceNotification(name: NSWorkspace.sessionDidBecomeActiveNotification) { controller, _ in
+            controller.desktopInputSessionDidResume()
+        }
+        observeWorkspaceNotification(name: NSWorkspace.screensDidSleepNotification) { controller, _ in
+            controller.desktopInputSessionDidPause()
+        }
+        observeWorkspaceNotification(name: NSWorkspace.screensDidWakeNotification) { controller, _ in
+            controller.desktopInputSessionDidResume()
+        }
         installEventMonitors()
         installEventTap()
         startPointerRoutingTimer()
@@ -164,6 +177,8 @@ final class GardenOverlayController {
     func shutdown() {
         notificationObservers.forEach { NotificationCenter.default.removeObserver($0) }
         notificationObservers = []
+        workspaceObservers.forEach { NSWorkspace.shared.notificationCenter.removeObserver($0) }
+        workspaceObservers = []
         pointerRoutingTimer?.invalidate()
         pointerRoutingTimer = nil
         if let globalMouseDownMonitor {
@@ -182,15 +197,7 @@ final class GardenOverlayController {
             NSEvent.removeMonitor(globalMouseMovedMonitor)
             self.globalMouseMovedMonitor = nil
         }
-        if let eventTapRunLoopSource {
-            CFRunLoopRemoveSource(CFRunLoopGetMain(), eventTapRunLoopSource, .commonModes)
-            self.eventTapRunLoopSource = nil
-        }
-        if let eventTap {
-            CGEvent.tapEnable(tap: eventTap, enable: false)
-            CFMachPortInvalidate(eventTap)
-            self.eventTap = nil
-        }
+        uninstallEventTap()
     }
 
     private func observeNotification(
@@ -212,6 +219,26 @@ final class GardenOverlayController {
             }
         }
         notificationObservers.append(observer)
+    }
+
+    private func observeWorkspaceNotification(
+        name: Notification.Name,
+        handler: @escaping @MainActor (GardenOverlayController, Notification) -> Void
+    ) {
+        let observer = NSWorkspace.shared.notificationCenter.addObserver(
+            forName: name,
+            object: nil,
+            queue: .main
+        ) { [weak self] notification in
+            guard let self else {
+                return
+            }
+            let delivery = MainActorNotificationDelivery(notification: notification)
+            MainActor.assumeIsolated {
+                handler(self, delivery.notification)
+            }
+        }
+        workspaceObservers.append(observer)
     }
 
     func show() {
@@ -762,6 +789,7 @@ final class GardenOverlayController {
     }
 
     private func installEventTap() {
+        uninstallEventTap()
         let mask = CGEventMask(1 << CGEventType.leftMouseDown.rawValue)
             | CGEventMask(1 << CGEventType.leftMouseDragged.rawValue)
             | CGEventMask(1 << CGEventType.leftMouseUp.rawValue)
@@ -806,6 +834,52 @@ final class GardenOverlayController {
         eventTapRunLoopSource = source
         CFRunLoopAddSource(CFRunLoopGetMain(), source, .commonModes)
         CGEvent.tapEnable(tap: tap, enable: true)
+    }
+
+    private func uninstallEventTap() {
+        if let eventTapRunLoopSource {
+            CFRunLoopRemoveSource(CFRunLoopGetMain(), eventTapRunLoopSource, .commonModes)
+            self.eventTapRunLoopSource = nil
+        }
+        if let eventTap {
+            CGEvent.tapEnable(tap: eventTap, enable: false)
+            CFMachPortInvalidate(eventTap)
+            self.eventTap = nil
+        }
+    }
+
+    private func desktopInputSessionDidPause() {
+        handleMouseUp()
+        isPointerPollingDragActive = false
+        isStatusMenuOpen = false
+        desktopWindowSnapshotCache = nil
+        lastPointerRoutingScreenPoint = nil
+        lastDesktopPlantingMenuRequest = nil
+        interactionWindows.forEach { $0.close() }
+        interactionWindows = []
+        interactionRegionFrames = []
+        windows.forEach { $0.ignoresMouseEvents = true }
+    }
+
+    private func desktopInputSessionDidResume() {
+        installEventTap()
+        isStatusMenuOpen = false
+        desktopWindowSnapshotCache = nil
+        lastPointerRoutingScreenPoint = nil
+        lastDesktopPlantingMenuRequest = nil
+        interactionWindows.forEach { $0.close() }
+        interactionWindows = []
+        interactionRegionFrames = []
+        updateInteractionRegionWindows()
+        updateMouseRouting(at: NSEvent.mouseLocation)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { [weak self] in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                self.desktopWindowSnapshotCache = nil
+                self.updateInteractionRegionWindows()
+                self.updateMouseRouting(at: NSEvent.mouseLocation)
+            }
+        }
     }
 
     private func handleEventTap(type: CGEventType, quartzLocation: CGPoint, clickCount: Int) {
@@ -938,10 +1012,11 @@ final class GardenOverlayController {
                             return
                         }
 
+                        let screenPoint = regionWindow.convertPoint(toScreen: event.locationInWindow)
                         _ = self.handleMouseDown(
-                            at: regionWindow.convertPoint(toScreen: event.locationInWindow),
+                            at: screenPoint,
                             clickCount: event.clickCount,
-                            allowsDesktopPlantingMenu: false
+                            allowsDesktopPlantingMenu: !self.isPointOnGardenInteractionSurface(screenPoint)
                         )
                     },
                     mouseDraggedHandler: { [weak self] event, regionWindow in
@@ -1212,7 +1287,11 @@ final class GardenOverlayController {
         }
 
         if allowsDesktopPlantingMenu,
-           openDesktopPlantingMenuIfNeeded(at: screenPoint, clickCount: clickCount) {
+           openDesktopPlantingMenuIfNeeded(
+               at: screenPoint,
+               clickCount: clickCount,
+               allowsInteractionWindowOrigin: true
+           ) {
             return true
         }
 
@@ -1263,14 +1342,18 @@ final class GardenOverlayController {
     }
 
     @discardableResult
-    private func openDesktopPlantingMenuIfNeeded(at screenPoint: NSPoint, clickCount: Int) -> Bool {
+    private func openDesktopPlantingMenuIfNeeded(
+        at screenPoint: NSPoint,
+        clickCount: Int,
+        allowsInteractionWindowOrigin: Bool = false
+    ) -> Bool {
         guard clickCount >= 2,
               !isGardenInteractionLocked,
               !isGnomeZoneDrawingMode,
               !isBirdSkyZoneDrawingMode,
               !isSoilBrushMode,
               !isStatusMenuOpen,
-              !isPointInsideInteractionWindow(screenPoint),
+              (allowsInteractionWindowOrigin || !isPointInsideInteractionWindow(screenPoint)),
               !isPointOnGardenInteractionSurface(screenPoint),
               let desktopPlantingMenuRequestHandler,
               Self.canOpenPlantingMenu(at: screenPoint) else {
