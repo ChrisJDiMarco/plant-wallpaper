@@ -240,6 +240,7 @@ final class GardenStatusMenu: NSObject {
     private let aiLockViewItem = NSMenuItem()
     private let aiLockRegenerateItem = NSMenuItem()
     private let pauseItem = NSMenuItem()
+    private let flythroughVideoItem = NSMenuItem()
     private var currentStatusSymbolName = "leaf.fill"
     private let ambientSoundMenuItem = NSMenuItem()
     private let ambientSoundMasterItem = NSMenuItem()
@@ -338,6 +339,8 @@ final class GardenStatusMenu: NSObject {
     private var gnomeSettlementSetupPanelController: GnomeSettlementSetupPanelController?
     private var isUpdatingWallpaper = false
     private var wallpaperUpdateTask: Task<Void, Never>?
+    private var isGeneratingFlythroughVideo = false
+    private var flythroughVideoTask: Task<Void, Never>?
     private static let appDefaultsSuiteName = "com.chrisdimarco.wallpapergarden"
 
     init(store: GardenStore, wallpaperManager: WallpaperManager) {
@@ -609,6 +612,7 @@ final class GardenStatusMenu: NSObject {
             aiLockViewItem,
             aiLockRegenerateItem,
             pauseItem,
+            flythroughVideoItem,
             ambientSoundMenuItem,
             ambientSoundMasterItem,
             ambientWildlifeItem,
@@ -1505,6 +1509,13 @@ final class GardenStatusMenu: NSObject {
         let submenu = NSMenu(title: "Keepsakes & Exports")
         submenu.autoenablesItems = false
         submenu.addItem(menuItem(title: "Save Garden Snapshot...", symbol: "camera.on.rectangle", action: #selector(saveGardenSnapshot)))
+        configureMenuItem(
+            flythroughVideoItem,
+            title: "Generate Looping Flythrough Video...",
+            symbol: "video.badge.sparkles",
+            action: #selector(generateLoopingFlythroughVideo)
+        )
+        submenu.addItem(flythroughVideoItem)
         submenu.addItem(menuItem(title: "Save Share Card...", symbol: "square.and.arrow.up", action: #selector(saveShareCard)))
         submenu.addItem(menuItem(title: "Export Time-Lapse...", symbol: "film.stack", action: #selector(exportTimeLapse)))
         submenu.addItem(menuItem(title: "Save Garden Health Check...", symbol: "stethoscope", action: #selector(saveHealthCheck)))
@@ -2486,6 +2497,15 @@ final class GardenStatusMenu: NSObject {
         timeOfDayPlantDarkeningItem.toolTip = store.state.settings.isTimeOfDayPlantDarkeningEnabled
             ? "Trees and plants follow morning, evening, and night shading."
             : "Trees and plants stay bright regardless of time of day."
+        flythroughVideoItem.title = isGeneratingFlythroughVideo
+            ? "Generating Looping Flythrough..."
+            : "Generate Looping Flythrough Video..."
+        flythroughVideoItem.isEnabled = !isGeneratingFlythroughVideo
+        flythroughVideoItem.toolTip = "Send the current clean garden snapshot to fal.ai Seedance 2.0 Fast for a 10-second loopable flythrough video."
+        flythroughVideoItem.image = NSImage(
+            systemSymbolName: isGeneratingFlythroughVideo ? "hourglass" : "video.badge.sparkles",
+            accessibilityDescription: flythroughVideoItem.title
+        )
         statusItem.button?.toolTip = "Plant Wallpaper - \(vitality.summary) - \(season.summary) - \(sunlight.summary) - \(dew.summary) - \(recommendation.summary)"
         if let lastError = store.lastError {
             let errorTitle = "Save Error: \(lastError)"
@@ -2944,6 +2964,108 @@ final class GardenStatusMenu: NSObject {
             NSWorkspace.shared.activateFileViewerSelecting(writtenURLs)
         } catch {
             showError(title: "Could not save snapshot", message: error.localizedDescription)
+        }
+    }
+
+    @objc private func generateLoopingFlythroughVideo() {
+        guard !isGeneratingFlythroughVideo else {
+            return
+        }
+        guard confirmFalFlythroughGeneration(),
+              let apiKey = falAPIKeyFromUser() else {
+            return
+        }
+
+        isGeneratingFlythroughVideo = true
+        updateDynamicItems()
+        flythroughVideoTask = Task { @MainActor in
+            defer {
+                flythroughVideoTask = nil
+                isGeneratingFlythroughVideo = false
+                updateDynamicItems()
+            }
+
+            do {
+                let snapshotData = try primaryGardenSnapshotPNGData()
+                let videoURL = try await GardenFlythroughVideoGenerator().generate(
+                    snapshotPNGData: snapshotData,
+                    apiKey: apiKey
+                )
+                NSWorkspace.shared.open(videoURL)
+            } catch is CancellationError {
+                return
+            } catch {
+                showError(title: "Flythrough video failed", message: error.localizedDescription)
+            }
+        }
+    }
+
+    private func primaryGardenSnapshotPNGData() throws -> Data {
+        let screens = NSScreen.screens
+        guard let screen = NSScreen.main ?? screens.first else {
+            throw GardenDesktopSnapshotRenderer.SnapshotError.noScreenAvailable
+        }
+
+        return try GardenDesktopSnapshotRenderer.snapshotPNGData(
+            store: store,
+            screen: screen,
+            screenIndex: screens.firstIndex(of: screen) ?? 0,
+            wallpaperImageURL: wallpaperManager.currentWallpaperImageURL
+        )
+    }
+
+    private func confirmFalFlythroughGeneration() -> Bool {
+        let alert = NSAlert()
+        alert.messageText = "Generate looping flythrough video?"
+        alert.informativeText = "This sends the current clean garden snapshot to fal.ai and starts a 10-second 720p Seedance 2.0 Fast video job billed to your fal account. The finished MP4 opens automatically."
+        alert.alertStyle = .informational
+        alert.addButton(withTitle: "Generate")
+        alert.addButton(withTitle: "Cancel")
+        return alert.runModal() == .alertFirstButtonReturn
+    }
+
+    private func falAPIKeyFromUser() -> String? {
+        if let key = FalAPIKeyStore.load() {
+            return key
+        }
+        if let key = ProcessInfo.processInfo.environment["FAL_KEY"]?
+            .trimmingCharacters(in: .whitespacesAndNewlines),
+           !key.isEmpty {
+            return key
+        }
+
+        let alert = NSAlert()
+        alert.messageText = "fal.ai API Key"
+        alert.informativeText = "Seedance flythrough videos use your own paid fal.ai API key. The key is stored only in your Mac's Keychain."
+        alert.alertStyle = .informational
+        alert.addButton(withTitle: "Save & Generate")
+        alert.addButton(withTitle: "Get a Key...")
+        alert.addButton(withTitle: "Cancel")
+
+        let keyField = NSSecureTextField(frame: NSRect(x: 0, y: 0, width: 420, height: 24))
+        keyField.placeholderString = FalAPIKeyStore.keyFieldPlaceholder
+        alert.accessoryView = keyField
+
+        switch alert.runModal() {
+        case .alertFirstButtonReturn:
+            let key = keyField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !key.isEmpty else {
+                return nil
+            }
+            do {
+                try FalAPIKeyStore.save(key)
+                return key
+            } catch {
+                showError(title: "Could not save fal.ai key", message: error.localizedDescription)
+                return nil
+            }
+        case .alertSecondButtonReturn:
+            if let url = URL(string: "https://fal.ai/dashboard/keys") {
+                NSWorkspace.shared.open(url)
+            }
+            return falAPIKeyFromUser()
+        default:
+            return nil
         }
     }
 

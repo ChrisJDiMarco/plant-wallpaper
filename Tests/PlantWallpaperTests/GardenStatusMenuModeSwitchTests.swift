@@ -310,6 +310,17 @@ struct GardenStatusMenuModeSwitchTests {
         #expect(fixture.menu.menuTooltipsForSelfTest().isEmpty)
     }
 
+    @Test("keepsakes menu exposes looping flythrough generation")
+    func keepsakesMenuExposesLoopingFlythroughGeneration() throws {
+        let fixture = try StatusMenuModeFixture()
+        defer { fixture.cleanup() }
+
+        let keepsakes = fixture.menu.submenuTitlesForSelfTest(named: "Keepsakes & Exports")
+
+        #expect(keepsakes.contains("Save Garden Snapshot..."))
+        #expect(keepsakes.contains("Generate Looping Flythrough Video..."))
+    }
+
     @Test("AI lock view is a separate visible lock mode switch")
     func aiLockViewIsASeparateVisibleLockModeSwitch() throws {
         let fixture = try StatusMenuModeFixture()
