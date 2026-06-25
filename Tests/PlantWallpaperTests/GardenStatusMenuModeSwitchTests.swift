@@ -338,6 +338,41 @@ struct GardenStatusMenuModeSwitchTests {
         #expect(fixture.menu.menuItemStateForSelfTest(named: "Loop Flythrough Video") == .off)
     }
 
+    @Test("clicking a progression template fills every fantasy-profile field")
+    func progressionTemplateFillsEveryField() throws {
+        let fixture = try StatusMenuModeFixture()
+        defer { fixture.cleanup() }
+
+        let template = try #require(
+            GardenProgressionFantasyTemplateCatalog.all.first { $0.id == "intergalactic-warlord" }
+        )
+        let filled = try #require(
+            fixture.menu.applyProgressionTemplateForSelfTest("intergalactic-warlord")
+        )
+
+        #expect(filled == template.profile)
+        #expect(filled.isUsable)
+        #expect(fixture.menu.applyProgressionTemplateForSelfTest("does-not-exist") == nil)
+    }
+
+    @Test("fantasy profile panel renders tall enough for templates and every field")
+    func progressionProfilePanelRendersWithoutClipping() throws {
+        let fixture = try StatusMenuModeFixture()
+        defer { fixture.cleanup() }
+
+        let image = try #require(fixture.menu.renderProgressionProfileAccessoryForSelfTest())
+        // 6 template rows + header + 5 labelled fields must all fit.
+        #expect(image.size.width >= 500)
+        #expect(image.size.height >= 420)
+
+        if let path = ProcessInfo.processInfo.environment["WG_RENDER_PROGRESSION_PNG"],
+           let tiff = image.tiffRepresentation,
+           let bitmap = NSBitmapImageRep(data: tiff),
+           let png = bitmap.representation(using: .png, properties: [:]) {
+            try png.write(to: URL(fileURLWithPath: path))
+        }
+    }
+
     @Test("AI lock view is a separate visible lock mode switch")
     func aiLockViewIsASeparateVisibleLockModeSwitch() throws {
         let fixture = try StatusMenuModeFixture()

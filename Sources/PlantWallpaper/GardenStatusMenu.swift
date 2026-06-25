@@ -207,6 +207,49 @@ private final class CustomPlantAssetPromptAssistant: NSObject {
     }
 }
 
+private final class ProgressionTemplateButton: NSButton {
+    var template: GardenProgressionFantasyTemplate?
+}
+
+/// Fills the Progression Mode fantasy-profile text fields from a clicked
+/// template so people can start a scene's level ladder in one tap. Held on the
+/// stack for the lifetime of the modal that owns the fields.
+@MainActor
+private final class ProgressionTemplateFiller: NSObject {
+    private let lifestyleField: NSTextField
+    private let placeField: NSTextField
+    private let ageField: NSTextField
+    private let vibeField: NSTextField
+    private let avoidField: NSTextField
+
+    init(
+        lifestyleField: NSTextField,
+        placeField: NSTextField,
+        ageField: NSTextField,
+        vibeField: NSTextField,
+        avoidField: NSTextField
+    ) {
+        self.lifestyleField = lifestyleField
+        self.placeField = placeField
+        self.ageField = ageField
+        self.vibeField = vibeField
+        self.avoidField = avoidField
+    }
+
+    @objc func applyTemplate(_ sender: NSButton) {
+        guard let button = sender as? ProgressionTemplateButton,
+              let profile = button.template?.profile else {
+            return
+        }
+
+        lifestyleField.stringValue = profile.lifestyleFantasy
+        placeField.stringValue = profile.placeInWorld
+        ageField.stringValue = profile.ageBracket
+        vibeField.stringValue = profile.vibe
+        avoidField.stringValue = profile.avoidList
+    }
+}
+
 private final class WallpaperVersionMenuItemView: NSView {
     private let selectedLabel = NSTextField(labelWithString: "")
     private let iconView = NSImageView()
@@ -5337,20 +5380,30 @@ final class GardenStatusMenu: NSObject {
         )
         avoidField.stringValue = existing?.avoidList ?? ""
 
-        let stack = NSStackView(views: [
-            progressionFieldGroup(title: "Lifestyle fantasy", field: lifestyleField),
-            progressionFieldGroup(title: "Place in the world", field: placeField),
-            progressionFieldGroup(title: "Age bracket / life stage", field: ageField),
-            progressionFieldGroup(title: "Vibe", field: vibeField),
-            progressionFieldGroup(title: "Avoid", field: avoidField)
-        ])
-        stack.orientation = .vertical
-        stack.alignment = .leading
-        stack.spacing = 10
-        stack.frame = NSRect(x: 0, y: 0, width: 520, height: 310)
+        let templateFiller = ProgressionTemplateFiller(
+            lifestyleField: lifestyleField,
+            placeField: placeField,
+            ageField: ageField,
+            vibeField: vibeField,
+            avoidField: avoidField
+        )
+
+        let stack = progressionProfileAccessoryView(
+            lifestyleField: lifestyleField,
+            placeField: placeField,
+            ageField: ageField,
+            vibeField: vibeField,
+            avoidField: avoidField,
+            filler: templateFiller
+        )
         alert.accessoryView = stack
 
-        guard alert.runModal() == .alertFirstButtonReturn else {
+        // Keep the filler alive for the whole modal — the chip buttons only
+        // hold a weak target reference to it.
+        let response = withExtendedLifetime(templateFiller) {
+            alert.runModal()
+        }
+        guard response == .alertFirstButtonReturn else {
             return nil
         }
 
@@ -5373,6 +5426,160 @@ final class GardenStatusMenu: NSObject {
         field.placeholderString = placeholder
         field.lineBreakMode = .byTruncatingTail
         return field
+    }
+
+    private func progressionProfileAccessoryView(
+        lifestyleField: NSTextField,
+        placeField: NSTextField,
+        ageField: NSTextField,
+        vibeField: NSTextField,
+        avoidField: NSTextField,
+        filler: ProgressionTemplateFiller
+    ) -> NSStackView {
+        let stack = NSStackView(views: [
+            progressionTemplatePickerView(filler: filler),
+            progressionFieldGroup(title: "Lifestyle fantasy", field: lifestyleField),
+            progressionFieldGroup(title: "Place in the world", field: placeField),
+            progressionFieldGroup(title: "Age bracket / life stage", field: ageField),
+            progressionFieldGroup(title: "Vibe", field: vibeField),
+            progressionFieldGroup(title: "Avoid", field: avoidField)
+        ])
+        stack.orientation = .vertical
+        stack.alignment = .leading
+        stack.spacing = 12
+        stack.frame = NSRect(x: 0, y: 0, width: 520, height: 10)
+        stack.layoutSubtreeIfNeeded()
+        let fittingHeight = stack.fittingSize.height
+        stack.frame = NSRect(x: 0, y: 0, width: 520, height: max(310, fittingHeight))
+        return stack
+    }
+
+    /// Renders the real fantasy-profile dialog body (template chips + fields)
+    /// to an image so layout can be eyeballed and tested for clipping without
+    /// driving the modal. Placeholders are shown the same way the live dialog
+    /// presents them on a fresh profile.
+    func renderProgressionProfileAccessoryForSelfTest() -> NSImage? {
+        let lifestyleField = progressionTextField(placeholder: "Example: quiet old-money estate garden, creative founder villa, tropical cliffside retreat")
+        let placeField = progressionTextField(placeholder: "Example: coastal Brazil, Swedish archipelago, Kyoto mountains, Austin hill country")
+        let ageField = progressionTextField(placeholder: "Example: early 20s first apartment, 30s founder, retired eccentric collector")
+        let vibeField = progressionTextField(placeholder: "Example: warm minimal, maximalist surreal, earthy cinematic, playful retro-futurist")
+        let avoidField = progressionTextField(placeholder: "Optional: anything you do not want the progression to include")
+        let filler = ProgressionTemplateFiller(
+            lifestyleField: lifestyleField,
+            placeField: placeField,
+            ageField: ageField,
+            vibeField: vibeField,
+            avoidField: avoidField
+        )
+        let stack = progressionProfileAccessoryView(
+            lifestyleField: lifestyleField,
+            placeField: placeField,
+            ageField: ageField,
+            vibeField: vibeField,
+            avoidField: avoidField,
+            filler: filler
+        )
+
+        let window = NSWindow(
+            contentRect: stack.frame,
+            styleMask: [.borderless],
+            backing: .buffered,
+            defer: false
+        )
+        window.contentView = stack
+        stack.layoutSubtreeIfNeeded()
+        guard let rep = stack.bitmapImageRepForCachingDisplay(in: stack.bounds) else {
+            return nil
+        }
+        stack.cacheDisplay(in: stack.bounds, to: rep)
+        let image = NSImage(size: stack.bounds.size)
+        image.addRepresentation(rep)
+        return image
+    }
+
+    private func progressionTemplatePickerView(filler: ProgressionTemplateFiller) -> NSView {
+        let header = customPlantLabel(
+            "Quick-start templates — tap one to fill everything below",
+            font: .systemFont(ofSize: 12, weight: .semibold),
+            color: .secondaryLabelColor
+        )
+
+        let templates = GardenProgressionFantasyTemplateCatalog.all
+        let columnsPerRow = 2
+        var rows: [NSView] = []
+        var index = 0
+        while index < templates.count {
+            let rowTemplates = templates[index..<min(index + columnsPerRow, templates.count)]
+            let buttons = rowTemplates.map { progressionTemplateButton(for: $0, filler: filler) }
+            let row = NSStackView(views: buttons)
+            row.orientation = .horizontal
+            row.alignment = .centerY
+            row.distribution = .fillEqually
+            row.spacing = 8
+            row.widthAnchor.constraint(equalToConstant: 520).isActive = true
+            rows.append(row)
+            index += columnsPerRow
+        }
+
+        let grid = NSStackView(views: rows)
+        grid.orientation = .vertical
+        grid.alignment = .leading
+        grid.spacing = 8
+
+        let container = NSStackView(views: [header, grid])
+        container.orientation = .vertical
+        container.alignment = .leading
+        container.spacing = 6
+        container.widthAnchor.constraint(equalToConstant: 520).isActive = true
+        return container
+    }
+
+    private func progressionTemplateButton(
+        for template: GardenProgressionFantasyTemplate,
+        filler: ProgressionTemplateFiller
+    ) -> NSButton {
+        let button = ProgressionTemplateButton()
+        button.template = template
+        button.title = template.chipLabel
+        button.bezelStyle = .rounded
+        button.controlSize = .small
+        button.setButtonType(.momentaryPushIn)
+        button.target = filler
+        button.action = #selector(ProgressionTemplateFiller.applyTemplate(_:))
+        button.toolTip = template.profile.lifestyleFantasy
+        return button
+    }
+
+    /// Drives the real chip-button → filler → text-field path so tests can
+    /// confirm clicking a template fills every field. Returns the resulting
+    /// profile, or nil if the template id is unknown.
+    func applyProgressionTemplateForSelfTest(_ templateID: String) -> GardenProgressionProfile? {
+        guard let template = GardenProgressionFantasyTemplateCatalog.all
+            .first(where: { $0.id == templateID }) else {
+            return nil
+        }
+
+        let lifestyleField = NSTextField()
+        let placeField = NSTextField()
+        let ageField = NSTextField()
+        let vibeField = NSTextField()
+        let avoidField = NSTextField()
+        let filler = ProgressionTemplateFiller(
+            lifestyleField: lifestyleField,
+            placeField: placeField,
+            ageField: ageField,
+            vibeField: vibeField,
+            avoidField: avoidField
+        )
+        filler.applyTemplate(progressionTemplateButton(for: template, filler: filler))
+
+        return GardenProgressionProfile(
+            lifestyleFantasy: lifestyleField.stringValue,
+            placeInWorld: placeField.stringValue,
+            ageBracket: ageField.stringValue,
+            vibe: vibeField.stringValue,
+            avoidList: avoidField.stringValue
+        )
     }
 
     private func progressionFieldGroup(title: String, field: NSTextField) -> NSView {
