@@ -4827,7 +4827,8 @@ final class GardenStatusMenu: NSObject {
     private func applyWallpaperSceneKey(
         _ sceneKey: String,
         settingsOverride: GardenSettings? = nil,
-        screensOverride: [NSScreen]? = nil
+        screensOverride: [NSScreen]? = nil,
+        afterSwitch: (() -> Void)? = nil
     ) {
         let playingRadioStation = GardenRadioPlayer.shared.playingRadioStation
         let playingRadioStream = GardenRadioPlayer.shared.playingRadioStream
@@ -4841,6 +4842,7 @@ final class GardenStatusMenu: NSObject {
                 playingRadioStream: playingRadioStream,
                 settingsOverride: settingsOverride
             )
+            afterSwitch?()
             self.store.removePlantsWithoutDisplayableAssets()
             self.refreshPlantingMenus()
             self.updateDynamicItems()
@@ -5017,13 +5019,44 @@ final class GardenStatusMenu: NSObject {
         guard requireProFeature(.progressionMode) else {
             return
         }
+        performProgressionModeToggle()
+    }
+
+    func toggleProgressionModeForSelfTest() {
+        performProgressionModeToggle()
+    }
+
+    private func performProgressionModeToggle() {
         guard let progression = store.state.progression else {
             // No profile yet — turning the mode on means setting it up.
             setupProgressionMode()
             return
         }
-        store.setProgressionEnabled(!progression.isEnabled)
-        updateDynamicItems()
+        if progression.isEnabled {
+            // Turning progression off returns the desktop to the scene the user
+            // had selected before the ladder started swapping in generated levels.
+            disableProgressionRestoringBaseScene(progression)
+        } else {
+            store.setProgressionEnabled(true)
+            updateDynamicItems()
+        }
+    }
+
+    private func disableProgressionRestoringBaseScene(_ progression: GardenSceneProgression) {
+        let pausedProgression = progression.settingEnabled(false)
+        guard let baseSceneKey = progression.baseSceneKey,
+              baseSceneKey != wallpaperManager.selectedWallpaperSceneKey else {
+            // No remembered scene (older profile) or already on it — just pause.
+            store.updateProgression(pausedProgression)
+            updateDynamicItems()
+            return
+        }
+
+        applyWallpaperSceneKey(baseSceneKey, afterSwitch: { [weak self] in
+            // Keep the earned level + profile with the restored scene so the
+            // user can resume later from where they left off.
+            self?.store.updateProgression(pausedProgression)
+        })
     }
 
     @objc private func setupProgressionMode() {
@@ -5041,7 +5074,11 @@ final class GardenStatusMenu: NSObject {
                 level: existing?.level ?? 0,
                 profile: profile,
                 startedAt: existing?.startedAt ?? Date(),
-                lastAdvancedAt: existing?.lastAdvancedAt
+                lastAdvancedAt: existing?.lastAdvancedAt,
+                autoAdvanceCadence: existing?.autoAdvanceCadence ?? .off,
+                // Remember the scene the user is on so turning progression off
+                // later returns the desktop to it instead of a generated level.
+                baseSceneKey: existing?.baseSceneKey ?? wallpaperManager.selectedWallpaperSceneKey
             )
         )
         updateDynamicItems()

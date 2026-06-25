@@ -373,6 +373,60 @@ struct GardenStatusMenuModeSwitchTests {
         }
     }
 
+    @Test("turning progression off restores the user's last selected scene")
+    func turningProgressionOffRestoresBaseScene() throws {
+        let fixture = try StatusMenuModeFixture()
+        defer { fixture.cleanup() }
+        let previousTier = GardenLocalEntitlementStore().selectedTier
+        GardenEntitlements.shared.setLocalTier(.pro)
+        defer { GardenEntitlements.shared.setLocalTier(previousTier) }
+
+        // The user picks a scene; that is the scene we must return to.
+        let baseSceneKey = GardenWallpaperScene.brazilianRooftopGarden.rawValue
+        _ = fixture.wallpaperManager.applyWallpaperSceneKey(baseSceneKey, to: [])
+        fixture.store.switchGardenScene(to: baseSceneKey, screenCount: 1)
+        #expect(fixture.wallpaperManager.selectedWallpaperSceneKey == baseSceneKey)
+
+        // A generated progression level takes over the desktop.
+        let levelRecord = try fixture.createEditedWallpaper(
+            updatePrompt: "Progression Level 3: Designed Courtyard",
+            parentSceneKey: baseSceneKey,
+            editedFromKey: baseSceneKey,
+            createdAt: Date(timeIntervalSince1970: 30)
+        )
+        _ = fixture.wallpaperManager.applyWallpaperSceneKey(levelRecord.key, to: [])
+        fixture.store.switchGardenScene(to: levelRecord.key, screenCount: 1)
+        fixture.store.updateProgression(
+            GardenSceneProgression(
+                isEnabled: true,
+                level: 3,
+                profile: GardenProgressionProfile(
+                    lifestyleFantasy: "intergalactic warlord war garden",
+                    placeInWorld: "deep space",
+                    ageBracket: "ageless",
+                    vibe: "dark chrome",
+                    avoidList: ""
+                ),
+                baseSceneKey: baseSceneKey
+            )
+        )
+        #expect(fixture.wallpaperManager.selectedWallpaperSceneKey == levelRecord.key)
+
+        // Switch progression OFF — the desktop returns to the user's scene.
+        fixture.menu.toggleProgressionModeForSelfTest()
+
+        #expect(fixture.wallpaperManager.selectedWallpaperSceneKey == baseSceneKey)
+        #expect(fixture.store.activeSceneKey == baseSceneKey)
+        #expect(fixture.store.state.progression?.isEnabled == false)
+        #expect(fixture.store.state.progression?.level == 3)
+        #expect(fixture.store.state.progression?.baseSceneKey == baseSceneKey)
+
+        // Resuming re-enables in place without losing the earned level.
+        fixture.menu.toggleProgressionModeForSelfTest()
+        #expect(fixture.store.state.progression?.isEnabled == true)
+        #expect(fixture.store.state.progression?.level == 3)
+    }
+
     @Test("AI lock view is a separate visible lock mode switch")
     func aiLockViewIsASeparateVisibleLockModeSwitch() throws {
         let fixture = try StatusMenuModeFixture()

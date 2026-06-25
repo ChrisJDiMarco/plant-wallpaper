@@ -49,6 +49,37 @@ struct GardenProgressionModeTests {
         #expect(resumed.canAdvance)
     }
 
+    @Test("base scene key survives encoding and every level mutation")
+    func baseSceneKeySurvivesEncodingAndMutations() throws {
+        let original = GardenSceneProgression(
+            isEnabled: true,
+            level: 3,
+            profile: sampleProfile(),
+            autoAdvanceCadence: .weekly,
+            baseSceneKey: "modern-bedroom-canvas"
+        )
+
+        // Carried through generate / pause / cadence changes.
+        #expect(original.advanced().baseSceneKey == "modern-bedroom-canvas")
+        #expect(original.settingEnabled(false).baseSceneKey == "modern-bedroom-canvas")
+        #expect(original.settingAutoAdvanceCadence(.daily).baseSceneKey == "modern-bedroom-canvas")
+
+        // Round-trips through persistence.
+        let data = try JSONEncoder().encode(original)
+        let decoded = try JSONDecoder().decode(GardenSceneProgression.self, from: data)
+        #expect(decoded.baseSceneKey == "modern-bedroom-canvas")
+
+        // Older saved profiles without the key still decode (defaults to nil).
+        let legacyJSON = """
+        {"isEnabled":true,"level":2,"startedAt":0,"profile":{"lifestyleFantasy":"x","placeInWorld":"y","ageBracket":"z","vibe":"w","avoidList":""}}
+        """
+        let legacy = try JSONDecoder().decode(
+            GardenSceneProgression.self,
+            from: Data(legacyJSON.utf8)
+        )
+        #expect(legacy.baseSceneKey == nil)
+    }
+
     @Test("a maxed-out ladder cannot advance even when enabled")
     func maxedLadderCannotAdvance() {
         let maxed = GardenSceneProgression(

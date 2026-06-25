@@ -65,6 +65,10 @@ public struct GardenSceneProgression: Codable, Equatable, Sendable {
     public var startedAt: Date
     public var lastAdvancedAt: Date?
     public var autoAdvanceCadence: AutoAdvanceCadence
+    /// The wallpaper scene the user had selected when progression was set up.
+    /// Turning progression off restores this scene so the desktop returns to
+    /// what the user last chose rather than staying on a generated level.
+    public var baseSceneKey: String?
 
     public init(
         isEnabled: Bool = true,
@@ -72,7 +76,8 @@ public struct GardenSceneProgression: Codable, Equatable, Sendable {
         profile: GardenProgressionProfile,
         startedAt: Date = Date(),
         lastAdvancedAt: Date? = nil,
-        autoAdvanceCadence: AutoAdvanceCadence = .off
+        autoAdvanceCadence: AutoAdvanceCadence = .off,
+        baseSceneKey: String? = nil
     ) {
         self.isEnabled = isEnabled
         self.level = Self.clampedLevel(level)
@@ -80,6 +85,7 @@ public struct GardenSceneProgression: Codable, Equatable, Sendable {
         self.startedAt = startedAt
         self.lastAdvancedAt = lastAdvancedAt
         self.autoAdvanceCadence = autoAdvanceCadence
+        self.baseSceneKey = baseSceneKey
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -89,6 +95,7 @@ public struct GardenSceneProgression: Codable, Equatable, Sendable {
         case startedAt
         case lastAdvancedAt
         case autoAdvanceCadence
+        case baseSceneKey
     }
 
     // Custom decode keeps profiles saved before auto-advance existed loadable:
@@ -101,7 +108,8 @@ public struct GardenSceneProgression: Codable, Equatable, Sendable {
             profile: try container.decode(GardenProgressionProfile.self, forKey: .profile),
             startedAt: try container.decode(Date.self, forKey: .startedAt),
             lastAdvancedAt: try container.decodeIfPresent(Date.self, forKey: .lastAdvancedAt),
-            autoAdvanceCadence: try container.decodeIfPresent(AutoAdvanceCadence.self, forKey: .autoAdvanceCadence) ?? .off
+            autoAdvanceCadence: try container.decodeIfPresent(AutoAdvanceCadence.self, forKey: .autoAdvanceCadence) ?? .off,
+            baseSceneKey: try container.decodeIfPresent(String.self, forKey: .baseSceneKey)
         )
     }
 
@@ -120,7 +128,8 @@ public struct GardenSceneProgression: Codable, Equatable, Sendable {
             profile: profile,
             startedAt: startedAt,
             lastAdvancedAt: date,
-            autoAdvanceCadence: autoAdvanceCadence
+            autoAdvanceCadence: autoAdvanceCadence,
+            baseSceneKey: baseSceneKey
         )
     }
 
@@ -133,7 +142,8 @@ public struct GardenSceneProgression: Codable, Equatable, Sendable {
             profile: profile,
             startedAt: startedAt,
             lastAdvancedAt: lastAdvancedAt,
-            autoAdvanceCadence: autoAdvanceCadence
+            autoAdvanceCadence: autoAdvanceCadence,
+            baseSceneKey: baseSceneKey
         )
     }
 
@@ -145,7 +155,8 @@ public struct GardenSceneProgression: Codable, Equatable, Sendable {
             profile: profile,
             startedAt: startedAt,
             lastAdvancedAt: lastAdvancedAt,
-            autoAdvanceCadence: cadence
+            autoAdvanceCadence: cadence,
+            baseSceneKey: baseSceneKey
         )
     }
 
