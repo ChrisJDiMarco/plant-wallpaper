@@ -379,6 +379,65 @@ struct WallpaperManagerTests {
         #expect(roomPrompt.contains("Preserve open walls"))
     }
 
+    @Test("progression prompt forces theme reinterpretation and a per-generation creative direction")
+    func progressionPromptIsThemedAndCreative() {
+        let progression = GardenSceneProgression(
+            level: 5,
+            profile: GardenProgressionProfile(
+                lifestyleFantasy: "intergalactic warlord war garden",
+                placeInWorld: "deep space mothership",
+                ageBracket: "ageless conqueror",
+                vibe: "dark chrome and bioluminescent alien flora",
+                avoidList: "earth plants"
+            )
+        )
+
+        let prompt = WallpaperProgressionPrompt.masterPrompt(
+            progression: progression,
+            targetLevel: 6,
+            experienceMode: .garden,
+            seed: 42
+        )
+
+        // Theme must drive every detail, not just sit in a profile block.
+        #expect(prompt.contains("Theme is everything"))
+        #expect(prompt.contains("intergalactic warlord war garden"))
+        #expect(prompt.contains("the level only sets how grand")
+            || prompt.contains("level only sets how grand"))
+        // Each generation carries a distinct, labelled creative direction.
+        #expect(prompt.contains("Creative direction for THIS generation"))
+        #expect(prompt.contains("Signature move for Level 6"))
+    }
+
+    @Test("regenerating a level produces a different prompt each time but is seed-reproducible")
+    func progressionPromptVariesPerGeneration() {
+        let progression = GardenSceneProgression(
+            level: 9,
+            profile: GardenProgressionProfile(
+                lifestyleFantasy: "1920s gangster speakeasy garden",
+                placeInWorld: "Chicago",
+                ageBracket: "mid 40s",
+                vibe: "art deco noir",
+                avoidList: "modern items"
+            )
+        )
+
+        func prompt(seed: UInt64) -> String {
+            WallpaperProgressionPrompt.masterPrompt(
+                progression: progression,
+                targetLevel: 10,
+                experienceMode: .roomStudio,
+                seed: seed
+            )
+        }
+
+        // Same seed reproduces the prompt; different seeds re-roll the creative
+        // direction so a re-generate is never "the same ol prompt".
+        #expect(prompt(seed: 7) == prompt(seed: 7))
+        let distinct = Set([1, 2, 3, 4, 5, 6, 7, 8].map { prompt(seed: UInt64($0)) })
+        #expect(distinct.count >= 5)
+    }
+
     @Test("smart lock wallpaper prompt preserves layout and excludes baked bugs")
     func smartLockWallpaperPromptPreservesLayoutAndExcludesBakedBugs() {
         var calendar = Calendar(identifier: .gregorian)

@@ -5237,14 +5237,13 @@ final class GardenStatusMenu: NSObject {
                     quality: store.state.settings.wallpaperGenerationQuality
                 )
                 try Task.checkCancellation()
+                // Record the exact prompt that produced this image. Prompts now
+                // vary per generation, so re-deriving one here would log a
+                // different creative direction than was actually used.
                 promptHistoryStore.record(
                     feature: .wallpaperProgression,
                     title: record.displayName,
-                    prompt: WallpaperProgressionPrompt.masterPrompt(
-                        progression: progression,
-                        targetLevel: targetLevel,
-                        experienceMode: mode
-                    )
+                    prompt: record.prompt
                 )
 
                 var stateToCarry = store.activeSceneKey == startingSceneKey ? store.state : startingState
