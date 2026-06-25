@@ -207,6 +207,171 @@ private final class CustomPlantAssetPromptAssistant: NSObject {
     }
 }
 
+private final class WallpaperVersionMenuItemView: NSView {
+    private let selectedLabel = NSTextField(labelWithString: "")
+    private let iconView = NSImageView()
+    private let titleLabel = NSTextField(labelWithString: "")
+    private let trashButton = NSButton()
+    private let applyAction: () -> Void
+    private let deleteAction: () -> Void
+    private var isHovering = false {
+        didSet { updateHoverState() }
+    }
+
+    var canDelete: Bool {
+        didSet { updateHoverState() }
+    }
+
+    var isSelected: Bool {
+        didSet { updateSelectedState() }
+    }
+
+    override var intrinsicContentSize: NSSize {
+        NSSize(width: 300, height: 28)
+    }
+
+    init(
+        title: String,
+        tooltip: String,
+        image: NSImage?,
+        isSelected: Bool,
+        canDelete: Bool,
+        applyAction: @escaping () -> Void,
+        deleteAction: @escaping () -> Void
+    ) {
+        self.isSelected = isSelected
+        self.canDelete = canDelete
+        self.applyAction = applyAction
+        self.deleteAction = deleteAction
+        super.init(frame: NSRect(x: 0, y: 0, width: 300, height: 28))
+
+        toolTip = tooltip
+        wantsLayer = true
+
+        selectedLabel.alignment = .center
+        selectedLabel.font = .systemFont(ofSize: 13, weight: .semibold)
+        selectedLabel.textColor = .controlAccentColor
+        addSubview(selectedLabel)
+
+        iconView.image = image
+        iconView.symbolConfiguration = NSImage.SymbolConfiguration(pointSize: 14, weight: .regular)
+        iconView.contentTintColor = .secondaryLabelColor
+        addSubview(iconView)
+
+        titleLabel.stringValue = title
+        titleLabel.lineBreakMode = .byTruncatingTail
+        titleLabel.font = .menuFont(ofSize: 0)
+        titleLabel.textColor = .labelColor
+        addSubview(titleLabel)
+
+        trashButton.isBordered = false
+        trashButton.image = NSImage(systemSymbolName: "trash.fill", accessibilityDescription: "Move wallpaper version to Trash")
+        trashButton.image?.isTemplate = true
+        trashButton.contentTintColor = .systemRed
+        trashButton.imagePosition = .imageOnly
+        trashButton.focusRingType = .none
+        trashButton.toolTip = "Move this wallpaper version to Trash"
+        trashButton.target = self
+        trashButton.action = #selector(deleteClicked)
+        addSubview(trashButton)
+
+        updateSelectedState()
+        updateHoverState()
+    }
+
+    required init?(coder: NSCoder) {
+        nil
+    }
+
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool {
+        true
+    }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        guard window != nil else {
+            isHovering = false
+            return
+        }
+        updateHoverFromMouseLocation()
+    }
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        for area in trackingAreas {
+            removeTrackingArea(area)
+        }
+        addTrackingArea(NSTrackingArea(
+            rect: bounds,
+            options: [.mouseEnteredAndExited, .mouseMoved, .activeAlways, .inVisibleRect],
+            owner: self,
+            userInfo: nil
+        ))
+        updateHoverFromMouseLocation()
+    }
+
+    override func layout() {
+        super.layout()
+        selectedLabel.frame = NSRect(x: 6, y: 5, width: 16, height: 18)
+        iconView.frame = NSRect(x: 28, y: 6, width: 16, height: 16)
+        trashButton.frame = NSRect(x: bounds.width - 32, y: 3, width: 26, height: 22)
+        let titleMaxX = canDelete ? trashButton.frame.minX - 6 : bounds.width - 8
+        titleLabel.frame = NSRect(x: 52, y: 5, width: max(40, titleMaxX - 52), height: 18)
+    }
+
+    override func mouseEntered(with event: NSEvent) {
+        isHovering = true
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        isHovering = false
+    }
+
+    override func mouseMoved(with event: NSEvent) {
+        updateHoverFromEvent(event)
+    }
+
+    override func mouseUp(with event: NSEvent) {
+        let point = convert(event.locationInWindow, from: nil)
+        if canDelete && trashButton.frame.contains(point) {
+            return
+        }
+        applyAction()
+    }
+
+    @objc private func deleteClicked() {
+        deleteAction()
+    }
+
+    private func updateSelectedState() {
+        selectedLabel.stringValue = isSelected ? "✓" : ""
+    }
+
+    private func updateHoverFromEvent(_ event: NSEvent) {
+        let point = convert(event.locationInWindow, from: nil)
+        isHovering = bounds.contains(point)
+    }
+
+    private func updateHoverFromMouseLocation() {
+        guard let window, window.isVisible else {
+            isHovering = false
+            return
+        }
+
+        let pointInWindow = window.convertPoint(fromScreen: NSEvent.mouseLocation)
+        let point = convert(pointInWindow, from: nil)
+        isHovering = bounds.contains(point)
+    }
+
+    private func updateHoverState() {
+        trashButton.isHidden = !canDelete
+        trashButton.alphaValue = canDelete ? (isHovering ? 1.0 : 0.32) : 0
+        layer?.backgroundColor = isHovering
+            ? NSColor.selectedContentBackgroundColor.withAlphaComponent(0.10).cgColor
+            : NSColor.clear.cgColor
+    }
+}
+
 @MainActor
 final class GardenStatusMenu: NSObject {
     private struct PlantKindMenuStyle {
@@ -239,6 +404,9 @@ final class GardenStatusMenu: NSObject {
     private let lockInteractionItem = NSMenuItem()
     private let aiLockViewItem = NSMenuItem()
     private let aiLockRegenerateItem = NSMenuItem()
+    /// Explanation kept on the AI Image Lock View toggle so it survives the
+    /// status-menu tooltip-stripping policy and shows on hover.
+    private var aiImageLockViewHoverTooltip: String?
     private let pauseItem = NSMenuItem()
     private let flythroughVideoItem = NSMenuItem()
     private var currentStatusSymbolName = "leaf.fill"
@@ -301,6 +469,15 @@ final class GardenStatusMenu: NSObject {
     var progressionLevelCelebrationHandler: ((Int, String, Bool) -> Void)?
     var regenerateSmartLockWallpaperHandler: (() -> Void)?
     var sceneTransitionHandler: ((@escaping () -> Void) -> Void)?
+    var applyFlythroughVideoWallpaperHandler: ((URL) -> Void)?
+    var flythroughVideoGeneratedHandler: ((URL, Int) -> Void)?
+    var deactivateFlythroughVideoWallpaperHandler: (() -> Void)?
+    var flythroughVideoRecordsProvider: (() -> [GardenFlythroughVideoRecord])?
+    var applyFlythroughVideoRecordHandler: ((GardenFlythroughVideoRecord) -> Void)?
+    var isFlythroughVideoWallpaperActiveProvider: (() -> Bool)?
+    var isFlythroughVideoLoopingProvider: (() -> Bool)?
+    var toggleFlythroughVideoLoopingHandler: (() -> Void)?
+    var aiLockVideoReplacementConfirmationHandler: (() -> Bool)?
     private var wallpaperVersionItems: [NSMenuItem] = []
     private weak var wallpaperVersionsSubmenu: NSMenu?
     private var wallpaperSceneItems: [NSMenuItem] = []
@@ -310,6 +487,9 @@ final class GardenStatusMenu: NSObject {
     private weak var seedPouchSubmenu: NSMenu?
     private let seedPouchItem = NSMenuItem()
     private let harvestCropsItem = NSMenuItem()
+    private let flythroughBackToSceneItem = NSMenuItem()
+    private let flythroughLoopingItem = NSMenuItem()
+    private let flythroughVideoSettingsItem = NSMenuItem()
     private var settingsWindowController: GardenSettingsWindowController?
     private lazy var assistantWindowController = GardenAssistantWindowController { [weak self] in
         self?.assistantRuntimeContext()
@@ -448,6 +628,7 @@ final class GardenStatusMenu: NSObject {
         menu.addItem(generationStatusItem)
         menu.addItem(sceneQuickSwitcherMenuItem())
         menu.addItem(wallpaperToolsMenu())
+        menu.addItem(wallpaperScenesMenu(placement: .primary))
         menu.addItem(experienceModeMenuItem())
 
         careSummaryItem.isEnabled = false
@@ -494,12 +675,6 @@ final class GardenStatusMenu: NSObject {
         lockInteractionItem.action = #selector(toggleGardenInteractionLock)
         lockInteractionItem.keyEquivalent = ""
         menu.addItem(lockInteractionItem)
-
-        menu.addItem(sectionHeaderItem("Make it yours"))
-        menu.addItem(progressionModeMenu())
-        menu.addItem(catCompanionMenu())
-        menu.addItem(ambienceAndRadioMenu())
-        menu.addItem(gardenToolsMenu())
         aiLockViewItem.target = self
         aiLockViewItem.action = #selector(toggleAILockView)
         aiLockViewItem.keyEquivalent = ""
@@ -508,6 +683,12 @@ final class GardenStatusMenu: NSObject {
         aiLockRegenerateItem.action = #selector(regenerateAILockView)
         aiLockRegenerateItem.keyEquivalent = ""
         menu.addItem(aiLockRegenerateItem)
+
+        menu.addItem(sectionHeaderItem("Make it yours"))
+        menu.addItem(progressionModeMenu())
+        menu.addItem(catCompanionMenu())
+        menu.addItem(ambienceAndRadioMenu())
+        menu.addItem(gardenToolsMenu())
 
         menu.addItem(sectionHeaderItem("Keepsakes"))
         configureMenuItem(
@@ -571,6 +752,10 @@ final class GardenStatusMenu: NSObject {
         if let menu = statusItem.menu {
             Self.stripTooltips(in: menu)
         }
+        // The AI Image Lock View toggle keeps its explanation on hover even
+        // though the rest of the status menu suppresses tooltips, so people can
+        // learn what the AI lock wallpaper does without leaving the menu.
+        aiLockViewItem.toolTip = aiImageLockViewHoverTooltip
     }
 
     private static func stripTooltips(in menu: NSMenu) {
@@ -653,7 +838,10 @@ final class GardenStatusMenu: NSObject {
             progressionSetupItem,
             progressionResetItem,
             seedPouchItem,
-            harvestCropsItem
+            harvestCropsItem,
+            flythroughBackToSceneItem,
+            flythroughLoopingItem,
+            flythroughVideoSettingsItem
         ]
         for item in items
             + Array(ambientSoundLayerItems.values)
@@ -708,6 +896,16 @@ final class GardenStatusMenu: NSObject {
             uniqueKeysWithValues: wallpaperVersionsSubmenu?.items
                 .filter { !$0.isSeparatorItem }
                 .map { ($0.title, $0.action.map(NSStringFromSelector) ?? "") } ?? []
+        )
+    }
+
+    func wallpaperVersionDeleteAvailabilityForSelfTest() -> [String: Bool] {
+        refreshWallpaperScenesMenu()
+        updateDynamicItems()
+        return Dictionary(
+            uniqueKeysWithValues: wallpaperVersionsSubmenu?.items
+                .filter { !$0.isSeparatorItem }
+                .map { ($0.title, ($0.view as? WallpaperVersionMenuItemView)?.canDelete ?? false) } ?? []
         )
     }
 
@@ -777,6 +975,10 @@ final class GardenStatusMenu: NSObject {
 
     func toggleTimeOfDayPlantDarkeningForSelfTest() {
         toggleTimeOfDayPlantDarkening()
+    }
+
+    func toggleAILockViewForSelfTest() {
+        toggleAILockView()
     }
 
     private static func menuItem(in menu: NSMenu, titled title: String) -> NSMenuItem? {
@@ -1511,11 +1713,33 @@ final class GardenStatusMenu: NSObject {
         submenu.addItem(menuItem(title: "Save Garden Snapshot...", symbol: "camera.on.rectangle", action: #selector(saveGardenSnapshot)))
         configureMenuItem(
             flythroughVideoItem,
-            title: "Generate Looping Flythrough Video...",
+            title: "Generate Flythrough Video...",
             symbol: "video.badge.sparkles",
             action: #selector(generateLoopingFlythroughVideo)
         )
         submenu.addItem(flythroughVideoItem)
+        configureMenuItem(
+            flythroughBackToSceneItem,
+            title: "Go Back to Scene",
+            symbol: "photo.fill",
+            action: #selector(deactivateFlythroughVideoWallpaper)
+        )
+        submenu.addItem(flythroughBackToSceneItem)
+        configureMenuItem(
+            flythroughLoopingItem,
+            title: "Loop Flythrough Video",
+            symbol: "repeat",
+            action: #selector(toggleFlythroughVideoLooping)
+        )
+        submenu.addItem(flythroughLoopingItem)
+        configureMenuItem(
+            flythroughVideoSettingsItem,
+            title: "Flythrough Video Settings...",
+            symbol: "gearshape",
+            action: #selector(openFlythroughVideoSettings)
+        )
+        submenu.addItem(flythroughVideoSettingsItem)
+        submenu.addItem(NSMenuItem.separator())
         submenu.addItem(menuItem(title: "Save Share Card...", symbol: "square.and.arrow.up", action: #selector(saveShareCard)))
         submenu.addItem(menuItem(title: "Export Time-Lapse...", symbol: "film.stack", action: #selector(exportTimeLapse)))
         submenu.addItem(menuItem(title: "Save Garden Health Check...", symbol: "stethoscope", action: #selector(saveHealthCheck)))
@@ -1534,7 +1758,6 @@ final class GardenStatusMenu: NSObject {
         submenu.addItem(updateWallpaperItem)
         submenu.addItem(wallpaperVersionsMenu())
         submenu.addItem(NSMenuItem.separator())
-        submenu.addItem(wallpaperScenesMenu(placement: .primary))
         submenu.addItem(menuItem(title: "Reapply Current Scene", symbol: "paintbrush.pointed.fill", action: #selector(applyLivingScene)))
         submenu.addItem(menuItem(title: "Choose Wallpaper...", symbol: "photo.badge.plus", action: #selector(chooseWallpaper)))
         submenu.addItem(menuItem(title: "Create AI Wallpaper...", symbol: "sparkles.rectangle.stack", action: #selector(createAIWallpaper)))
@@ -1553,6 +1776,11 @@ final class GardenStatusMenu: NSObject {
                 title: "Start Plants from Seedlings",
                 symbol: "arrow.triangle.2.circlepath",
                 action: #selector(startPlantsFromSeedlings)
+            ))
+            submenu.addItem(menuItem(
+                title: "Bring All Plants to Full Maturation",
+                symbol: "leaf.fill",
+                action: #selector(bringAllPlantsToFullMaturation)
             ))
         }
         submenu.addItem(menuItem(title: "Reset Garden", symbol: "arrow.counterclockwise", action: #selector(resetGarden)))
@@ -1720,24 +1948,39 @@ final class GardenStatusMenu: NSObject {
         }
 
         for entry in entries {
+            let title = GardenMenuTitleFormatter.compactStatusTitle(
+                entry.title,
+                maxLength: GardenMenuTitleFormatter.sceneTitleMaxLength
+            )
             let item = NSMenuItem(
-                title: GardenMenuTitleFormatter.compactStatusTitle(
-                    entry.title,
-                    maxLength: GardenMenuTitleFormatter.sceneTitleMaxLength
-                ),
+                title: title,
                 action: #selector(applyWallpaperVersion(_:)),
                 keyEquivalent: ""
             )
             item.target = self
             item.representedObject = entry.key
             item.toolTip = entry.tooltip
-            if let image = NSImage(
+            let image = NSImage(
                 systemSymbolName: entry.isOriginal ? "arrow.uturn.backward.circle.fill" : "sparkles.rectangle.stack",
                 accessibilityDescription: entry.title
-            ) {
-                image.isTemplate = true
-                item.image = image
-            }
+            )
+            image?.isTemplate = true
+            item.image = image
+            item.view = WallpaperVersionMenuItemView(
+                title: title,
+                tooltip: entry.isOriginal ? entry.tooltip : "\(entry.tooltip)\nHover and click the trash icon to move this version to Trash.",
+                image: image,
+                isSelected: entry.key == wallpaperManager.selectedWallpaperSceneKey,
+                canDelete: !entry.isOriginal,
+                applyAction: { [weak self, weak submenu] in
+                    submenu?.cancelTracking()
+                    self?.applyWallpaperSceneKey(entry.key)
+                },
+                deleteAction: { [weak self, weak submenu] in
+                    submenu?.cancelTracking()
+                    self?.deleteWallpaperVersion(key: entry.key)
+                }
+            )
             wallpaperVersionItems.append(item)
             submenu.addItem(item)
         }
@@ -2288,11 +2531,13 @@ final class GardenStatusMenu: NSObject {
             accessibilityDescription: lockInteractionItem.title
         )
         let isAILockViewEnabled = store.state.settings.useAIGeneratedLockSnapshot
-        aiLockViewItem.title = "AI Lock View"
+        aiLockViewItem.title = "AI Image Lock View Toggle"
         aiLockViewItem.state = isAILockViewEnabled ? .on : .off
-        aiLockViewItem.toolTip = isAILockViewEnabled
-            ? "When interactions are locked, reuse the latest AI lock wallpaper; regenerate from the menu when you want a fresh one."
-            : "Regular lock stays instant. Turn this on to generate an AI lock wallpaper when interactions are locked."
+        let aiLockViewTooltip = isAILockViewEnabled
+            ? "AI Image Lock View Toggle — ON. While interactions are locked, your desktop shows an AI-generated lock wallpaper (uses your OpenAI key). Pick \"Regenerate AI Lock View…\" below for a fresh one."
+            : "AI Image Lock View Toggle — OFF. Locking interactions instantly freezes your current wallpaper. Turn this on to generate a custom AI lock-screen wallpaper each time you lock."
+        aiLockViewItem.toolTip = aiLockViewTooltip
+        aiImageLockViewHoverTooltip = aiLockViewTooltip
         aiLockViewItem.image = NSImage(
             systemSymbolName: isAILockViewEnabled ? "sparkles.rectangle.stack.fill" : "sparkles",
             accessibilityDescription: aiLockViewItem.title
@@ -2492,20 +2737,33 @@ final class GardenStatusMenu: NSObject {
         for versionItem in wallpaperVersionItems {
             let rawValue = versionItem.representedObject as? String
             versionItem.state = rawValue == wallpaperManager.selectedWallpaperSceneKey ? .on : .off
+            (versionItem.view as? WallpaperVersionMenuItemView)?.isSelected = versionItem.state == .on
         }
         timeOfDayPlantDarkeningItem.state = store.state.settings.isTimeOfDayPlantDarkeningEnabled ? .on : .off
         timeOfDayPlantDarkeningItem.toolTip = store.state.settings.isTimeOfDayPlantDarkeningEnabled
             ? "Trees and plants follow morning, evening, and night shading."
             : "Trees and plants stay bright regardless of time of day."
         flythroughVideoItem.title = isGeneratingFlythroughVideo
-            ? "Generating Looping Flythrough..."
-            : "Generate Looping Flythrough Video..."
+            ? "Generating Flythrough..."
+            : "Generate Flythrough Video..."
         flythroughVideoItem.isEnabled = !isGeneratingFlythroughVideo
-        flythroughVideoItem.toolTip = "Send the current clean garden snapshot to fal.ai Seedance 2.0 Fast for a 10-second loopable flythrough video."
+        flythroughVideoItem.toolTip = "Choose a 10- to 60-second 1080p Seedance 2.0 flythrough, stitch 10-second clips when needed, and optionally use it as a desktop video wallpaper."
         flythroughVideoItem.image = NSImage(
             systemSymbolName: isGeneratingFlythroughVideo ? "hourglass" : "video.badge.sparkles",
             accessibilityDescription: flythroughVideoItem.title
         )
+        let isFlythroughVideoActive = isFlythroughVideoWallpaperActiveProvider?() ?? false
+        flythroughBackToSceneItem.isEnabled = isFlythroughVideoActive
+        flythroughBackToSceneItem.toolTip = isFlythroughVideoActive
+            ? "Close the looping flythrough video and restore the scene it was made from."
+            : "No flythrough video wallpaper is active."
+        let isFlythroughVideoLooping = isFlythroughVideoLoopingProvider?() ?? true
+        flythroughLoopingItem.state = isFlythroughVideoLooping ? .on : .off
+        flythroughLoopingItem.toolTip = isFlythroughVideoLooping
+            ? "Flythrough video wallpaper loops continuously."
+            : "Flythrough video wallpaper plays once when you double-click the desktop."
+        flythroughVideoSettingsItem.isEnabled = true
+        flythroughVideoSettingsItem.toolTip = "Open saved flythrough videos and video wallpaper controls."
         statusItem.button?.toolTip = "Plant Wallpaper - \(vitality.summary) - \(season.summary) - \(sunlight.summary) - \(dew.summary) - \(recommendation.summary)"
         if let lastError = store.lastError {
             let errorTitle = "Save Error: \(lastError)"
@@ -2971,7 +3229,24 @@ final class GardenStatusMenu: NSObject {
         guard !isGeneratingFlythroughVideo else {
             return
         }
-        guard confirmFalFlythroughGeneration(),
+
+        let snapshotData: Data
+        do {
+            snapshotData = try primaryGardenSnapshotPNGData()
+        } catch {
+            showError(title: "Could not prepare flythrough", message: error.localizedDescription)
+            return
+        }
+
+        guard let pathWindow = GardenFlythroughPathWindowController(snapshotPNGData: snapshotData) else {
+            showError(title: "Could not prepare flythrough", message: "The garden snapshot could not be previewed.")
+            return
+        }
+        guard let pathSelection = pathWindow.runModal() else {
+            return
+        }
+
+        guard confirmFalFlythroughGeneration(durationSeconds: pathSelection.durationSeconds),
               let apiKey = falAPIKeyFromUser() else {
             return
         }
@@ -2986,12 +3261,17 @@ final class GardenStatusMenu: NSObject {
             }
 
             do {
-                let snapshotData = try primaryGardenSnapshotPNGData()
-                let videoURL = try await GardenFlythroughVideoGenerator().generate(
+                let videoURL = try await GardenFlythroughVideoGenerator(segmentCount: pathSelection.segmentCount).generate(
                     snapshotPNGData: snapshotData,
-                    apiKey: apiKey
+                    apiKey: apiKey,
+                    pathInstruction: pathSelection.pathInstruction
                 )
-                NSWorkspace.shared.open(videoURL)
+                flythroughVideoGeneratedHandler?(videoURL, pathSelection.durationSeconds)
+                if pathSelection.shouldApplyAsWallpaper {
+                    applyFlythroughVideoWallpaperHandler?(videoURL)
+                } else {
+                    NSWorkspace.shared.open(videoURL)
+                }
             } catch is CancellationError {
                 return
             } catch {
@@ -3014,10 +3294,11 @@ final class GardenStatusMenu: NSObject {
         )
     }
 
-    private func confirmFalFlythroughGeneration() -> Bool {
+    private func confirmFalFlythroughGeneration(durationSeconds: Int) -> Bool {
+        let segmentCount = max(1, durationSeconds / 10)
         let alert = NSAlert()
-        alert.messageText = "Generate looping flythrough video?"
-        alert.informativeText = "This sends the current clean garden snapshot to fal.ai and starts a 10-second 720p Seedance 2.0 Fast video job billed to your fal account. The finished MP4 opens automatically."
+        alert.messageText = "Generate \(durationSeconds)-second looping flythrough?"
+        alert.informativeText = "This sends the current clean garden snapshot to fal.ai and starts \(segmentCount) 10-second 1080p Seedance 2.0 video job\(segmentCount == 1 ? "" : "s") billed to your fal account. The finished MP4 is stitched locally when needed."
         alert.alertStyle = .informational
         alert.addButton(withTitle: "Generate")
         alert.addButton(withTitle: "Cancel")
@@ -3815,9 +4096,31 @@ final class GardenStatusMenu: NSObject {
             return
         }
         let settings = store.state.settings
+        let nextValue = !settings.useAIGeneratedLockSnapshot
+        guard !nextValue || confirmAILockViewCanReplaceVideoWallpaperIfNeeded() else {
+            return
+        }
         store.updateSettings(
-            settings.updating(useAIGeneratedLockSnapshot: !settings.useAIGeneratedLockSnapshot)
+            settings.updating(useAIGeneratedLockSnapshot: nextValue)
         )
+    }
+
+    private func confirmAILockViewCanReplaceVideoWallpaperIfNeeded() -> Bool {
+        guard isGeneratingFlythroughVideo || (isFlythroughVideoWallpaperActiveProvider?() ?? false) else {
+            return true
+        }
+
+        if let aiLockVideoReplacementConfirmationHandler {
+            return aiLockVideoReplacementConfirmationHandler()
+        }
+
+        let alert = NSAlert()
+        alert.messageText = "AI Lock View will replace the current wallpaper"
+        alert.informativeText = "A flythrough video is generating or playing as your wallpaper. Turning on AI Lock View can replace it with the AI Lock View wallpaper."
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: "Turn On AI Lock View")
+        alert.addButton(withTitle: "Cancel")
+        return alert.runModal() == .alertFirstButtonReturn
     }
 
     @objc private func toggleTimeOfDayPlantDarkening() {
@@ -4096,6 +4399,10 @@ final class GardenStatusMenu: NSObject {
             guard !isEnabled || requireProFeature(.aiLockView) else {
                 return .unavailable(GardenProFeature.aiLockView.paywallMessage)
             }
+            let willEnable = isEnabled && !store.state.settings.useAIGeneratedLockSnapshot
+            guard !willEnable || confirmAILockViewCanReplaceVideoWallpaperIfNeeded() else {
+                return .unavailable("Cancelled. AI Lock View stayed off.")
+            }
             store.updateSettings(store.state.settings.updating(useAIGeneratedLockSnapshot: isEnabled))
             return .success(isEnabled ? "AI Lock View is on." : "AI Lock View is off.")
         case .setAmbientSounds(let isEnabled):
@@ -4234,6 +4541,21 @@ final class GardenStatusMenu: NSObject {
         controller.showPrivacyStorageSection()
     }
 
+    @objc private func openFlythroughVideoSettings() {
+        let controller = settingsController()
+        controller.showFlythroughVideosSection()
+    }
+
+    @objc private func deactivateFlythroughVideoWallpaper() {
+        deactivateFlythroughVideoWallpaperHandler?()
+        updateDynamicItems()
+    }
+
+    @objc private func toggleFlythroughVideoLooping() {
+        toggleFlythroughVideoLoopingHandler?()
+        updateDynamicItems()
+    }
+
     @objc private func openSettings() {
         settingsController().showCentered()
     }
@@ -4301,6 +4623,22 @@ final class GardenStatusMenu: NSObject {
                     },
                     saveHealthCheck: { [weak self] in
                         self?.saveHealthCheck()
+                    },
+                    flythroughVideoRecords: { [weak self] in
+                        self?.flythroughVideoRecordsProvider?() ?? []
+                    },
+                    applyFlythroughVideo: { [weak self] record in
+                        self?.applyFlythroughVideoRecordHandler?(record)
+                    },
+                    deactivateFlythroughVideo: { [weak self] in
+                        self?.deactivateFlythroughVideoWallpaperHandler?()
+                        self?.updateDynamicItems()
+                    },
+                    isFlythroughVideoWallpaperActive: { [weak self] in
+                        self?.isFlythroughVideoWallpaperActiveProvider?() ?? false
+                    },
+                    confirmAILockViewCanReplaceVideoWallpaper: { [weak self] in
+                        self?.confirmAILockViewCanReplaceVideoWallpaperIfNeeded() ?? true
                     }
                 )
             )
@@ -4410,6 +4748,20 @@ final class GardenStatusMenu: NSObject {
         }
 
         applyWallpaperSceneKey(sceneKey)
+    }
+
+    private func deleteWallpaperVersion(key: String) {
+        do {
+            let fallbackKey = try wallpaperManager.deleteWallpaperVersion(key: key)
+            refreshWallpaperScenesMenu()
+            if let fallbackKey {
+                applyWallpaperSceneKey(fallbackKey)
+            } else {
+                updateDynamicItems()
+            }
+        } catch {
+            showError(title: "Could not delete wallpaper version", message: error.localizedDescription)
+        }
     }
 
     private func applyAdjacentWallpaperScene(_ direction: GardenSceneNavigationDirection) {
@@ -5588,6 +5940,14 @@ final class GardenStatusMenu: NSObject {
         }
 
         store.resetPlantsToNascentGrowthInCurrentScene()
+    }
+
+    @objc private func bringAllPlantsToFullMaturation() {
+        guard store.state.settings.experienceMode == .garden else {
+            return
+        }
+
+        store.bringAllPlantsToFullMaturationInCurrentScene()
     }
 
     @objc private func deleteAllPlantsInScene() {

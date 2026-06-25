@@ -471,6 +471,49 @@ struct WallpaperManagerTests {
         #expect(!versions[0].isOriginal)
     }
 
+    @Test("deleting wallpaper version removes history entry and files")
+    func deletingWallpaperVersionRemovesHistoryEntryAndFiles() throws {
+        let fixture = try TemporaryWallpaperFixture()
+        defer { fixture.cleanup() }
+
+        let manager = WallpaperManager(
+            baseDirectoryURL: fixture.directoryURL,
+            defaults: fixture.defaults
+        )
+        let sceneKey = GardenWallpaperScene.swedishPatioGarden.rawValue
+        let firstRecord = try manager.storeEditedWallpaperForSelfTest(
+            updatePrompt: "add warmer evening light",
+            parentSceneKey: sceneKey,
+            editedFromKey: sceneKey,
+            imageData: try fixture.pngData(),
+            createdAt: Date(timeIntervalSince1970: 10)
+        )
+        let secondRecord = try manager.storeEditedWallpaperForSelfTest(
+            updatePrompt: "turn the paving dark slate",
+            parentSceneKey: sceneKey,
+            editedFromKey: firstRecord.key,
+            imageData: try fixture.pngData(),
+            createdAt: Date(timeIntervalSince1970: 20)
+        )
+        let sourceURL = secondRecord.imageURL
+        let derivedURL = manager.wallpaperDataDirectoryURL
+            .appendingPathComponent("custom-\(secondRecord.key)-cached.png")
+        try fixture.writePNG(to: derivedURL)
+        _ = manager.applyWallpaperSceneKey(secondRecord.key, to: [])
+
+        let fallbackKey = try manager.deleteWallpaperVersion(key: secondRecord.key, moveToTrash: false)
+
+        #expect(fallbackKey == firstRecord.key)
+        #expect(!FileManager.default.fileExists(atPath: sourceURL.path))
+        #expect(!FileManager.default.fileExists(atPath: derivedURL.path))
+        #expect(manager.wallpaperVersions(forSceneKey: sceneKey).map(\.key) == [
+            firstRecord.key,
+            sceneKey
+        ])
+        #expect(manager.customWallpapers.contains { $0.key == firstRecord.key })
+        #expect(!manager.customWallpapers.contains { $0.key == secondRecord.key })
+    }
+
     @Test("scene roots resolve to the latest edited wallpaper")
     func sceneRootsResolveToLatestEditedWallpaper() throws {
         let fixture = try TemporaryWallpaperFixture()
@@ -2149,6 +2192,65 @@ struct GardenStoreSceneSwitchingTests {
 
         let persistedScene = try #require(try persistence.load(sceneKey: "empty-conservatory-hall"))
         #expect(persistedScene.plants.first?.growth == resetPlant.growth)
+        #expect(persistedScene.plants.first?.placementLocked == true)
+    }
+
+    @Test("scene plants can be brought to full maturation")
+    func scenePlantsCanBeBroughtToFullMaturation() throws {
+        let fixture = try TemporaryWallpaperFixture()
+        defer { fixture.cleanup() }
+
+        let plantedAt = Date(timeIntervalSince1970: 2_000)
+        let youngPlant = Plant(
+            species: .fern,
+            screenIndex: 0,
+            position: GardenPoint(x: 0.50, y: 0.80),
+            plantedAt: plantedAt,
+            lastTendedAt: plantedAt,
+            ageSeconds: 600,
+            growth: 0.32,
+            hydration: 0.12,
+            health: 0.01,
+            bloomProgress: 0.92,
+            lastStageChangedAt: plantedAt,
+            lastWateredAt: plantedAt,
+            lastNourishedAt: plantedAt,
+            diedAt: plantedAt,
+            nickname: "Young fern",
+            swaySeed: 456,
+            scale: 1.2,
+            placementLocked: true
+        )
+        let persistence = GardenPersistence(directoryURL: fixture.directoryURL)
+        let store = GardenStore(
+            state: GardenState(plants: [youngPlant]),
+            persistence: persistence,
+            activeSceneKey: "empty-conservatory-hall"
+        )
+        store.setSelectedPlant(youngPlant.id)
+        let counter = GardenStoreNotificationCounter(store: store)
+
+        store.bringAllPlantsToFullMaturationInCurrentScene()
+
+        let maturePlant = try #require(store.state.plants.first)
+        #expect(maturePlant.id == youngPlant.id)
+        #expect(maturePlant.species == youngPlant.species)
+        #expect(maturePlant.position == youngPlant.position)
+        #expect(maturePlant.scale == youngPlant.scale)
+        #expect(maturePlant.nickname == youngPlant.nickname)
+        #expect(maturePlant.swaySeed == youngPlant.swaySeed)
+        #expect(maturePlant.placementLocked)
+        #expect(maturePlant.growth == 1.0)
+        #expect(maturePlant.growthStage == .mature)
+        #expect(maturePlant.bloomProgress == 0)
+        #expect(maturePlant.diedAt == nil)
+        #expect(maturePlant.health >= 0.88)
+        #expect(maturePlant.hydration >= 0.82)
+        #expect(store.selectedPlantID == youngPlant.id)
+        #expect(counter.count == 1)
+
+        let persistedScene = try #require(try persistence.load(sceneKey: "empty-conservatory-hall"))
+        #expect(persistedScene.plants.first?.growth == 1.0)
         #expect(persistedScene.plants.first?.placementLocked == true)
     }
 

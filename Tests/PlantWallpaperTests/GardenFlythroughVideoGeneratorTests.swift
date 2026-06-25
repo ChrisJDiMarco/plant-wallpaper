@@ -4,108 +4,92 @@ import Testing
 
 @Suite("Garden flythrough video generator")
 struct GardenFlythroughVideoGeneratorTests {
-    @Test("uploads one snapshot and submits it as start and end frame")
-    func uploadsSnapshotAndSubmitsLoopableSeedanceRequest() async throws {
-        let uploadURL = URL(string: "https://upload.example.com/snapshot")!
-        let fileURL = URL(string: "https://v3.fal.media/files/test/snapshot.png")!
-        let statusURL = URL(string: "https://queue.fal.run/bytedance/seedance-2.0/fast/image-to-video/requests/req_1/status")!
-        let responseURL = URL(string: "https://queue.fal.run/bytedance/seedance-2.0/fast/image-to-video/requests/req_1/response")!
-        let videoURL = URL(string: "https://v3.fal.media/files/test/flythrough.mp4")!
-        let client = ScriptedFlythroughHTTPClient(steps: [
-            .response(
-                statusCode: 200,
-                url: URL(string: "https://rest.fal.ai/storage/upload/initiate")!,
-                data: Data(#"{"upload_url":"\#(uploadURL.absoluteString)","file_url":"\#(fileURL.absoluteString)"}"#.utf8)
-            ),
-            .response(statusCode: 200, url: uploadURL, data: Data()),
-            .response(
-                statusCode: 200,
-                url: URL(string: "https://queue.fal.run/bytedance/seedance-2.0/fast/image-to-video")!,
-                data: Data(#"{"request_id":"req_1","status_url":"\#(statusURL.absoluteString)","response_url":"\#(responseURL.absoluteString)","queue_position":0}"#.utf8)
-            ),
-            .response(
-                statusCode: 200,
-                url: statusURL,
-                data: Data(#"{"status":"COMPLETED","request_id":"req_1","response_url":"\#(responseURL.absoluteString)"}"#.utf8)
-            ),
-            .response(
-                statusCode: 200,
-                url: responseURL,
-                data: Data(#"{"video":{"url":"\#(videoURL.absoluteString)"},"seed":42}"#.utf8)
-            )
-        ])
-        let generator = GardenFlythroughVideoGenerator(
-            httpClient: client,
-            pollDelayNanoseconds: 0,
-            maxPollAttempts: 2
+    @Test("single segment request stays 1080p and loopable")
+    func singleSegmentRequestStays1080pAndLoopable() throws {
+        let imageURL = URL(string: "https://v3.fal.media/files/test/snapshot.png")!
+        let body = GardenFlythroughVideoGenerator.imageRequestBodyForSelfTest(
+            snapshotURL: imageURL,
+            pathInstruction: "Follow normalized path (0.10, 0.90) -> (0.50, 0.50)."
         )
 
-        let resultURL = try await generator.generate(
-            snapshotPNGData: Data([1, 2, 3]),
-            apiKey: " fal-test "
-        )
-
-        #expect(resultURL == videoURL)
-        let requests = await client.capturedRequests()
-        #expect(requests.count == 5)
-        #expect(requests[0].url?.absoluteString == "https://rest.fal.ai/storage/upload/initiate?storage_type=fal-cdn-v3")
-        #expect(requests[0].value(forHTTPHeaderField: "Authorization") == "Key fal-test")
-        #expect(requests[1].httpMethod == "PUT")
-        #expect(requests[1].httpBody == Data([1, 2, 3]))
-
-        let requestBody = try #require(requests[2].httpBody)
-        let body = try #require(JSONSerialization.jsonObject(with: requestBody) as? [String: Any])
-        #expect(body["image_url"] as? String == fileURL.absoluteString)
-        #expect(body["end_image_url"] as? String == fileURL.absoluteString)
+        #expect(body["image_url"] as? String == imageURL.absoluteString)
+        #expect(body["end_image_url"] as? String == imageURL.absoluteString)
         #expect(body["duration"] as? String == "10")
-        #expect(body["resolution"] as? String == "720p")
+        #expect(body["resolution"] as? String == "1080p")
         #expect(body["generate_audio"] as? Bool == false)
 
         let prompt = try #require(body["prompt"] as? String)
         #expect(prompt.localizedCaseInsensitiveContains("seamless"))
         #expect(prompt.localizedCaseInsensitiveContains("loop"))
         #expect(prompt.localizedCaseInsensitiveContains("no drone"))
-    }
-}
-
-private actor ScriptedFlythroughHTTPClient: GardenFlythroughVideoHTTPClient {
-    enum Step {
-        case response(statusCode: Int, url: URL, data: Data)
+        #expect(prompt.localizedCaseInsensitiveContains("stay inside the garden area"))
+        #expect(prompt.localizedCaseInsensitiveContains("full reference image as a persistent map"))
+        #expect(prompt.localizedCaseInsensitiveContains("slow, gentle forward motion"))
+        #expect(prompt.contains("Follow normalized path"))
     }
 
-    private var steps: [Step]
-    private var requests: [URLRequest] = []
+    @Test("continuation request carries current frame and original garden map")
+    func continuationRequestCarriesCurrentFrameAndOriginalGardenMap() throws {
+        let startURL = URL(string: "https://v3.fal.media/files/test/segment-start.png")!
+        let originalURL = URL(string: "https://v3.fal.media/files/test/original-map.png")!
+        let body = GardenFlythroughVideoGenerator.referenceRequestBodyForSelfTest(
+            startFrameURL: startURL,
+            originalMapURL: originalURL,
+            pathInstruction: nil
+        )
 
-    init(steps: [Step]) {
-        self.steps = steps
+        #expect(body["image_urls"] as? [String] == [startURL.absoluteString, originalURL.absoluteString])
+        #expect(body["duration"] as? String == "10")
+        #expect(body["resolution"] as? String == "1080p")
+        #expect(body["generate_audio"] as? Bool == false)
+
+        let prompt = try #require(body["prompt"] as? String)
+        #expect(prompt.contains("@Image1"))
+        #expect(prompt.contains("@Image2"))
+        #expect(prompt.localizedCaseInsensitiveContains("persistent full-garden map"))
+        #expect(prompt.localizedCaseInsensitiveContains("next segment"))
     }
 
-    func data(for request: URLRequest) async throws -> (Data, URLResponse) {
-        requests.append(request)
-        guard !steps.isEmpty else {
-            let response = HTTPURLResponse(
-                url: request.url ?? URL(string: "https://example.com")!,
-                statusCode: 500,
-                httpVersion: nil,
-                headerFields: nil
-            )!
-            return (Data(), response)
-        }
+    @Test("continuation prompt reflects selected total duration")
+    func continuationPromptReflectsSelectedTotalDuration() throws {
+        let startURL = URL(string: "https://v3.fal.media/files/test/segment-start.png")!
+        let originalURL = URL(string: "https://v3.fal.media/files/test/original-map.png")!
+        let body = GardenFlythroughVideoGenerator.referenceRequestBodyForSelfTest(
+            startFrameURL: startURL,
+            originalMapURL: originalURL,
+            pathInstruction: nil,
+            segmentCount: 3
+        )
 
-        let step = steps.removeFirst()
-        switch step {
-        case .response(let statusCode, let url, let data):
-            let response = HTTPURLResponse(
-                url: url,
-                statusCode: statusCode,
-                httpVersion: nil,
-                headerFields: nil
-            )!
-            return (data, response)
-        }
+        let prompt = try #require(body["prompt"] as? String)
+        #expect(prompt.contains("30-second continuous"))
+        #expect(!prompt.contains("60-second continuous"))
     }
 
-    func capturedRequests() -> [URLRequest] {
-        requests
+    @Test("fal content policy errors are shown as a short useful message")
+    func falContentPolicyErrorsAreShownAsShortUsefulMessage() throws {
+        let data = Data("""
+        {"detail":[{"loc":["body","generated_video"],"msg":"Output video has sensitive content.","type":"content_policy_violation","ctx":{"extra_info":{"reason":"partner_validation_failed"}}}],"input":{"prompt":"huge prompt that should not be shown"}}
+        """.utf8)
+
+        let message = GardenFlythroughVideoGenerator.errorMessageForSelfTest(from: data)
+
+        #expect(message.contains("fal.ai rejected a generated flythrough segment"))
+        #expect(!message.contains("huge prompt"))
+    }
+
+    @Test("policy fallback prompt uses safer garden-only wording")
+    func policyFallbackPromptUsesSaferGardenOnlyWording() throws {
+        let imageURL = URL(string: "https://v3.fal.media/files/test/snapshot.png")!
+        let body = GardenFlythroughVideoGenerator.imageRequestBodyForSelfTest(
+            snapshotURL: imageURL,
+            pathInstruction: nil,
+            segmentCount: 6,
+            usesPolicyFallback: true
+        )
+
+        let prompt = try #require(body["prompt"] as? String)
+        #expect(prompt.localizedCaseInsensitiveContains("harmless garden imagery"))
+        #expect(!prompt.localizedCaseInsensitiveContains("drone"))
     }
 }

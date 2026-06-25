@@ -554,7 +554,7 @@ struct GardenAssistantCommandCenterTests {
         #expect(!GardenPricingCatalog.footer.localizedCaseInsensitiveContains("planned"))
     }
 
-    @Test("status menu exposes wallpaper scenes near the top with the picker inside")
+    @Test("status menu exposes the wallpaper scene picker at the top level below the tools entry")
     func statusMenuExposesWallpaperScenesNearTheTop() throws {
         let directoryURL = FileManager.default.temporaryDirectory
             .appendingPathComponent("GardenSceneMainMenuTests-\(UUID().uuidString)", isDirectory: true)
@@ -568,13 +568,15 @@ struct GardenAssistantCommandCenterTests {
         let menu = GardenStatusMenu(store: store, wallpaperManager: wallpaperManager)
         let titles = menu.menuTitlesForSelfTest()
 
-        // The two wallpaper menus were merged into one "Wallpaper & Scenes"
-        // entry that sits above the mode switch and holds the scene picker.
+        // "Wallpaper & Scenes" sits above the mode switch, and the "Wallpaper
+        // Scene" picker now lives at the top level directly below it so the
+        // scene list is reachable without opening the tools submenu.
         let wallpaperIndex = try #require(titles.firstIndex(of: "Wallpaper & Scenes"))
+        let sceneIndex = try #require(titles.firstIndex(of: "Wallpaper Scene"))
         let modeIndex = try #require(titles.firstIndex(of: "Mode: Garden"))
         #expect(wallpaperIndex < modeIndex)
-        #expect(!titles.contains("Wallpaper Scene"))
-        #expect(menu.wallpaperToolsTitlesForSelfTest().contains("Wallpaper Scene"))
+        #expect(sceneIndex == wallpaperIndex + 1)
+        #expect(!menu.wallpaperToolsTitlesForSelfTest().contains("Wallpaper Scene"))
         #expect(menu.primaryWallpaperSceneTitlesForSelfTest().contains("Empty Conservatory Hall"))
     }
 }

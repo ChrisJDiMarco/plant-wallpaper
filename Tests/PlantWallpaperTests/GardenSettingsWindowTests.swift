@@ -43,6 +43,7 @@ struct GardenSettingsWindowTests {
             "My Garden",
             "General",
             "Scene",
+            "Flythrough Videos",
             "Wildlife",
             "Gnomes",
             "Audio",

@@ -4,6 +4,8 @@ import PlantGardenCore
 
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
+    private static let flythroughVideoLoopingDefaultsKey = "PlantWallpaper.flythroughVideoLooping"
+
     private var store: GardenStore?
     private var overlayController: GardenOverlayController?
     private var rainbowMoment: RainbowMomentController?
@@ -15,7 +17,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var weatherService: GardenWeatherService?
     private var momentNotifier: GardenMomentNotifier?
     private var timeLapseRecorder: GardenTimeLapseRecorder?
+    private var flythroughVideoLibrary: GardenFlythroughVideoLibrary?
     private let ambienceEngine = GardenAmbienceEngine()
+    private let videoWallpaperController = GardenVideoWallpaperController()
     private var welcomeController: GardenWelcomeController?
     private var simulationTimer: Timer?
     private var displayTimer: Timer?
@@ -29,10 +33,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var lastGardenInteractionLocked = false
     private var lastUseAIGeneratedLockSnapshot = GardenSettings.default.useAIGeneratedLockSnapshot
     private var isSmartLockWallpaperActive = false
+    private var activeFlythroughVideoSceneKey: String?
+    private var isFlythroughVideoLooping = true
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         terminateDuplicateInstances()
         installMainMenu()
+        isFlythroughVideoLooping = UserDefaults.standard.object(forKey: Self.flythroughVideoLoopingDefaultsKey) as? Bool ?? true
         let persistence = GardenPersistence()
         let wallpaperManager = WallpaperManager(baseDirectoryURL: persistence.directoryURL)
         let screens = NSScreen.screens
@@ -58,6 +65,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let timeLapseRecorder = GardenTimeLapseRecorder(baseDirectoryURL: persistence.directoryURL)
         GardenTimeLapseExporter.shared.recorder = timeLapseRecorder
         self.timeLapseRecorder = timeLapseRecorder
+        let flythroughVideoLibrary = GardenFlythroughVideoLibrary(directoryURL: persistence.directoryURL)
+        self.flythroughVideoLibrary = flythroughVideoLibrary
 
         self.store = gardenStore
         self.overlayController = overlayController
@@ -66,6 +75,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         self.statusMenu = statusMenu
         overlayController.desktopPlantingMenuRequestHandler = { [weak statusMenu] screenPoint in
             statusMenu?.openPlantingMenu(at: screenPoint)
+        }
+        overlayController.desktopDoubleClickHandler = { [weak self] _ in
+            self?.playFlythroughVideoOnceFromDesktopDoubleClick() ?? false
         }
         overlayController.gnomePerspectiveDoneHandler = { [weak statusMenu] in
             statusMenu?.endGnomePerspectiveAdjustmentMode()
@@ -81,6 +93,30 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         statusMenu.regenerateSmartLockWallpaperHandler = { [weak self] in
             self?.regenerateSmartLockWallpaper()
+        }
+        statusMenu.applyFlythroughVideoWallpaperHandler = { [weak self] videoURL in
+            self?.applyFlythroughVideoWallpaper(videoURL)
+        }
+        statusMenu.flythroughVideoGeneratedHandler = { [weak self] videoURL, durationSeconds in
+            self?.recordFlythroughVideo(videoURL: videoURL, durationSeconds: durationSeconds)
+        }
+        statusMenu.deactivateFlythroughVideoWallpaperHandler = { [weak self] in
+            self?.deactivateFlythroughVideoWallpaper()
+        }
+        statusMenu.flythroughVideoRecordsProvider = { [weak flythroughVideoLibrary] in
+            flythroughVideoLibrary?.recordsForDisplay() ?? []
+        }
+        statusMenu.applyFlythroughVideoRecordHandler = { [weak self] record in
+            self?.applyFlythroughVideoWallpaper(record.videoURL, sceneKey: record.sceneKey)
+        }
+        statusMenu.isFlythroughVideoWallpaperActiveProvider = { [weak self] in
+            self?.videoWallpaperController.isActive ?? false
+        }
+        statusMenu.isFlythroughVideoLoopingProvider = { [weak self] in
+            self?.isFlythroughVideoLooping ?? true
+        }
+        statusMenu.toggleFlythroughVideoLoopingHandler = { [weak self] in
+            self?.toggleFlythroughVideoLooping()
         }
 
         overlayController.show()
@@ -188,6 +224,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationWillTerminate(_ notification: Notification) {
         store?.save()
+        videoWallpaperController.close()
         overlayController?.shutdown()
         if let screenParametersObserver {
             NotificationCenter.default.removeObserver(screenParametersObserver)
@@ -204,6 +241,65 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         smartLockWallpaperTask?.cancel()
         publishScreenSaverSnapshot()
         ambienceEngine.setMix(.silent)
+    }
+
+    private func applyFlythroughVideoWallpaper(_ videoURL: URL) {
+        applyFlythroughVideoWallpaper(videoURL, sceneKey: wallpaperManager?.selectedWallpaperSceneKey)
+    }
+
+    private func applyFlythroughVideoWallpaper(_ videoURL: URL, sceneKey: String?) {
+        activeFlythroughVideoSceneKey = sceneKey ?? wallpaperManager?.selectedWallpaperSceneKey
+        overlayController?.arePlantsHiddenForAILockView = true
+        videoWallpaperController.show(
+            videoURL: videoURL,
+            loops: isFlythroughVideoLooping,
+            autoPlay: isFlythroughVideoLooping
+        )
+    }
+
+    private func toggleFlythroughVideoLooping() {
+        isFlythroughVideoLooping.toggle()
+        UserDefaults.standard.set(isFlythroughVideoLooping, forKey: Self.flythroughVideoLoopingDefaultsKey)
+        videoWallpaperController.setLooping(isFlythroughVideoLooping)
+    }
+
+    private func playFlythroughVideoOnceFromDesktopDoubleClick() -> Bool {
+        guard !isFlythroughVideoLooping else {
+            return false
+        }
+        return videoWallpaperController.playOnceFromStart()
+    }
+
+    private func deactivateFlythroughVideoWallpaper() {
+        videoWallpaperController.close()
+        overlayController?.arePlantsHiddenForAILockView = false
+
+        guard let store, let wallpaperManager else {
+            activeFlythroughVideoSceneKey = nil
+            return
+        }
+
+        let screens = targetScreens(from: NSScreen.screens, settings: store.state.settings)
+        let sceneKey = activeFlythroughVideoSceneKey ?? wallpaperManager.selectedWallpaperSceneKey
+        let playingRadioStation = GardenRadioPlayer.shared.playingRadioStation
+        let playingRadioStream = GardenRadioPlayer.shared.playingRadioStream
+        let appliedSceneKey = wallpaperManager.applyWallpaperSceneKey(sceneKey, to: screens)
+        store.switchGardenScene(
+            to: appliedSceneKey,
+            screenCount: screens.count,
+            playingRadioStation: playingRadioStation,
+            playingRadioStream: playingRadioStream
+        )
+        store.removePlantsWithoutDisplayableAssets()
+        activeFlythroughVideoSceneKey = nil
+    }
+
+    private func recordFlythroughVideo(videoURL: URL, durationSeconds: Int) {
+        flythroughVideoLibrary?.add(
+            videoURL: videoURL,
+            sceneKey: wallpaperManager?.selectedWallpaperSceneKey,
+            durationSeconds: durationSeconds
+        )
     }
 
     private func loadInitialState(

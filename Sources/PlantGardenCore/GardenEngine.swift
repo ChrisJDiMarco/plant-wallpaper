@@ -619,6 +619,37 @@ public enum GardenEngine {
         return nextState
     }
 
+    public static func bringPlantsToFullMaturation(
+        _ state: GardenState,
+        at date: Date = Date()
+    ) -> GardenState {
+        guard !state.plants.isEmpty else {
+            return state
+        }
+
+        var didMaturePlant = false
+        var nextState = state
+        nextState.plants = state.plants.map { plant in
+            var maturePlant = plant
+            let previousGrowth = plant.growth
+            maturePlant.growth = 1.0
+            maturePlant.bloomProgress = 0
+            maturePlant.diedAt = nil
+            maturePlant.health = max(0.88, plant.health).clampedUnit
+            maturePlant.hydration = max(0.82, plant.hydration).clampedUnit
+            markStageChangeIfNeeded(on: &maturePlant, previousGrowth: previousGrowth, at: date)
+            didMaturePlant = didMaturePlant || maturePlant != plant
+            return maturePlant
+        }
+
+        guard didMaturePlant else {
+            return state
+        }
+
+        nextState.lastUpdatedAt = date
+        return nextState
+    }
+
     public static func movePlant(
         _ state: GardenState,
         id: UUID,

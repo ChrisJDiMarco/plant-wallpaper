@@ -92,6 +92,7 @@ final class GardenOverlayController {
     private var globalMouseUpMonitor: Any?
     private var globalMouseMovedMonitor: Any?
     private var pointerRoutingTimer: Timer?
+    private var systemCapturePauseTimer: Timer?
     private var notificationObservers: [NSObjectProtocol] = []
     private var workspaceObservers: [NSObjectProtocol] = []
     private var mousePressCoordinator = GardenMousePressCoordinator()
@@ -100,6 +101,7 @@ final class GardenOverlayController {
     private var desktopWindowSnapshotCache: (uptime: TimeInterval, windows: [GardenDesktopWindowSnapshot])?
     private var isPointerPollingDragActive = false
     private var isStatusMenuOpen = false
+    private var isDesktopInputPausedForSystemCaptureUI = false
     private var isDispatchingMouseDown = false
     private var isGnomeZoneDrawingMode = false
     private var isBirdSkyZoneDrawingMode = false
@@ -111,6 +113,7 @@ final class GardenOverlayController {
     private var eventTapRunLoopSource: CFRunLoopSource?
     private var lastObservedExperienceMode: GardenExperienceMode?
     var desktopPlantingMenuRequestHandler: ((NSPoint) -> Void)?
+    var desktopDoubleClickHandler: ((NSPoint) -> Bool)?
     var wallCatClickClaimHandler: ((NSPoint) -> Bool)?
     /// Invoked when the user taps the in-scene "Done" button while adjusting the
     /// gnome perspective, so the host can leave the mode (and update its menu).
@@ -172,6 +175,7 @@ final class GardenOverlayController {
         installEventMonitors()
         installEventTap()
         startPointerRoutingTimer()
+        startSystemCapturePauseTimer()
     }
 
     func shutdown() {
@@ -181,6 +185,8 @@ final class GardenOverlayController {
         workspaceObservers = []
         pointerRoutingTimer?.invalidate()
         pointerRoutingTimer = nil
+        systemCapturePauseTimer?.invalidate()
+        systemCapturePauseTimer = nil
         if let globalMouseDownMonitor {
             NSEvent.removeMonitor(globalMouseDownMonitor)
             self.globalMouseDownMonitor = nil
@@ -743,6 +749,9 @@ final class GardenOverlayController {
                       !controller.isPointOnGardenInteractionSurface(screenPoint) else {
                     return
                 }
+                if controller.handleDesktopDoubleClickIfNeeded(at: screenPoint, clickCount: clickCount) {
+                    return
+                }
                 guard controller.canHandleDesktopMouse(at: screenPoint, forceFreshSnapshot: true) else {
                     return
                 }
@@ -850,6 +859,7 @@ final class GardenOverlayController {
 
     private func desktopInputSessionDidPause() {
         handleMouseUp()
+        uninstallEventTap()
         isPointerPollingDragActive = false
         isStatusMenuOpen = false
         desktopWindowSnapshotCache = nil
@@ -862,6 +872,10 @@ final class GardenOverlayController {
     }
 
     private func desktopInputSessionDidResume() {
+        guard !isDesktopInputPausedForSystemCaptureUI else {
+            return
+        }
+
         installEventTap()
         isStatusMenuOpen = false
         desktopWindowSnapshotCache = nil
@@ -882,6 +896,28 @@ final class GardenOverlayController {
         }
     }
 
+    private static func isSystemCaptureUIActive() -> Bool {
+        let applications = NSWorkspace.shared.runningApplications
+        return isSystemCaptureUIActiveForSelfTest(
+            processNames: applications.compactMap(\.localizedName),
+            bundleIdentifiers: applications.compactMap(\.bundleIdentifier)
+        )
+    }
+
+    nonisolated static func isSystemCaptureUIActiveForSelfTest(
+        processNames: [String],
+        bundleIdentifiers: [String]
+    ) -> Bool {
+        (processNames + bundleIdentifiers).contains { value in
+            let normalized = value.lowercased()
+            return normalized == "screenshot"
+                || normalized == "screencaptureui"
+                || normalized.contains("screen capture")
+                || normalized.contains("screenshot")
+                || normalized.contains("screencapture")
+        }
+    }
+
     private func handleEventTap(type: CGEventType, quartzLocation: CGPoint, clickCount: Int) {
         if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
             if let eventTap {
@@ -897,6 +933,9 @@ final class GardenOverlayController {
         case .leftMouseDown:
             guard !isPointInsideInteractionWindow(screenPoint),
                   !isPointOnGardenInteractionSurface(screenPoint) else {
+                return
+            }
+            if handleDesktopDoubleClickIfNeeded(at: screenPoint, clickCount: clickCount) {
                 return
             }
             guard canHandleDesktopMouse(
@@ -967,6 +1006,30 @@ final class GardenOverlayController {
             }
         }
         pointerRoutingTimer?.tolerance = GardenPointerRoutingCadence.refreshInterval * 0.35
+    }
+
+    private func startSystemCapturePauseTimer() {
+        systemCapturePauseTimer?.invalidate()
+        systemCapturePauseTimer = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated {
+                self?.systemCapturePauseTimerFired()
+            }
+        }
+        systemCapturePauseTimer?.tolerance = 0.1
+    }
+
+    private func systemCapturePauseTimerFired() {
+        let isCaptureUIActive = Self.isSystemCaptureUIActive()
+        guard isCaptureUIActive != isDesktopInputPausedForSystemCaptureUI else {
+            return
+        }
+
+        isDesktopInputPausedForSystemCaptureUI = isCaptureUIActive
+        if isCaptureUIActive {
+            desktopInputSessionDidPause()
+        } else {
+            desktopInputSessionDidResume()
+        }
     }
 
     private func updateInteractionRegionWindows() {
@@ -1355,8 +1418,11 @@ final class GardenOverlayController {
               !isStatusMenuOpen,
               (allowsInteractionWindowOrigin || !isPointInsideInteractionWindow(screenPoint)),
               !isPointOnGardenInteractionSurface(screenPoint),
-              let desktopPlantingMenuRequestHandler,
               Self.canOpenPlantingMenu(at: screenPoint) else {
+            return false
+        }
+
+        guard let desktopPlantingMenuRequestHandler else {
             return false
         }
 
@@ -1375,6 +1441,40 @@ final class GardenOverlayController {
         mousePressCoordinator.markHandled()
         windows.forEach { $0.ignoresMouseEvents = true }
         desktopPlantingMenuRequestHandler(screenPoint)
+        return true
+    }
+
+    @discardableResult
+    private func handleDesktopDoubleClickIfNeeded(at screenPoint: NSPoint, clickCount: Int) -> Bool {
+        guard clickCount >= 2,
+              !isGardenInteractionLocked,
+              !isGnomeZoneDrawingMode,
+              !isBirdSkyZoneDrawingMode,
+              !isSoilBrushMode,
+              !isStatusMenuOpen,
+              !isPointInsideInteractionWindow(screenPoint),
+              !isPointOnGardenInteractionSurface(screenPoint),
+              Self.canOpenPlantingMenu(at: screenPoint),
+              let desktopDoubleClickHandler else {
+            return false
+        }
+
+        let uptime = ProcessInfo.processInfo.systemUptime
+        if let lastDesktopPlantingMenuRequest,
+           uptime - lastDesktopPlantingMenuRequest.uptime < 0.45,
+           hypot(
+               screenPoint.x - lastDesktopPlantingMenuRequest.point.x,
+               screenPoint.y - lastDesktopPlantingMenuRequest.point.y
+           ) < 8 {
+            return true
+        }
+
+        guard desktopDoubleClickHandler(screenPoint) else {
+            return false
+        }
+        lastDesktopPlantingMenuRequest = (uptime, screenPoint)
+        handleMouseUp()
+        mousePressCoordinator.markHandled()
         return true
     }
 

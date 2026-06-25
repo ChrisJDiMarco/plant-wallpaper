@@ -18,6 +18,11 @@ final class GardenSettingsWindowController: NSWindowController {
         var arrangeGarden: () -> Void
         var showWelcomeTour: () -> Void
         var saveHealthCheck: () -> Void
+        var flythroughVideoRecords: () -> [GardenFlythroughVideoRecord] = { [] }
+        var applyFlythroughVideo: (GardenFlythroughVideoRecord) -> Void = { _ in }
+        var deactivateFlythroughVideo: () -> Void = {}
+        var isFlythroughVideoWallpaperActive: () -> Bool = { false }
+        var confirmAILockViewCanReplaceVideoWallpaper: () -> Bool = { true }
     }
 
     struct SidebarStyleSnapshot: Equatable {
@@ -34,6 +39,7 @@ final class GardenSettingsWindowController: NSWindowController {
         case garden
         case general
         case scene
+        case flythroughVideos
         case wildlife
         case gnomes
         case audio
@@ -50,6 +56,8 @@ final class GardenSettingsWindowController: NSWindowController {
                 "General"
             case .scene:
                 "Scene"
+            case .flythroughVideos:
+                "Flythrough Videos"
             case .wildlife:
                 "Wildlife"
             case .gnomes:
@@ -75,6 +83,8 @@ final class GardenSettingsWindowController: NSWindowController {
                 "Simulation, care, and startup defaults"
             case .scene:
                 "Wallpaper scenes and generated environments"
+            case .flythroughVideos:
+                "Saved fal.ai flythroughs and looping video wallpaper"
             case .wildlife:
                 "Butterflies, flies, and ambient motion"
             case .gnomes:
@@ -100,6 +110,8 @@ final class GardenSettingsWindowController: NSWindowController {
                 "slider.horizontal.3"
             case .scene:
                 "photo.stack.fill"
+            case .flythroughVideos:
+                "video.fill"
             case .wildlife:
                 "ladybug.fill"
             case .gnomes:
@@ -373,6 +385,8 @@ final class GardenSettingsWindowController: NSWindowController {
     private var spotifyTextFieldDelegate: MainActorTextFieldDelegate?
     private var renderedMusicSource: GardenMusicSource?
     private var renderedCustomSceneKeys: [String] = []
+    private var renderedFlythroughVideoRecordIDs: [UUID] = []
+    private var flythroughVideoRecordsByID: [String: GardenFlythroughVideoRecord] = [:]
     private var sceneDetailController: GardenSceneDetailWindowController?
     private weak var spotifyURLTextField: NSTextField?
     private weak var radioAssignmentCompanionPopup: NSPopUpButton?
@@ -460,6 +474,11 @@ final class GardenSettingsWindowController: NSWindowController {
 
     func showPrivacyStorageSection() {
         selectedSection = .privacyStorage
+        showCentered()
+    }
+
+    func showFlythroughVideosSection() {
+        selectedSection = .flythroughVideos
         showCentered()
     }
 
@@ -711,6 +730,8 @@ final class GardenSettingsWindowController: NSWindowController {
         spotifyURLTextField = nil
         renderedMusicSource = nil
         renderedCustomSceneKeys = []
+        renderedFlythroughVideoRecordIDs = []
+        flythroughVideoRecordsByID = [:]
 
         let stack = FlippedStackView()
         stack.orientation = .vertical
@@ -733,6 +754,8 @@ final class GardenSettingsWindowController: NSWindowController {
             buildGeneralSection(in: stack)
         case .scene:
             buildSceneSection(in: stack)
+        case .flythroughVideos:
+            buildFlythroughVideosSection(in: stack)
         case .wildlife:
             buildWildlifeSection(in: stack)
         case .gnomes:
@@ -788,6 +811,12 @@ final class GardenSettingsWindowController: NSWindowController {
 
         if selectedSection == .scene,
            renderedCustomSceneKeys != wallpaperManager.customWallpapers.map(\.key) {
+            renderSelectedSection(preservingScroll: true)
+            return
+        }
+
+        if selectedSection == .flythroughVideos,
+           renderedFlythroughVideoRecordIDs != actions.flythroughVideoRecords().map(\.id) {
             renderSelectedSection(preservingScroll: true)
             return
         }
@@ -1340,6 +1369,65 @@ final class GardenSettingsWindowController: NSWindowController {
                 rows: customWallpapers.map { customSceneRow(for: $0) }
             )
         }
+    }
+
+    private func buildFlythroughVideosSection(in stack: NSStackView) {
+        let records = actions.flythroughVideoRecords()
+        renderedFlythroughVideoRecordIDs = records.map(\.id)
+        flythroughVideoRecordsByID = Dictionary(
+            uniqueKeysWithValues: records.map { ($0.id.uuidString, $0) }
+        )
+
+        addGroup(title: "Desktop Video Wallpaper", to: stack, rows: [
+            buttonRow(
+                title: "Current video wallpaper",
+                buttonTitle: "Go Back",
+                action: #selector(deactivateFlythroughVideoFromSettings),
+                subtitle: { [weak self] in
+                    self?.actions.isFlythroughVideoWallpaperActive() == true
+                        ? "Close the looping video and restore the scene it was made from."
+                        : "No flythrough video is active."
+                },
+                isEnabled: { [weak self] in self?.actions.isFlythroughVideoWallpaperActive() == true }
+            )
+        ])
+
+        let rows = records.isEmpty
+            ? [infoRow(title: "No saved videos", value: { "Generate one from Keepsakes & Exports" })]
+            : records.map { flythroughVideoRecordRow($0) }
+        addGroup(title: "Saved Videos", to: stack, rows: rows)
+    }
+
+    private func flythroughVideoRecordRow(_ record: GardenFlythroughVideoRecord) -> NSView {
+        let applyButton = NSButton(title: "Set", target: self, action: #selector(applyFlythroughVideoFromSettings(_:)))
+        applyButton.bezelStyle = .rounded
+        applyButton.identifier = NSUserInterfaceItemIdentifier(record.id.uuidString)
+        applyButton.setContentHuggingPriority(.required, for: .horizontal)
+
+        let revealButton = NSButton(title: "Reveal", target: self, action: #selector(revealFlythroughVideoFromSettings(_:)))
+        revealButton.bezelStyle = .rounded
+        revealButton.identifier = NSUserInterfaceItemIdentifier(record.id.uuidString)
+        revealButton.setContentHuggingPriority(.required, for: .horizontal)
+
+        let sceneName = record.sceneKey.map { sceneDisplayName(forKey: $0) } ?? "Scene Unknown"
+        let durationText = record.durationSeconds > 0
+            ? "\(record.durationSeconds) seconds"
+            : "Saved MP4"
+        let subtitle = [
+            durationText,
+            sceneName,
+            Self.flythroughVideoDateFormatter.string(from: record.createdAt)
+        ].joined(separator: " - ")
+
+        return rowContainer([
+            titledTextStack(
+                title: GardenMenuTitleFormatter.compactStatusTitle(record.videoURL.deletingPathExtension().lastPathComponent, maxLength: 44),
+                subtitle: subtitle
+            ),
+            NSView.spacer(),
+            applyButton,
+            revealButton
+        ])
     }
 
     private func buildWildlifeSection(in stack: NSStackView) {
@@ -2669,6 +2757,13 @@ final class GardenSettingsWindowController: NSWindowController {
         return formatter
     }()
 
+    private static let flythroughVideoDateFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateStyle = .medium
+        formatter.timeStyle = .short
+        return formatter
+    }()
+
     private func smallLabel(_ text: String) -> NSTextField {
         let label = NSTextField(wrappingLabelWithString: text)
         label.font = .systemFont(ofSize: 11.5)
@@ -2937,6 +3032,12 @@ final class GardenSettingsWindowController: NSWindowController {
             showProFeatureAlert(.aiLockView)
             return
         }
+        if sender.state == .on,
+           !store.state.settings.useAIGeneratedLockSnapshot,
+           !actions.confirmAILockViewCanReplaceVideoWallpaper() {
+            sender.state = .off
+            return
+        }
         store.updateSettings(store.state.settings.updating(useAIGeneratedLockSnapshot: sender.state == .on))
     }
 
@@ -3167,6 +3268,30 @@ final class GardenSettingsWindowController: NSWindowController {
         store.updateSettings(
             store.state.settings.updating(isWeatherSyncEnabled: sender.state == .on)
         )
+    }
+
+    @objc private func applyFlythroughVideoFromSettings(_ sender: NSButton) {
+        guard let id = sender.identifier?.rawValue,
+              let record = flythroughVideoRecordsByID[id] else {
+            return
+        }
+
+        actions.applyFlythroughVideo(record)
+        renderSelectedSection(preservingScroll: true)
+    }
+
+    @objc private func revealFlythroughVideoFromSettings(_ sender: NSButton) {
+        guard let id = sender.identifier?.rawValue,
+              let record = flythroughVideoRecordsByID[id] else {
+            return
+        }
+
+        NSWorkspace.shared.activateFileViewerSelecting([record.videoURL])
+    }
+
+    @objc private func deactivateFlythroughVideoFromSettings() {
+        actions.deactivateFlythroughVideo()
+        renderSelectedSection(preservingScroll: true)
     }
 
     @objc private func confirmDeleteTimeLapseFrames() {

@@ -950,6 +950,48 @@ final class WallpaperManager {
         return wasSelected
     }
 
+    /// Deletes one generated wallpaper version from the version history.
+    /// Source and cached render files move to Trash by default so the user can
+    /// recover them from Finder if needed. Returns a fallback scene key when
+    /// the deleted version was active.
+    @discardableResult
+    func deleteWallpaperVersion(key: String, moveToTrash: Bool = true) throws -> String? {
+        var records = try loadCustomWallpaperRecords()
+        guard let recordIndex = records.firstIndex(where: { $0.key == key }) else {
+            return nil
+        }
+
+        let record = records[recordIndex]
+        guard let parentSceneKey = record.parentSceneKey, record.isWallpaperUpdate else {
+            return nil
+        }
+
+        let rootKey = GardenWallpaperScene.canonicalKey(for: parentSceneKey)
+        let wasSelected = defaults.string(forKey: selectedSceneDefaultsKey) == key
+        let remainingRecords = records.filter { $0.key != key }
+        let fallbackKey = remainingRecords
+            .filter { $0.parentSceneKey == rootKey }
+            .max { lhs, rhs in
+                let lhsIndex = lhs.versionIndex ?? 0
+                let rhsIndex = rhs.versionIndex ?? 0
+                if lhsIndex != rhsIndex {
+                    return lhsIndex < rhsIndex
+                }
+                return lhs.createdAt < rhs.createdAt
+            }?
+            .key ?? rootKey
+
+        try removeFiles(for: record, moveToTrash: moveToTrash)
+        records.remove(at: recordIndex)
+        try saveCustomWallpaperRecords(records)
+
+        if wasSelected {
+            clearSelectedSceneKey()
+            return fallbackKey
+        }
+        return nil
+    }
+
     private func removeFiles(for record: CustomWallpaperRecord) {
         try? fileManager.removeItem(at: record.imageURL)
 
@@ -961,6 +1003,31 @@ final class WallpaperManager {
         )) ?? []
         for fileURL in derivedFiles where fileURL.lastPathComponent.contains(record.key) {
             try? fileManager.removeItem(at: fileURL)
+        }
+    }
+
+    private func removeFiles(for record: CustomWallpaperRecord, moveToTrash: Bool) throws {
+        if fileManager.fileExists(atPath: record.imageURL.path) {
+            try removeFile(at: record.imageURL, moveToTrash: moveToTrash)
+        }
+
+        // Derived per-screen renders are named "custom-<key>-...png" in the
+        // wallpaper directory; move matching cached renders out with the source.
+        let derivedFiles = (try? fileManager.contentsOfDirectory(
+            at: directoryURL,
+            includingPropertiesForKeys: nil
+        )) ?? []
+        for fileURL in derivedFiles where fileURL.lastPathComponent.contains(record.key) {
+            try? removeFile(at: fileURL, moveToTrash: moveToTrash)
+        }
+    }
+
+    private func removeFile(at url: URL, moveToTrash: Bool) throws {
+        if moveToTrash {
+            var resultingURL: NSURL?
+            try fileManager.trashItem(at: url, resultingItemURL: &resultingURL)
+        } else {
+            try fileManager.removeItem(at: url)
         }
     }
 

@@ -1627,17 +1627,13 @@ const CatAnim = (() => {
         ch.headRz + state.lookPitch + state.neckLag * 0.5
       );
 
-      // Breathing: chest swells, belly follows softly. Kept subtle — at
-      // wallpaper scale a visible heave reads as panting.
-      const breathDepth = ch.breath * (1 + emotion.sleepiness * 0.06 + emotion.confidence * 0.025);
-      const breathRate = (ch.breath > 1.8 ? 0.86 : 1.28) + emotion.tension * 0.08 - emotion.sleepiness * 0.10;
-      const breath = 1 + Math.sin(state.time * breathRate) * 0.0065 * breathDepth;
-      bones.chest.scale.set(breath, breath, breath);
-      bones.spine.scale.set(1 + (breath - 1) * 0.5, 1 + (breath - 1) * 0.5, 1);
-      if (state.poseName === 'loaf' || state.poseName === 'lie' || state.poseName === 'sleep') {
-        bones.chest.rotation.y += Math.sin(state.time * 0.82) * 0.003 * (0.4 + emotion.sleepiness);
-        bones.spine.rotation.y -= Math.sin(state.time * 0.68 + 0.7) * 0.002 * (0.4 + emotion.sleepiness);
-      }
+      // Breathing: barely visible chest-only motion. Uniform body scaling
+      // reads like inflating, so keep this tiny and non-volumetric.
+      const breathDepth = Math.min(ch.breath, 1.6);
+      const breathRate = ch.breath > 1.8 ? 0.72 : 1.05;
+      const breathWave = Math.sin(state.time * breathRate) * 0.0022 * breathDepth;
+      bones.chest.scale.set(1 + breathWave, 1 + breathWave * 0.7, 1);
+      bones.spine.scale.set(1 + breathWave * 0.28, 1 + breathWave * 0.20, 1);
 
       applyLeg('backL', ch.backIkL, dt);
       applyLeg('backR', ch.backIkR, dt);

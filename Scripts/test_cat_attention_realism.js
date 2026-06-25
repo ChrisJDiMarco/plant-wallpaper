@@ -174,8 +174,10 @@ assert.ok(animSource.includes('sniff:'), 'animator should expose a sniff pose');
 assert.ok(animSource.includes('rubObject:'), 'animator should expose a rubObject pose');
 assert.ok(animSource.includes('setEmotionSignals(values)'), 'animator should expose internal emotion signals');
 assert.ok(
-  animSource.includes('0.0065 * breathDepth') && !animSource.includes('emotion.tension * 0.45'),
-  'emotion should not drive fast, obvious chest puffing'
+  animSource.includes('0.0022 * breathDepth')
+    && animSource.includes('bones.chest.scale.set(1 + breathWave, 1 + breathWave * 0.7, 1)')
+    && !animSource.includes('emotion.tension * 0.45'),
+  'breathing should stay tiny and non-volumetric'
 );
 assert.ok(behaviorSource.includes('attentionTarget'), 'behavior should track a chosen attention target');
 assert.ok(behaviorSource.includes('attentionHabituation'), 'behavior should track habituation');

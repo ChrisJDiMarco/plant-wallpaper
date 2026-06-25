@@ -224,16 +224,20 @@ struct GardenStatusMenuModeSwitchTests {
         #expect(fixture.store.activeSceneKey == progressionRecord.key)
     }
 
-    @Test("garden wallpaper tools include seedling restart only in garden mode")
-    func gardenWallpaperToolsIncludeSeedlingRestartOnlyInGardenMode() throws {
+    @Test("garden wallpaper tools include plant growth shortcuts only in garden mode")
+    func gardenWallpaperToolsIncludePlantGrowthShortcutsOnlyInGardenMode() throws {
         let fixture = try StatusMenuModeFixture()
         defer { fixture.cleanup() }
 
-        #expect(fixture.menu.wallpaperToolsTitlesForSelfTest().contains("Start Plants from Seedlings"))
+        let gardenTitles = fixture.menu.wallpaperToolsTitlesForSelfTest()
+        #expect(gardenTitles.contains("Start Plants from Seedlings"))
+        #expect(gardenTitles.contains("Bring All Plants to Full Maturation"))
 
         fixture.menu.selectExperienceModeForSelfTest(.roomStudio)
 
-        #expect(!fixture.menu.wallpaperToolsTitlesForSelfTest().contains("Start Plants from Seedlings"))
+        let studioTitles = fixture.menu.wallpaperToolsTitlesForSelfTest()
+        #expect(!studioTitles.contains("Start Plants from Seedlings"))
+        #expect(!studioTitles.contains("Bring All Plants to Full Maturation"))
     }
 
     @Test("wallpaper tools toggle time of day plant darkening")
@@ -301,13 +305,18 @@ struct GardenStatusMenuModeSwitchTests {
         #expect(titles.contains("Remove All Bird Sky Areas"))
     }
 
-    @Test("status menu hover tooltips are off by default")
+    @Test("status menu hover tooltips are off by default except the AI lock view explainer")
     func statusMenuHoverTooltipsAreOffByDefault() throws {
         let fixture = try StatusMenuModeFixture()
         defer { fixture.cleanup() }
 
         #expect(!GardenStatusMenu.statusMenuTooltipsEnabledByDefaultForSelfTest)
-        #expect(fixture.menu.menuTooltipsForSelfTest().isEmpty)
+        // Every menu tooltip is suppressed except the AI Image Lock View
+        // toggle, which keeps an explanation so people can learn what it does
+        // on hover.
+        let tooltips = fixture.menu.menuTooltipsForSelfTest()
+        #expect(tooltips.count == 1)
+        #expect(tooltips.allSatisfy { $0.contains("AI Image Lock View Toggle") })
     }
 
     @Test("keepsakes menu exposes looping flythrough generation")
@@ -318,7 +327,15 @@ struct GardenStatusMenuModeSwitchTests {
         let keepsakes = fixture.menu.submenuTitlesForSelfTest(named: "Keepsakes & Exports")
 
         #expect(keepsakes.contains("Save Garden Snapshot..."))
-        #expect(keepsakes.contains("Generate Looping Flythrough Video..."))
+        #expect(keepsakes.contains("Generate Flythrough Video..."))
+        #expect(keepsakes.contains("Go Back to Scene"))
+        #expect(keepsakes.contains("Loop Flythrough Video"))
+        #expect(keepsakes.contains("Flythrough Video Settings..."))
+        #expect(fixture.menu.menuItemStateForSelfTest(named: "Loop Flythrough Video") == .on)
+
+        fixture.menu.isFlythroughVideoLoopingProvider = { false }
+
+        #expect(fixture.menu.menuItemStateForSelfTest(named: "Loop Flythrough Video") == .off)
     }
 
     @Test("AI lock view is a separate visible lock mode switch")
@@ -326,17 +343,51 @@ struct GardenStatusMenuModeSwitchTests {
         let fixture = try StatusMenuModeFixture()
         defer { fixture.cleanup() }
 
-        #expect(fixture.menu.visibleMenuTitlesForSelfTest().contains("Lock Garden Interactions"))
-        #expect(fixture.menu.visibleMenuTitlesForSelfTest().contains("AI Lock View"))
+        let visibleTitles = fixture.menu.visibleMenuTitlesForSelfTest()
+        let lockIndex = try #require(visibleTitles.firstIndex(of: "Lock Garden Interactions"))
+        let aiLockIndex = try #require(visibleTitles.firstIndex(of: "AI Image Lock View Toggle"))
+        #expect(aiLockIndex == lockIndex + 1)
         #expect(fixture.menu.menuItemStateForSelfTest(named: "Lock Garden Interactions") == .off)
-        #expect(fixture.menu.menuItemStateForSelfTest(named: "AI Lock View") == .off)
+        #expect(fixture.menu.menuItemStateForSelfTest(named: "AI Image Lock View Toggle") == .off)
 
         fixture.store.updateSettings(
             fixture.store.state.settings.updating(useAIGeneratedLockSnapshot: true)
         )
 
         #expect(fixture.menu.menuItemStateForSelfTest(named: "Lock Garden Interactions") == .off)
-        #expect(fixture.menu.menuItemStateForSelfTest(named: "AI Lock View") == .on)
+        #expect(fixture.menu.menuItemStateForSelfTest(named: "AI Image Lock View Toggle") == .on)
+    }
+
+    @Test("AI lock view warns before replacing active video wallpaper")
+    func aiLockViewWarnsBeforeReplacingActiveVideoWallpaper() throws {
+        let fixture = try StatusMenuModeFixture()
+        defer { fixture.cleanup() }
+        let entitlementStore = GardenLocalEntitlementStore()
+        let previousTier = entitlementStore.selectedTier
+        GardenEntitlements.shared.setLocalTier(.pro)
+        defer { GardenEntitlements.shared.setLocalTier(previousTier) }
+
+        fixture.menu.isFlythroughVideoWallpaperActiveProvider = { true }
+        var confirmationCount = 0
+        fixture.menu.aiLockVideoReplacementConfirmationHandler = {
+            confirmationCount += 1
+            return false
+        }
+
+        fixture.menu.toggleAILockViewForSelfTest()
+
+        #expect(confirmationCount == 1)
+        #expect(!fixture.store.state.settings.useAIGeneratedLockSnapshot)
+
+        fixture.menu.aiLockVideoReplacementConfirmationHandler = {
+            confirmationCount += 1
+            return true
+        }
+
+        fixture.menu.toggleAILockViewForSelfTest()
+
+        #expect(confirmationCount == 2)
+        #expect(fixture.store.state.settings.useAIGeneratedLockSnapshot)
     }
 
     @Test("Jarvis assistant menu item can be hidden by settings")
@@ -429,6 +480,9 @@ struct GardenStatusMenuModeSwitchTests {
         let versionActions = fixture.menu.wallpaperVersionActionsForSelfTest()
         #expect(versionActions["Original: Brazilian Rooftop Garden"] == "applyWallpaperVersion:")
         #expect(versionActions["Original: Brazilian Rooftop Garden"] != "applyWallpaperSceneRoot:")
+        let deleteAvailability = fixture.menu.wallpaperVersionDeleteAvailabilityForSelfTest()
+        #expect(deleteAvailability["Original: Brazilian Rooftop Garden"] == false)
+        #expect(deleteAvailability.values.contains(true))
 
         fixture.menu.applyWallpaperVersionForSelfTest(rootKey)
 

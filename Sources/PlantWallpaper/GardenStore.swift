@@ -382,6 +382,19 @@ final class GardenStore: NSObject {
         journal?.append(.milestone, "Started the scene's plants from their beginning forms")
     }
 
+    func bringAllPlantsToFullMaturationInCurrentScene() {
+        let nextState = GardenEngine.bringPlantsToFullMaturation(state)
+        guard nextState != state else {
+            return
+        }
+
+        let nextSelectedPlantID = selectedPlantID.flatMap { selectedID in
+            nextState.plants.contains(where: { $0.id == selectedID }) ? selectedID : nil
+        }
+        replaceState(nextState, shouldSave: true, selectedPlantID: nextSelectedPlantID)
+        journal?.append(.milestone, "Brought the scene's plants to full maturation")
+    }
+
     func removePlantsWithoutDisplayableAssets() {
         // Positions are intentionally left untouched: this runs after every
         // scene switch, and snapping kept moving plants away from where the
