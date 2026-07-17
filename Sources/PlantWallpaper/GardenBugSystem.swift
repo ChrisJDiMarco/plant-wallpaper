@@ -122,6 +122,12 @@ final class GardenBugSystem {
         syncPopulation()
     }
 
+    deinit {
+        MainActor.assumeIsolated {
+            teardown()
+        }
+    }
+
     func teardown() {
         planTimer?.invalidate()
         planTimer = nil

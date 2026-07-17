@@ -56,6 +56,14 @@ final class GardenProfileWindowController: NSObject {
         }
     }
 
+    deinit {
+        MainActor.assumeIsolated {
+            if let entitlementsObserver {
+                NotificationCenter.default.removeObserver(entitlementsObserver)
+            }
+        }
+    }
+
     func show() {
         if let window {
             refreshStats()

@@ -111,6 +111,12 @@ public enum GardenComposition {
 
     public static func arrangementStrategy(sceneKey: String?) -> ArrangementStrategy {
         let key = sceneKey?.lowercased() ?? ""
+        if key.contains("rainforest") || key.contains("jungle") {
+            return ArrangementStrategy(
+                title: "Layered rainforest",
+                summary: "Large foliage fills the edges, floor cover spreads across the foreground, and vines stack into a dense desktop jungle."
+            )
+        }
         if key.contains("chinese-mountain") || key.contains("monk") || key.contains("mountain-monk") {
             return ArrangementStrategy(
                 title: "Mountain courtyard",
@@ -207,6 +213,9 @@ public enum GardenComposition {
 
     private static func slots(for kind: PlantKind, sceneKey: String?) -> [Slot] {
         let key = sceneKey?.lowercased() ?? ""
+        if key.contains("rainforest") || key.contains("jungle") {
+            return rainforestSlots(for: kind)
+        }
         if key.contains("chinese-mountain") || key.contains("monk") || key.contains("mountain-monk") {
             return moonlitSlots(for: kind)
         }
@@ -282,6 +291,47 @@ public enum GardenComposition {
                 Slot(point: GardenPoint(x: 0.60, y: 0.74), scale: 0.88),
                 Slot(point: GardenPoint(x: 0.74, y: 0.73), scale: 0.82),
                 Slot(point: GardenPoint(x: 0.18, y: 0.79), scale: 0.78)
+            ]
+        }
+    }
+
+    private static func rainforestSlots(for kind: PlantKind) -> [Slot] {
+        switch kind {
+        case .tree:
+            [
+                Slot(point: GardenPoint(x: 0.08, y: 0.68), scale: 1.38),
+                Slot(point: GardenPoint(x: 0.92, y: 0.68), scale: 1.34),
+                Slot(point: GardenPoint(x: 0.18, y: 0.56), scale: 1.20),
+                Slot(point: GardenPoint(x: 0.82, y: 0.56), scale: 1.18)
+            ]
+        case .foliage:
+            [
+                Slot(point: GardenPoint(x: 0.12, y: 0.70), scale: 1.32),
+                Slot(point: GardenPoint(x: 0.88, y: 0.70), scale: 1.30),
+                Slot(point: GardenPoint(x: 0.30, y: 0.82), scale: 1.16),
+                Slot(point: GardenPoint(x: 0.68, y: 0.82), scale: 1.18),
+                Slot(point: GardenPoint(x: 0.50, y: 0.76), scale: 1.08)
+            ]
+        case .flower:
+            [
+                Slot(point: GardenPoint(x: 0.30, y: 0.78), scale: 1.02),
+                Slot(point: GardenPoint(x: 0.70, y: 0.78), scale: 1.00),
+                Slot(point: GardenPoint(x: 0.44, y: 0.86), scale: 0.92),
+                Slot(point: GardenPoint(x: 0.58, y: 0.86), scale: 0.94)
+            ]
+        case .meadow:
+            [
+                Slot(point: GardenPoint(x: 0.18, y: 0.91), scale: 1.40),
+                Slot(point: GardenPoint(x: 0.50, y: 0.92), scale: 1.52),
+                Slot(point: GardenPoint(x: 0.82, y: 0.91), scale: 1.38),
+                Slot(point: GardenPoint(x: 0.36, y: 0.86), scale: 1.18),
+                Slot(point: GardenPoint(x: 0.66, y: 0.86), scale: 1.16)
+            ]
+        case .edible:
+            [
+                Slot(point: GardenPoint(x: 0.26, y: 0.78), scale: 1.02),
+                Slot(point: GardenPoint(x: 0.74, y: 0.78), scale: 1.02),
+                Slot(point: GardenPoint(x: 0.50, y: 0.84), scale: 0.94)
             ]
         }
     }

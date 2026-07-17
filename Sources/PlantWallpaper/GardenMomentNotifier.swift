@@ -59,6 +59,14 @@ final class GardenMomentNotifier {
         }
     }
 
+    deinit {
+        MainActor.assumeIsolated {
+            if let storeObserver {
+                NotificationCenter.default.removeObserver(storeObserver)
+            }
+        }
+    }
+
     private func captureBaseline() {
         previousStageIndices = Dictionary(
             uniqueKeysWithValues: store.state.plants.map { plant in

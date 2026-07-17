@@ -27,11 +27,166 @@ public struct GardenProgressionFantasyTemplate: Equatable, Sendable, Identifiabl
     }
 }
 
-/// Curated, intentionally over-the-top fantasy starting points. Mode-agnostic:
-/// Progression Mode steers the generated wallpaper toward whatever fantasy is
-/// described, so the same catalog works in Garden, Room Studio, and Alien modes.
+/// Curated, intentionally over-the-top fantasy starting points. Garden mode gets
+/// plant-person personas; non-garden modes keep the broader lifestyle catalog.
 public enum GardenProgressionFantasyTemplateCatalog {
-    public static let all: [GardenProgressionFantasyTemplate] = [
+    public static func templates(for mode: GardenExperienceMode) -> [GardenProgressionFantasyTemplate] {
+        switch mode {
+        case .garden, .rainforest:
+            gardenTemplates
+        case .roomStudio, .alienUFO:
+            personaTemplates
+        }
+    }
+
+    public static let gardenTemplates: [GardenProgressionFantasyTemplate] = [
+        GardenProgressionFantasyTemplate(
+            id: "rooftop-botanist-nyc",
+            emoji: "🌱",
+            title: "Rooftop Botanist",
+            profile: GardenProgressionProfile(
+                lifestyleFantasy: "Obsessive rooftop botanist building a rare-plant sky garden from scavenged planters into a glassy penthouse conservatory",
+                placeInWorld: "Dense New York City rooftop, windy and sunlit between brick towers",
+                ageBracket: "Early 30s, self-taught plant obsessive",
+                vibe: "Urban, clever, handmade, then increasingly sleek and architectural",
+                avoidList: "Suburban lawns, generic flower beds, fake plastic plants"
+            )
+        ),
+        GardenProgressionFantasyTemplate(
+            id: "cottage-herbalist",
+            emoji: "🌿",
+            title: "Cottage Herbalist",
+            profile: GardenProgressionProfile(
+                lifestyleFantasy: "Village herbalist growing medicinal beds, drying racks, and a storybook apothecary garden",
+                placeInWorld: "Mossy cottage edge in the English Cotswolds",
+                ageBracket: "Late 40s, practical and wise",
+                vibe: "Handmade, earthy, fragrant, misty morning calm",
+                avoidList: "Modern luxury, neon, sterile minimalism"
+            )
+        ),
+        GardenProgressionFantasyTemplate(
+            id: "orchid-collector-singapore",
+            emoji: "🌺",
+            title: "Orchid Collector",
+            profile: GardenProgressionProfile(
+                lifestyleFantasy: "World-class orchid collector growing from cheap shade cloth benches to a museum-grade tropical orchid house",
+                placeInWorld: "Humid Singapore garden terrace",
+                ageBracket: "50s, patient collector with elite taste",
+                vibe: "Tropical, precise, lush, jewel-toned, humid greenhouse glow",
+                avoidList: "Dry desert plants, rustic farm clutter"
+            )
+        ),
+        GardenProgressionFantasyTemplate(
+            id: "desert-xeriscape-artist",
+            emoji: "🏜️",
+            title: "Desert Xeriscaper",
+            profile: GardenProgressionProfile(
+                lifestyleFantasy: "Desert garden artist turning a rough gravel patch into a sculptural cactus and agave estate",
+                placeInWorld: "Sonoran Desert outside Tucson, Arizona",
+                ageBracket: "Late 30s, minimalist maker",
+                vibe: "Sun-baked, sculptural, quiet, stone-and-shadow luxury",
+                avoidList: "Lush lawns, tropical humidity, fussy flowers"
+            )
+        ),
+        GardenProgressionFantasyTemplate(
+            id: "bonsai-master-kyoto",
+            emoji: "🍃",
+            title: "Bonsai Master",
+            profile: GardenProgressionProfile(
+                lifestyleFantasy: "Bonsai master raising a humble bench of saplings into a serene private collection garden",
+                placeInWorld: "Quiet Kyoto courtyard near old temple lanes",
+                ageBracket: "Timeless elder, disciplined and serene",
+                vibe: "Raked gravel, aged wood, moss, restraint, soft dawn light",
+                avoidList: "Clutter, loud colors, futuristic technology"
+            )
+        ),
+        GardenProgressionFantasyTemplate(
+            id: "community-garden-founder",
+            emoji: "🥕",
+            title: "Garden Founder",
+            profile: GardenProgressionProfile(
+                lifestyleFantasy: "Community garden founder growing a neglected lot into a thriving edible neighborhood oasis",
+                placeInWorld: "Brooklyn side street between brownstones",
+                ageBracket: "Mid 20s, scrappy organizer",
+                vibe: "Hopeful, colorful, handmade, social, practical abundance",
+                avoidList: "Private palace vibes, sterile perfection"
+            )
+        ),
+        GardenProgressionFantasyTemplate(
+            id: "tropical-food-forest-grower",
+            emoji: "🥭",
+            title: "Food Forest Grower",
+            profile: GardenProgressionProfile(
+                lifestyleFantasy: "Permaculture grower turning bare tropical soil into a layered food forest retreat",
+                placeInWorld: "Rainy hillside in Costa Rica",
+                ageBracket: "Early 40s, off-grid experimenter",
+                vibe: "Abundant, steamy, practical, wild-edged, sun after rain",
+                avoidList: "Manicured lawns, cold climates, sterile hardscape"
+            )
+        ),
+        GardenProgressionFantasyTemplate(
+            id: "old-money-rosarian",
+            emoji: "🌹",
+            title: "Old-Money Rosarian",
+            profile: GardenProgressionProfile(
+                lifestyleFantasy: "Old-money rosarian restoring a forgotten rose walk into an aristocratic bloom garden",
+                placeInWorld: "Hamptons coastal manor grounds",
+                ageBracket: "60s, elegant and unhurried",
+                vibe: "Romantic, restrained, fragrant, pale stone, soft coastal light",
+                avoidList: "Neon, synthetic materials, messy vegetable plots"
+            )
+        ),
+        GardenProgressionFantasyTemplate(
+            id: "rainforest-ethnobotanist",
+            emoji: "🌳",
+            title: "Ethnobotanist",
+            profile: GardenProgressionProfile(
+                lifestyleFantasy: "Rainforest ethnobotanist cultivating medicinal specimens beside a remote research hut",
+                placeInWorld: "Upper Amazon rainforest research station",
+                ageBracket: "Mid 30s, field scientist",
+                vibe: "Dense, humid, scientific, respectful, firefly-and-mist atmosphere",
+                avoidList: "Concrete city settings, flashy wealth"
+            )
+        ),
+        GardenProgressionFantasyTemplate(
+            id: "alpine-wildflower-keeper",
+            emoji: "🏔️",
+            title: "Alpine Wildflower",
+            profile: GardenProgressionProfile(
+                lifestyleFantasy: "Alpine wildflower keeper growing a tiny mountain plot into a rare high-altitude botanical refuge",
+                placeInWorld: "Swiss alpine village above a glacier valley",
+                ageBracket: "Late 50s, quiet mountain expert",
+                vibe: "Crisp air, stone paths, meadow color, snow peaks, clean morning light",
+                avoidList: "Tropical plants, urban grit, dark interiors"
+            )
+        ),
+        GardenProgressionFantasyTemplate(
+            id: "mediterranean-patio-gardener",
+            emoji: "🫒",
+            title: "Patio Gardener",
+            profile: GardenProgressionProfile(
+                lifestyleFantasy: "Mediterranean patio gardener turning cracked pots into a terraced citrus, olive, and herb sanctuary",
+                placeInWorld: "Whitewashed hillside village on the Amalfi Coast",
+                ageBracket: "30s, sun-loving host",
+                vibe: "Terracotta, citrus leaves, sea air, linen, warm evening meals",
+                avoidList: "Cold grey weather, corporate modernism"
+            )
+        ),
+        GardenProgressionFantasyTemplate(
+            id: "neon-rooftop-plant-hacker",
+            emoji: "🌃",
+            title: "Plant Hacker",
+            profile: GardenProgressionProfile(
+                lifestyleFantasy: "Cyberpunk plant hacker growing illegal bioluminescent seedlings from a cardboard rooftop setup into a neon botanical lab",
+                placeInWorld: "Rain-slick Neo-Tokyo rooftop above a dense megacity",
+                ageBracket: "Mid 20s, broke but brilliant",
+                vibe: "Improvised, rain-glowing, neon pink-and-cyan, botanical street tech",
+                avoidList: "Pastoral countryside, daylight softness, polished corporate labs"
+            )
+        )
+    ]
+
+    public static let personaTemplates: [GardenProgressionFantasyTemplate] = [
         GardenProgressionFantasyTemplate(
             id: "tech-millionaire-nyc",
             emoji: "💻",
@@ -177,4 +332,6 @@ public enum GardenProgressionFantasyTemplateCatalog {
             )
         )
     ]
+
+    public static let all: [GardenProgressionFantasyTemplate] = gardenTemplates + personaTemplates
 }

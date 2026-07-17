@@ -105,6 +105,7 @@ final class GardenOverlayController {
     private var isDispatchingMouseDown = false
     private var isGnomeZoneDrawingMode = false
     private var isBirdSkyZoneDrawingMode = false
+    private var isAutoGardenerDrawingMode = false
     private var isSoilBrushMode = false
     private var isGnomePerspectiveAdjustmentMode = false
     private var gnomePerspectiveDragSession: GnomePerspectiveDragSession?
@@ -151,6 +152,9 @@ final class GardenOverlayController {
         observeNotification(name: .gardenBirdSkyZoneDrawingModeDidChange) { controller, notification in
             controller.birdSkyZoneDrawingModeDidChange(notification)
         }
+        observeNotification(name: .gardenAutoGardenerDrawingModeDidChange) { controller, notification in
+            controller.autoGardenerDrawingModeDidChange(notification)
+        }
         observeNotification(name: .gardenSoilBrushModeDidChange) { controller, notification in
             controller.soilBrushModeDidChange(notification)
         }
@@ -178,7 +182,20 @@ final class GardenOverlayController {
         startSystemCapturePauseTimer()
     }
 
+    deinit {
+        MainActor.assumeIsolated {
+            shutdown()
+        }
+    }
+
     func shutdown() {
+        teardownBugSystems()
+        closeSceneTransitionCover()
+        interactionWindows.forEach { $0.close() }
+        interactionWindows = []
+        interactionRegionFrames = []
+        windows.forEach { $0.close() }
+        windows = []
         notificationObservers.forEach { NotificationCenter.default.removeObserver($0) }
         notificationObservers = []
         workspaceObservers.forEach { NSWorkspace.shared.notificationCenter.removeObserver($0) }
@@ -350,6 +367,7 @@ final class GardenOverlayController {
             )
             canvasView.isGnomeZoneDrawingMode = isGnomeZoneDrawingMode
             canvasView.isBirdSkyZoneDrawingMode = isBirdSkyZoneDrawingMode
+            canvasView.isAutoGardenerDrawingMode = isAutoGardenerDrawingMode
             canvasView.isSoilBrushMode = isSoilBrushMode
             canvasView.isGnomePerspectiveAdjustmentMode = isGnomePerspectiveAdjustmentMode
             canvasView.arePlantsHiddenForAILockView = arePlantsHiddenForAILockView
@@ -606,6 +624,11 @@ final class GardenOverlayController {
         setBirdSkyZoneDrawingMode(isEnabled)
     }
 
+    private func autoGardenerDrawingModeDidChange(_ notification: Notification) {
+        let isEnabled = notification.userInfo?["isEnabled"] as? Bool ?? false
+        setAutoGardenerDrawingMode(isEnabled)
+    }
+
     private func soilBrushModeDidChange(_ notification: Notification) {
         let isEnabled = notification.userInfo?["isEnabled"] as? Bool ?? false
         setSoilBrushMode(isEnabled)
@@ -699,6 +722,26 @@ final class GardenOverlayController {
             view.isBirdSkyZoneDrawingMode = isEnabled
         }
         desktopWindowSnapshotCache = nil
+        updateInteractionRegionWindows()
+        updateMouseRouting(at: NSEvent.mouseLocation)
+    }
+
+    private func setAutoGardenerDrawingMode(_ isEnabled: Bool) {
+        guard isAutoGardenerDrawingMode != isEnabled else {
+            return
+        }
+
+        handleMouseUp()
+        isAutoGardenerDrawingMode = isEnabled
+        windows.compactMap { $0.contentView as? GardenCanvasView }.forEach { view in
+            view.isAutoGardenerDrawingMode = isEnabled
+        }
+        desktopWindowSnapshotCache = nil
+        if isEnabled {
+            NSCursor.crosshair.set()
+        } else {
+            NSCursor.arrow.set()
+        }
         updateInteractionRegionWindows()
         updateMouseRouting(at: NSEvent.mouseLocation)
     }
@@ -1105,6 +1148,8 @@ final class GardenOverlayController {
         switch store.state.settings.experienceMode {
         case .garden:
             72
+        case .rainforest:
+            96
         case .roomStudio:
             36
         case .alienUFO:
@@ -1344,6 +1389,9 @@ final class GardenOverlayController {
         if isBirdSkyZoneDrawingMode {
             return beginBirdSkyZoneDraft(at: screenPoint)
         }
+        if isAutoGardenerDrawingMode {
+            return beginAutoGardenerDraft(at: screenPoint)
+        }
 
         if claimWallCatClickIfNeeded(at: screenPoint) {
             return true
@@ -1414,6 +1462,7 @@ final class GardenOverlayController {
               !isGardenInteractionLocked,
               !isGnomeZoneDrawingMode,
               !isBirdSkyZoneDrawingMode,
+              !isAutoGardenerDrawingMode,
               !isSoilBrushMode,
               !isStatusMenuOpen,
               (allowsInteractionWindowOrigin || !isPointInsideInteractionWindow(screenPoint)),
@@ -1450,6 +1499,7 @@ final class GardenOverlayController {
               !isGardenInteractionLocked,
               !isGnomeZoneDrawingMode,
               !isBirdSkyZoneDrawingMode,
+              !isAutoGardenerDrawingMode,
               !isSoilBrushMode,
               !isStatusMenuOpen,
               !isPointInsideInteractionWindow(screenPoint),
@@ -1528,6 +1578,34 @@ final class GardenOverlayController {
 
             let point = viewPointCandidates(for: screenPoint, in: window, canvasView: canvasView)[0]
             guard canvasView.beginBirdSkyZoneDraft(at: point) else {
+                continue
+            }
+
+            mousePressCoordinator.markHandled()
+            activeDragWindow = window
+            activeDragPointIndex = 0
+            window.ignoresMouseEvents = false
+            return true
+        }
+
+        return false
+    }
+
+    @discardableResult
+    private func beginAutoGardenerDraft(at screenPoint: NSPoint) -> Bool {
+        isDispatchingMouseDown = true
+        defer {
+            isDispatchingMouseDown = false
+            updateInteractionRegionWindows()
+        }
+
+        for window in windows where window.frame.contains(screenPoint) {
+            guard let canvasView = window.contentView as? GardenCanvasView else {
+                continue
+            }
+
+            let point = viewPointCandidates(for: screenPoint, in: window, canvasView: canvasView)[0]
+            guard canvasView.beginAutoGardenerDraft(at: point) else {
                 continue
             }
 
@@ -1700,6 +1778,9 @@ final class GardenOverlayController {
         if isBirdSkyZoneDrawingMode {
             return canvasView.continueBirdSkyZoneDraft(at: viewPoint)
         }
+        if isAutoGardenerDrawingMode {
+            return canvasView.continueAutoGardenerDraft(at: viewPoint)
+        }
         return canvasView.continuePlantDrag(at: viewPoint)
     }
 
@@ -1722,6 +1803,8 @@ final class GardenOverlayController {
                 _ = canvasView.endGnomeZoneDraft()
             } else if isBirdSkyZoneDrawingMode {
                 _ = canvasView.endBirdSkyZoneDraft()
+            } else if isAutoGardenerDrawingMode {
+                _ = canvasView.endAutoGardenerDraft()
             } else {
                 _ = canvasView.endPlantDrag()
             }
@@ -1745,6 +1828,8 @@ final class GardenOverlayController {
                 _ = canvasView.endGnomeZoneDraft()
             } else if isBirdSkyZoneDrawingMode {
                 _ = canvasView.endBirdSkyZoneDraft()
+            } else if isAutoGardenerDrawingMode {
+                _ = canvasView.endAutoGardenerDraft()
             } else {
                 _ = canvasView.endPlantDrag()
             }

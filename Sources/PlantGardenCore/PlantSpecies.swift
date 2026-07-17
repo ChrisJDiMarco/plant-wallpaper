@@ -391,6 +391,36 @@ public enum PlantSpecies: String, Codable, CaseIterable, Identifiable, Sendable 
         ]
     }
 
+    public static var rainforestSpecies: [PlantSpecies] {
+        [
+            .fern,
+            .mossCarpet,
+            .ivy,
+            .wisteria,
+            .jasmine,
+            .orchid,
+            .ghostOrchid,
+            .jadeVine,
+            .corpseFlower,
+            .queenOfTheNight,
+            .monstera,
+            .bamboo,
+            .mushrooms,
+            .lichens,
+            .pitcherPlant,
+            .waterLily,
+            .baobab,
+            .rainbowEucalyptus,
+            .alocasiaDragonScale,
+            .prayerPlant,
+            .staghornFern,
+            .blackCoralColocasia,
+            .silverFallsDichondra,
+            .redVeinSorrelPatch,
+            .wasabi
+        ]
+    }
+
     public var growthPerHour: Double {
         switch self {
         case .mossCarpet, .cloverPatch, .creepingThyme, .mushrooms, .lichens, .blueStarCreeper, .silverFallsDichondra, .corsicanMint, .redVeinSorrelPatch, .alpineEdelweissMat:

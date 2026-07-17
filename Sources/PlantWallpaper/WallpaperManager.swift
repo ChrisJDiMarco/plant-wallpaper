@@ -22,6 +22,10 @@ struct CustomWallpaperRecord: Codable, Equatable {
         parentSceneKey != nil || versionIndex != nil || editPrompt != nil
     }
 
+    var isProgressionUpdate: Bool {
+        editPrompt?.hasPrefix("Progression Level ") == true
+    }
+
     func isAssociated(with mode: GardenExperienceMode) -> Bool {
         if let experienceMode {
             return experienceMode == mode
@@ -220,12 +224,16 @@ final class WallpaperManager {
         customWallpaperSceneRoots.filter { $0.isAssociated(with: mode) }
     }
 
-    func wallpaperVersions(forSceneKey sceneKey: String? = nil) -> [WallpaperVersionEntry] {
+    func wallpaperVersions(
+        forSceneKey sceneKey: String? = nil,
+        includingProgression: Bool = false
+    ) -> [WallpaperVersionEntry] {
         let selectedKey = GardenWallpaperScene.canonicalKey(for: sceneKey ?? selectedWallpaperSceneKey)
         let rootKey = wallpaperVersionRootKey(for: selectedKey)
         let records = customWallpapers
         let editedRecords = records
             .filter { $0.parentSceneKey == rootKey }
+            .filter { includingProgression || !$0.isProgressionUpdate }
             .sorted { lhs, rhs in
                 let lhsIndex = lhs.versionIndex ?? 0
                 let rhsIndex = rhs.versionIndex ?? 0
@@ -258,10 +266,14 @@ final class WallpaperManager {
         wallpaperVersionRootKey(for: GardenWallpaperScene.canonicalKey(for: sceneKey ?? selectedWallpaperSceneKey))
     }
 
-    func latestWallpaperKey(forSceneRootKey sceneKey: String) -> String {
+    func latestWallpaperKey(
+        forSceneRootKey sceneKey: String,
+        includingProgression: Bool = false
+    ) -> String {
         let rootKey = wallpaperVersionRootKey(for: GardenWallpaperScene.canonicalKey(for: sceneKey))
         let latestRecord = customWallpapers
             .filter { $0.parentSceneKey == rootKey }
+            .filter { includingProgression || !$0.isProgressionUpdate }
             .max { lhs, rhs in
                 let lhsIndex = lhs.versionIndex ?? 0
                 let rhsIndex = rhs.versionIndex ?? 0
@@ -534,19 +546,13 @@ final class WallpaperManager {
 
         let currentSceneKey = selectedWallpaperSceneKey
         let rootSceneKey = wallpaperVersionRootKey(for: currentSceneKey)
-        let sourceImageData = try currentWallpaperReferenceImageData(
-            sceneKey: currentSceneKey,
-            screens: screens,
-            at: date
-        )
         let masterPrompt = WallpaperProgressionPrompt.masterPrompt(
             progression: progression,
             targetLevel: safeLevel,
             experienceMode: experienceMode
         )
-        let editedImageData = try await editOpenAIImageData(
+        let generatedImageData = try await generateOpenAIImageData(
             prompt: masterPrompt,
-            imageData: sourceImageData,
             apiKey: apiKey,
             quality: quality
         )
@@ -556,10 +562,11 @@ final class WallpaperManager {
             prompt: masterPrompt,
             parentSceneKey: rootSceneKey,
             editedFromKey: currentSceneKey,
-            imageData: editedImageData,
+            imageData: generatedImageData,
             screens: screens,
             persistSelection: true,
-            createdAt: Date()
+            createdAt: Date(),
+            experienceMode: experienceMode
         )
     }
 
@@ -644,7 +651,8 @@ final class WallpaperManager {
         imageData: Data,
         screens: [NSScreen],
         persistSelection: Bool,
-        createdAt: Date
+        createdAt: Date,
+        experienceMode: GardenExperienceMode? = nil
     ) throws -> CustomWallpaperRecord {
         guard let image = NSImage(data: imageData),
               image.size.width > 0,
@@ -672,7 +680,7 @@ final class WallpaperManager {
             editedFromKey: canonicalEditedFromKey,
             editPrompt: updatePrompt,
             versionIndex: versionIndex,
-            experienceMode: experienceMode(forSceneRootKey: canonicalParentKey)
+            experienceMode: experienceMode ?? self.experienceMode(forSceneRootKey: canonicalParentKey)
         )
         try upsertCustomWallpaperRecord(record)
 
@@ -876,6 +884,7 @@ final class WallpaperManager {
         let remainingRecords = records.filter { $0.key != key }
         let fallbackKey = remainingRecords
             .filter { $0.parentSceneKey == rootKey }
+            .filter { record.isProgressionUpdate || !$0.isProgressionUpdate }
             .max { lhs, rhs in
                 let lhsIndex = lhs.versionIndex ?? 0
                 let rhsIndex = rhs.versionIndex ?? 0

@@ -126,6 +126,49 @@ struct GardenStatusMenuModeSwitchTests {
         #expect(!fixture.menu.primaryWallpaperSceneTitlesForSelfTest().contains("Empty Conservatory Hall"))
     }
 
+    @Test("switching to Rainforest rebuilds menu around a blank layered jungle canvas")
+    func switchingToRainforestRebuildsMenuAroundBlankLayeredJungleCanvas() throws {
+        let fixture = try StatusMenuModeFixture()
+        defer { fixture.cleanup() }
+
+        fixture.menu.selectExperienceModeForSelfTest(.rainforest)
+
+        let titles = fixture.menu.visibleMenuTitlesForSelfTest()
+        #expect(fixture.store.state.settings.experienceMode == .rainforest)
+        #expect(fixture.store.activeSceneKey == GardenExperienceModeScenePolicy.rainforestCanvasSceneKey)
+        #expect(titles.contains("Mode: Rainforest"))
+        #expect(titles.contains("Lock Rainforest Interactions"))
+        #expect(titles.contains("Build Rainforest Here"))
+        #expect(titles.contains("Rainforest Tools"))
+        #expect(!titles.contains("Garden Tools"))
+        #expect(!titles.contains("Plant Flower Here"))
+        #expect(!titles.contains("Place Items Here"))
+
+        let rainforestCategories = fixture.menu.submenuTitlesForSelfTest(named: "Build Rainforest Here")
+        #expect(rainforestCategories.contains("Rainforest Flowers Here"))
+        #expect(rainforestCategories.contains("Rainforest Trees Here"))
+        #expect(rainforestCategories.contains("Rainforest Foliage Here"))
+        #expect(rainforestCategories.contains("Rainforest Floor Here"))
+        #expect(rainforestCategories.contains("Rainforest Props & Atmosphere"))
+
+        let foliageTitles = fixture.menu.submenuTitlesForSelfTest(named: "Rainforest Foliage Here")
+        #expect(foliageTitles.contains("Add New Rainforest Foliage..."))
+        #expect(foliageTitles.contains("Random Rainforest Foliage Here"))
+        #expect(foliageTitles.contains("Monstera"))
+        #expect(foliageTitles.contains("Vine Curtain"))
+        #expect(fixture.menu.submenuAvailabilityForSelfTest(named: "Rainforest Foliage Here")["Monstera"] == true)
+        #expect(fixture.menu.submenuAvailabilityForSelfTest(named: "Rainforest Foliage Here")["Vine Curtain"] == false)
+
+        let propTitles = fixture.menu.submenuTitlesForSelfTest(named: "Rainforest Props & Atmosphere")
+        #expect(propTitles.contains("Mossy Boulder"))
+        #expect(propTitles.contains("Mist Veil"))
+        #expect(fixture.menu.submenuAvailabilityForSelfTest(named: "Rainforest Props & Atmosphere")["Mossy Boulder"] == false)
+
+        let sceneTitles = fixture.menu.primaryWallpaperSceneTitlesForSelfTest()
+        #expect(sceneTitles == ["Rainforest Canvas"])
+        #expect(fixture.menu.primaryWallpaperSceneAvailabilityForSelfTest()["Rainforest Canvas"] == true)
+    }
+
     @Test("wallpaper scene dropdown shows only scenes for the active mode")
     func wallpaperSceneDropdownShowsOnlyScenesForTheActiveMode() throws {
         let fixture = try StatusMenuModeFixture()
@@ -219,6 +262,10 @@ struct GardenStatusMenuModeSwitchTests {
         #expect(titles.contains("Progression Level 1: Bare First Room"))
         #expect(!titles.contains("add a warmer lamp"))
 
+        let normalVersionTitles = fixture.menu.wallpaperVersionActionsForSelfTest().keys
+        #expect(!normalVersionTitles.contains { $0.contains("Progression Level") })
+        #expect(normalVersionTitles.contains { $0.contains("add a warmer lamp") })
+
         fixture.menu.applyWallpaperVersionForSelfTest(progressionRecord.key)
 
         #expect(fixture.store.activeSceneKey == progressionRecord.key)
@@ -305,6 +352,27 @@ struct GardenStatusMenuModeSwitchTests {
         #expect(titles.contains("Remove All Bird Sky Areas"))
     }
 
+    @Test("garden tools expose Auto Gardener actions")
+    func gardenToolsExposeAutoGardenerActions() throws {
+        let fixture = try StatusMenuModeFixture()
+        defer { fixture.cleanup() }
+
+        var titles = fixture.menu.submenuTitlesForSelfTest(named: "Garden Tools")
+        #expect(titles.contains("Auto Gardener"))
+        #expect(titles.contains("Clear Auto Gardener Areas"))
+        #expect(fixture.menu.submenuAvailabilityForSelfTest(named: "Garden Tools")["Clear Auto Gardener Areas"] == false)
+
+        fixture.store.addAutoGardenerZone(screenIndex: 0, points: [
+            GardenPoint(x: 0.2, y: 0.4),
+            GardenPoint(x: 0.6, y: 0.4),
+            GardenPoint(x: 0.5, y: 0.8)
+        ])
+
+        titles = fixture.menu.submenuTitlesForSelfTest(named: "Garden Tools")
+        #expect(titles.contains("Auto Gardener"))
+        #expect(fixture.menu.submenuAvailabilityForSelfTest(named: "Garden Tools")["Clear Auto Gardener Areas"] == true)
+    }
+
     @Test("status menu hover tooltips are off by default except the AI lock view explainer")
     func statusMenuHoverTooltipsAreOffByDefault() throws {
         let fixture = try StatusMenuModeFixture()
@@ -330,6 +398,7 @@ struct GardenStatusMenuModeSwitchTests {
         #expect(keepsakes.contains("Generate Flythrough Video..."))
         #expect(keepsakes.contains("Go Back to Scene"))
         #expect(keepsakes.contains("Loop Flythrough Video"))
+        #expect(keepsakes.contains("Saved Flythrough Videos"))
         #expect(keepsakes.contains("Flythrough Video Settings..."))
         #expect(fixture.menu.menuItemStateForSelfTest(named: "Loop Flythrough Video") == .on)
 
@@ -338,20 +407,53 @@ struct GardenStatusMenuModeSwitchTests {
         #expect(fixture.menu.menuItemStateForSelfTest(named: "Loop Flythrough Video") == .off)
     }
 
+    @Test("keepsakes menu lists and applies saved flythrough videos")
+    func keepsakesMenuListsAndAppliesSavedFlythroughVideos() throws {
+        let fixture = try StatusMenuModeFixture()
+        defer { fixture.cleanup() }
+        let record = GardenFlythroughVideoRecord(
+            id: UUID(),
+            videoURL: fixture.directoryURL.appendingPathComponent("flythrough.mp4"),
+            sceneKey: GardenWallpaperScene.emptyConservatoryHall.rawValue,
+            createdAt: Date(timeIntervalSince1970: 0),
+            durationSeconds: 15
+        )
+        var appliedRecord: GardenFlythroughVideoRecord?
+
+        fixture.menu.flythroughVideoRecordsProvider = { [record] }
+        fixture.menu.applyFlythroughVideoRecordHandler = { appliedRecord = $0 }
+
+        let savedVideos = fixture.menu.submenuTitlesForSelfTest(named: "Saved Flythrough Videos")
+
+        #expect(savedVideos.contains("Set 15s Flythrough"))
+        fixture.menu.applySavedFlythroughVideoRecordForSelfTest(id: record.id)
+        #expect(appliedRecord == record)
+    }
+
     @Test("clicking a progression template fills every fantasy-profile field")
     func progressionTemplateFillsEveryField() throws {
         let fixture = try StatusMenuModeFixture()
         defer { fixture.cleanup() }
 
         let template = try #require(
-            GardenProgressionFantasyTemplateCatalog.all.first { $0.id == "intergalactic-warlord" }
+            GardenProgressionFantasyTemplateCatalog.templates(for: .garden)
+                .first { $0.id == "rooftop-botanist-nyc" }
         )
         let filled = try #require(
-            fixture.menu.applyProgressionTemplateForSelfTest("intergalactic-warlord")
+            fixture.menu.applyProgressionTemplateForSelfTest("rooftop-botanist-nyc")
         )
 
         #expect(filled == template.profile)
         #expect(filled.isUsable)
+        #expect(fixture.menu.applyProgressionTemplateForSelfTest("tokyo-cyberpunk") == nil)
+
+        fixture.menu.selectExperienceModeForSelfTest(.roomStudio)
+        let roomTemplate = try #require(
+            GardenProgressionFantasyTemplateCatalog.templates(for: .roomStudio)
+                .first { $0.id == "tokyo-cyberpunk" }
+        )
+        #expect(fixture.menu.applyProgressionTemplateForSelfTest("tokyo-cyberpunk") == roomTemplate.profile)
+        #expect(fixture.menu.applyProgressionTemplateForSelfTest("rooftop-botanist-nyc") == nil)
         #expect(fixture.menu.applyProgressionTemplateForSelfTest("does-not-exist") == nil)
     }
 

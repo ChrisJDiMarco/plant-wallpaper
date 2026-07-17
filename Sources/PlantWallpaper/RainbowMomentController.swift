@@ -80,6 +80,22 @@ final class RainbowMomentController: NSObject {
         startRefreshTimer()
     }
 
+    deinit {
+        MainActor.assumeIsolated {
+            shutdown()
+        }
+    }
+
+    func shutdown() {
+        refreshTimer?.invalidate()
+        refreshTimer = nil
+        if let storeObserver {
+            NotificationCenter.default.removeObserver(storeObserver)
+            self.storeObserver = nil
+        }
+        teardownWindows()
+    }
+
     func show() {
         _ = ensureWindowsIfNeeded()
         refresh(force: true)
@@ -178,6 +194,10 @@ final class RainbowMomentController: NSObject {
     }
 
     private func teardownWindows() {
+        webViews.forEach {
+            $0.stopLoading()
+            $0.navigationDelegate = nil
+        }
         windows.forEach { $0.close() }
         windows = []
         webViews = []

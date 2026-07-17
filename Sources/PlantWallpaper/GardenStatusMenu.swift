@@ -464,6 +464,8 @@ final class GardenStatusMenu: NSObject {
     private let birdSkyZoneDrawingItem = NSMenuItem()
     private let hideBirdFlocksItem = NSMenuItem()
     private let removeAllBirdSkyZonesItem = NSMenuItem()
+    private let autoGardenerDrawingItem = NSMenuItem()
+    private let clearAutoGardenerZonesItem = NSMenuItem()
     private let soilBrushItem = NSMenuItem()
     private let removeAllSoilPatchesItem = NSMenuItem()
     private let catCompanionItem = NSMenuItem()
@@ -480,6 +482,8 @@ final class GardenStatusMenu: NSObject {
     private let roomIndoorPlantItem = NSMenuItem()
     private var roomIndoorPlantSubmenu: NSMenu?
     private var plantCategorySubmenus: [PlantKind: NSMenu] = [:]
+    private var rainforestPlantCategorySubmenus: [PlantKind: NSMenu] = [:]
+    private weak var rainforestPropSubmenu: NSMenu?
     private var alienPlantCategorySubmenus: [PlantKind: NSMenu] = [:]
     private let roomWallDecorItem = NSMenuItem()
     private let roomSoftGoodsItem = NSMenuItem()
@@ -533,6 +537,7 @@ final class GardenStatusMenu: NSObject {
     private let flythroughBackToSceneItem = NSMenuItem()
     private let flythroughLoopingItem = NSMenuItem()
     private let flythroughVideoSettingsItem = NSMenuItem()
+    private weak var flythroughSavedVideosSubmenu: NSMenu?
     private var settingsWindowController: GardenSettingsWindowController?
     private lazy var assistantWindowController = GardenAssistantWindowController { [weak self] in
         self?.assistantRuntimeContext()
@@ -557,13 +562,16 @@ final class GardenStatusMenu: NSObject {
     private var isMenuRebuildScheduled = false
     private var isGnomeZoneDrawingMode = false
     private var isBirdSkyZoneDrawingMode = false
+    private var isAutoGardenerDrawingMode = false
     private var isSoilBrushMode = false
     private var isGnomePerspectiveAdjustmentMode = false
     private var gnomeSettlementSetupPanelController: GnomeSettlementSetupPanelController?
+    private var autoGardenerSetupPanelController: AutoGardenerSetupPanelController?
     private var isUpdatingWallpaper = false
     private var wallpaperUpdateTask: Task<Void, Never>?
     private var isGeneratingFlythroughVideo = false
     private var flythroughVideoTask: Task<Void, Never>?
+    private var didShutdown = false
     private static let appDefaultsSuiteName = "com.chrisdimarco.wallpapergarden"
 
     init(store: GardenStore, wallpaperManager: WallpaperManager) {
@@ -580,6 +588,34 @@ final class GardenStatusMenu: NSObject {
         observeNotification(name: .gardenEntitlementsDidChange) { menu, _ in
             menu.entitlementsDidChange()
         }
+    }
+
+    deinit {
+        MainActor.assumeIsolated {
+            shutdown()
+        }
+    }
+
+    func shutdown() {
+        guard !didShutdown else {
+            return
+        }
+        didShutdown = true
+        notificationObservers.forEach { NotificationCenter.default.removeObserver($0) }
+        notificationObservers = []
+        mouseTrackingTimer?.invalidate()
+        mouseTrackingTimer = nil
+        wallpaperUpdateTask?.cancel()
+        wallpaperUpdateTask = nil
+        flythroughVideoTask?.cancel()
+        flythroughVideoTask = nil
+        settingsWindowController?.close()
+        settingsWindowController = nil
+        gnomeSettlementSetupPanelController?.close()
+        gnomeSettlementSetupPanelController = nil
+        autoGardenerSetupPanelController?.close()
+        autoGardenerSetupPanelController = nil
+        NSStatusBar.system.removeStatusItem(statusItem)
     }
 
     private func observeNotification(
@@ -648,6 +684,7 @@ final class GardenStatusMenu: NSObject {
         lastRenderedExperienceMode = store.state.settings.experienceMode
         lastRenderedAssistantMenuItemEnabled = store.state.settings.isAssistantMenuItemEnabled
         plantCategorySubmenus.removeAll()
+        rainforestPlantCategorySubmenus.removeAll()
         roomCategorySubmenus.removeAll()
         let menu = NSMenu()
         let menuDelegate = MainActorMenuDelegate(
@@ -851,6 +888,8 @@ final class GardenStatusMenu: NSObject {
             birdSkyZoneDrawingItem,
             hideBirdFlocksItem,
             removeAllBirdSkyZonesItem,
+            autoGardenerDrawingItem,
+            clearAutoGardenerZonesItem,
             soilBrushItem,
             removeAllSoilPatchesItem,
             catCompanionItem,
@@ -1016,6 +1055,12 @@ final class GardenStatusMenu: NSObject {
         return item.state
     }
 
+    func applySavedFlythroughVideoRecordForSelfTest(id: UUID) {
+        let item = NSMenuItem()
+        item.representedObject = id.uuidString
+        applySavedFlythroughVideoFromMenu(item)
+    }
+
     func toggleTimeOfDayPlantDarkeningForSelfTest() {
         toggleTimeOfDayPlantDarkening()
     }
@@ -1137,6 +1182,8 @@ final class GardenStatusMenu: NSObject {
         switch mode {
         case .garden:
             "leaf.fill"
+        case .rainforest:
+            "leaf.circle.fill"
         case .roomStudio:
             "bed.double.fill"
         case .alienUFO:
@@ -1148,6 +1195,8 @@ final class GardenStatusMenu: NSObject {
         switch mode {
         case .garden:
             "Create living desktop gardens with plants, care, harvests, and seeds."
+        case .rainforest:
+            "Fill the desktop with big layered rainforest plants, vines, rocks, logs, moss, and mist."
         case .roomStudio:
             "Create bedroom, hangout room, studio, and man cave scenes with generated room props."
         case .alienUFO:
@@ -1158,6 +1207,8 @@ final class GardenStatusMenu: NSObject {
     private static func proFeature(for mode: GardenExperienceMode) -> GardenProFeature? {
         switch mode {
         case .garden:
+            nil
+        case .rainforest:
             nil
         case .roomStudio:
             .roomStudio
@@ -1170,6 +1221,8 @@ final class GardenStatusMenu: NSObject {
         switch mode {
         case .garden:
             "Today in Garden..."
+        case .rainforest:
+            "Today in Rainforest..."
         case .roomStudio:
             "Today in Room Studio..."
         case .alienUFO:
@@ -1447,6 +1500,15 @@ final class GardenStatusMenu: NSObject {
             submenu.addItem(ambientWildlifeItem)
 
             submenu.addItem(NSMenuItem.separator())
+            autoGardenerDrawingItem.target = self
+            autoGardenerDrawingItem.action = #selector(toggleAutoGardenerDrawingMode)
+            autoGardenerDrawingItem.keyEquivalent = ""
+            submenu.addItem(autoGardenerDrawingItem)
+            clearAutoGardenerZonesItem.target = self
+            clearAutoGardenerZonesItem.action = #selector(clearAutoGardenerZones)
+            clearAutoGardenerZonesItem.keyEquivalent = ""
+            submenu.addItem(clearAutoGardenerZonesItem)
+            submenu.addItem(NSMenuItem.separator())
             gnomeZoneDrawingItem.target = self
             gnomeZoneDrawingItem.action = #selector(toggleGnomeZoneDrawingMode)
             gnomeZoneDrawingItem.keyEquivalent = ""
@@ -1488,6 +1550,15 @@ final class GardenStatusMenu: NSObject {
             submenu.addItem(menuItem(title: "Prune Selected", symbol: "scissors", action: #selector(pruneSelected)))
             submenu.addItem(menuItem(title: "Nourish Selected", symbol: "sparkles", action: #selector(nourishSelected)))
             submenu.addItem(menuItem(title: "Remove Selected", symbol: "trash", action: #selector(removeSelected)))
+        case .rainforest:
+            ambientWildlifeItem.target = self
+            ambientWildlifeItem.action = #selector(toggleAmbientWildlife)
+            ambientWildlifeItem.keyEquivalent = ""
+            submenu.addItem(ambientWildlifeItem)
+            submenu.addItem(NSMenuItem.separator())
+            submenu.addItem(menuItem(title: "Prune Selected Rainforest Plant", symbol: "scissors", action: #selector(pruneSelected)))
+            submenu.addItem(menuItem(title: "Nourish Selected Rainforest Plant", symbol: "sparkles", action: #selector(nourishSelected)))
+            submenu.addItem(menuItem(title: "Remove Selected Rainforest Plant", symbol: "trash", action: #selector(removeSelected)))
         case .roomStudio:
             submenu.addItem(menuItem(title: "Remove Selected Object", symbol: "trash", action: #selector(removeSelected)))
         case .alienUFO:
@@ -1508,6 +1579,8 @@ final class GardenStatusMenu: NSObject {
         switch mode {
         case .garden:
             "Garden Tools"
+        case .rainforest:
+            "Rainforest Tools"
         case .roomStudio:
             "Room Studio Tools"
         case .alienUFO:
@@ -1519,6 +1592,8 @@ final class GardenStatusMenu: NSObject {
         switch mode {
         case .garden:
             "Lock Garden Interactions"
+        case .rainforest:
+            "Lock Rainforest Interactions"
         case .roomStudio:
             "Lock Room Studio Interactions"
         case .alienUFO:
@@ -1530,6 +1605,8 @@ final class GardenStatusMenu: NSObject {
         switch mode {
         case .garden:
             "Garden"
+        case .rainforest:
+            "Rainforest"
         case .roomStudio:
             "Room Studio"
         case .alienUFO:
@@ -1665,6 +1742,16 @@ final class GardenStatusMenu: NSObject {
                 harvestCropsItem.image = image
             }
             submenu.addItem(harvestCropsItem)
+        case .rainforest:
+            title = RainforestAssetMenuCatalog.title
+            symbol = "leaf.circle.fill"
+            submenu.addItem(rainforestPlantCategoryMenuItem(plantFlowerItem, kind: .flower))
+            submenu.addItem(rainforestPlantCategoryMenuItem(plantTreeItem, kind: .tree))
+            submenu.addItem(rainforestPlantCategoryMenuItem(plantFoliageItem, kind: .foliage))
+            submenu.addItem(rainforestPlantCategoryMenuItem(plantMeadowItem, kind: .meadow))
+            submenu.addItem(rainforestPlantCategoryMenuItem(plantEdibleItem, kind: .edible))
+            submenu.addItem(NSMenuItem.separator())
+            submenu.addItem(rainforestPropMenuItem())
         case .roomStudio:
             title = "Place Items Here"
             symbol = "shippingbox.fill"
@@ -1775,6 +1862,7 @@ final class GardenStatusMenu: NSObject {
             action: #selector(toggleFlythroughVideoLooping)
         )
         submenu.addItem(flythroughLoopingItem)
+        submenu.addItem(flythroughSavedVideosMenuItem())
         configureMenuItem(
             flythroughVideoSettingsItem,
             title: "Flythrough Video Settings...",
@@ -1787,6 +1875,48 @@ final class GardenStatusMenu: NSObject {
         submenu.addItem(menuItem(title: "Export Time-Lapse...", symbol: "film.stack", action: #selector(exportTimeLapse)))
         submenu.addItem(menuItem(title: "Save Garden Health Check...", symbol: "stethoscope", action: #selector(saveHealthCheck)))
         return submenuItem(title: "Keepsakes & Exports", symbol: "tray.and.arrow.down.fill", submenu: submenu)
+    }
+
+    private func flythroughSavedVideosMenuItem() -> NSMenuItem {
+        let submenu = NSMenu(title: "Saved Flythrough Videos")
+        submenu.autoenablesItems = false
+        flythroughSavedVideosSubmenu = submenu
+        populateFlythroughSavedVideosSubmenu(submenu)
+        return submenuItem(title: "Saved Flythrough Videos", symbol: "play.rectangle.on.rectangle", submenu: submenu)
+    }
+
+    private func populateFlythroughSavedVideosSubmenu(_ submenu: NSMenu) {
+        submenu.removeAllItems()
+        let records = flythroughVideoRecordsProvider?() ?? []
+        guard !records.isEmpty else {
+            let item = NSMenuItem(title: "No saved videos yet", action: nil, keyEquivalent: "")
+            item.isEnabled = false
+            submenu.addItem(item)
+            return
+        }
+
+        for record in records {
+            let item = NSMenuItem(
+                title: Self.flythroughVideoMenuTitle(for: record),
+                action: #selector(applySavedFlythroughVideoFromMenu(_:)),
+                keyEquivalent: ""
+            )
+            item.target = self
+            item.representedObject = record.id.uuidString
+            item.toolTip = record.videoURL.lastPathComponent
+            if let image = NSImage(systemSymbolName: "play.rectangle", accessibilityDescription: item.title) {
+                image.isTemplate = true
+                item.image = image
+            }
+            submenu.addItem(item)
+        }
+    }
+
+    private static func flythroughVideoMenuTitle(for record: GardenFlythroughVideoRecord) -> String {
+        let duration = record.durationSeconds > 0
+            ? "\(record.durationSeconds)s"
+            : "Saved"
+        return "Set \(duration) Flythrough"
     }
 
     private func wallpaperToolsMenu() -> NSMenuItem {
@@ -1982,7 +2112,9 @@ final class GardenStatusMenu: NSObject {
         submenu.removeAllItems()
         wallpaperVersionItems.removeAll()
 
-        let entries = wallpaperManager.wallpaperVersions()
+        let entries = store.state.settings.experienceMode == .rainforest
+            ? []
+            : wallpaperManager.wallpaperVersions()
         guard entries.count > 1 else {
             let emptyItem = NSMenuItem(title: "No wallpaper edits yet", action: nil, keyEquivalent: "")
             emptyItem.isEnabled = false
@@ -2032,6 +2164,26 @@ final class GardenStatusMenu: NSObject {
     private func populateWallpaperScenesSubmenu(_ submenu: NSMenu) {
         submenu.removeAllItems()
         wallpaperSceneItems.removeAll()
+
+        if store.state.settings.experienceMode == .rainforest {
+            let item = NSMenuItem(
+                title: "Rainforest Canvas",
+                action: #selector(applyRainforestCanvasScene),
+                keyEquivalent: ""
+            )
+            item.target = self
+            item.representedObject = GardenExperienceModeScenePolicy.rainforestCanvasSceneKey
+            item.toolTip = "A minimal misty canvas; plants and props create the rainforest."
+            item.isEnabled = true
+            item.state = .on
+            if let image = NSImage(systemSymbolName: "leaf.circle.fill", accessibilityDescription: item.title) {
+                image.isTemplate = true
+                item.image = image
+            }
+            wallpaperSceneItems.append(item)
+            submenu.addItem(item)
+            return
+        }
 
         for scene in GardenWallpaperScene.scenes(for: store.state.settings.experienceMode) {
             let isSelectable = scene.isSelectableScene
@@ -2142,7 +2294,7 @@ final class GardenStatusMenu: NSObject {
     }
 
     private static func isProgressionWallpaper(_ record: CustomWallpaperRecord) -> Bool {
-        record.editPrompt?.hasPrefix("Progression Level ") == true
+        record.isProgressionUpdate
     }
 
     private func plantCategoryMenuItem(
@@ -2168,6 +2320,139 @@ final class GardenStatusMenu: NSObject {
         plantCategorySubmenus[kind] = submenu
         populatePlantCategorySubmenu(submenu, kind: kind, randomAction: randomAction)
         item.submenu = submenu
+        return item
+    }
+
+    private func rainforestPlantCategoryMenuItem(_ item: NSMenuItem, kind: PlantKind) -> NSMenuItem {
+        let title = RainforestAssetMenuCatalog.title(for: kind)
+        let style = Self.plantMenuStyle(for: kind)
+        item.title = title
+        item.attributedTitle = Self.plantMenuTitle(title, color: NSColor.systemGreen)
+        item.target = nil
+        item.action = nil
+        item.keyEquivalent = ""
+        item.image = Self.tintedSymbol(
+            style.symbolName,
+            color: NSColor.systemGreen,
+            accessibilityDescription: title
+        )
+
+        let submenu = NSMenu(title: title)
+        submenu.autoenablesItems = false
+        rainforestPlantCategorySubmenus[kind] = submenu
+        populateRainforestPlantCategorySubmenu(submenu, kind: kind)
+        item.submenu = submenu
+        return item
+    }
+
+    private func populateRainforestPlantCategorySubmenu(_ submenu: NSMenu, kind: PlantKind) {
+        submenu.removeAllItems()
+        let style = Self.plantMenuStyle(for: kind)
+
+        let addNewItem = NSMenuItem(
+            title: RainforestAssetMenuCatalog.addNewTitle(for: kind),
+            action: #selector(createCustomPlantAsset(_:)),
+            keyEquivalent: ""
+        )
+        addNewItem.target = self
+        addNewItem.representedObject = kind.rawValue
+        addNewItem.toolTip = "Generate a transparent PNG rainforest cutout with AI, then layer it into this canvas."
+        if let image = NSImage(systemSymbolName: "sparkles", accessibilityDescription: addNewItem.title) {
+            image.isTemplate = true
+            addNewItem.image = image
+        }
+        submenu.addItem(addNewItem)
+        submenu.addItem(NSMenuItem.separator())
+
+        let savedPlants = store.customPlantAssets.savedPlantAssets(kind: kind, mode: .rainforest)
+        for record in savedPlants {
+            submenu.addItem(savedCustomAssetMenuItem(
+                for: record,
+                symbolName: style.symbolName,
+                color: NSColor.systemGreen
+            ))
+        }
+        if !savedPlants.isEmpty {
+            submenu.addItem(NSMenuItem.separator())
+        }
+
+        let enabledSpecies = GardenPlantSpecificMenuCatalog.enabledRainforestSpecies(in: kind)
+        let randomItem = NSMenuItem(
+            title: RainforestAssetMenuCatalog.randomTitle(for: kind),
+            action: enabledSpecies.isEmpty ? nil : #selector(plantRandomRainforestSpecies(_:)),
+            keyEquivalent: ""
+        )
+        randomItem.target = enabledSpecies.isEmpty ? nil : self
+        randomItem.representedObject = kind.rawValue
+        randomItem.isEnabled = !enabledSpecies.isEmpty
+        randomItem.toolTip = enabledSpecies.isEmpty
+            ? "No bundled rainforest \(kind.displayName.lowercased()) assets are ready yet."
+            : "Place a random rainforest-friendly \(kind.displayName.lowercased()) at the current cursor location."
+        submenu.addItem(randomItem)
+        submenu.addItem(NSMenuItem.separator())
+
+        let entries = GardenPlantSpecificMenuCatalog.rainforestEntries(in: kind)
+        let assetReadyEntries = entries.filter(\.isAssetAvailable)
+        let placeholderEntries = entries.filter { !$0.isAssetAvailable }
+
+        for entry in assetReadyEntries {
+            submenu.addItem(plantSpeciesMenuItem(for: entry))
+        }
+
+        let futureAssets = RainforestAssetMenuCatalog.futureAssets(in: kind)
+        if !placeholderEntries.isEmpty || !futureAssets.isEmpty {
+            submenu.addItem(NSMenuItem.separator())
+            let comingSoonItem = NSMenuItem(title: RainforestAssetMenuCatalog.comingSoonTitle, action: nil, keyEquivalent: "")
+            comingSoonItem.isEnabled = false
+            submenu.addItem(comingSoonItem)
+
+            for entry in placeholderEntries {
+                submenu.addItem(plantSpeciesMenuItem(for: entry))
+            }
+            for asset in futureAssets {
+                submenu.addItem(disabledRainforestFutureAssetMenuItem(asset, symbolName: style.symbolName))
+            }
+        }
+    }
+
+    private func rainforestPropMenuItem() -> NSMenuItem {
+        let title = RainforestAssetMenuCatalog.propMenuTitle
+        let submenu = NSMenu(title: title)
+        submenu.autoenablesItems = false
+        rainforestPropSubmenu = submenu
+        populateRainforestPropSubmenu(submenu)
+        return submenuItem(title: title, symbol: "mountain.2.fill", submenu: submenu)
+    }
+
+    private func populateRainforestPropSubmenu(_ submenu: NSMenu) {
+        submenu.removeAllItems()
+        let comingSoonItem = NSMenuItem(title: RainforestAssetMenuCatalog.comingSoonTitle, action: nil, keyEquivalent: "")
+        comingSoonItem.isEnabled = false
+        submenu.addItem(comingSoonItem)
+
+        for asset in RainforestAssetMenuCatalog.propAssets {
+            let item = NSMenuItem(title: asset.title, action: nil, keyEquivalent: "")
+            item.isEnabled = false
+            item.toolTip = asset.promptSeed
+            if let image = NSImage(systemSymbolName: asset.symbolName, accessibilityDescription: asset.title) {
+                image.isTemplate = true
+                item.image = image
+            }
+            submenu.addItem(item)
+        }
+    }
+
+    private func disabledRainforestFutureAssetMenuItem(
+        _ asset: RainforestFutureAsset,
+        symbolName: String
+    ) -> NSMenuItem {
+        let item = NSMenuItem(title: asset.title, action: nil, keyEquivalent: "")
+        item.isEnabled = false
+        item.toolTip = asset.promptSeed
+        if let image = NSImage(systemSymbolName: symbolName, accessibilityDescription: asset.title) {
+            image.isTemplate = true
+            item.image = image
+        }
         return item
     }
 
@@ -2394,6 +2679,12 @@ final class GardenStatusMenu: NSObject {
             }
             populatePlantCategorySubmenu(submenu, kind: kind, randomAction: randomAction)
         }
+        for (kind, submenu) in rainforestPlantCategorySubmenus {
+            populateRainforestPlantCategorySubmenu(submenu, kind: kind)
+        }
+        if let rainforestPropSubmenu {
+            populateRainforestPropSubmenu(rainforestPropSubmenu)
+        }
         for (kind, submenu) in alienPlantCategorySubmenus {
             populateAlienPlantCategorySubmenu(submenu, kind: kind)
         }
@@ -2606,13 +2897,38 @@ final class GardenStatusMenu: NSObject {
             accessibilityDescription: pauseItem.title
         )
         updateAmbientSoundItems()
-        ambientWildlifeItem.title = store.state.settings.experienceMode == .alienUFO
-            ? "Show Alien Bugs & Fireflies"
-            : "Show Animated Bugs"
+        ambientWildlifeItem.title = switch store.state.settings.experienceMode {
+        case .alienUFO:
+            "Show Alien Bugs & Fireflies"
+        case .rainforest:
+            "Show Rainforest Bugs & Fireflies"
+        case .garden, .roomStudio:
+            "Show Animated Bugs"
+        }
         ambientWildlifeItem.state = store.state.isEffectiveAmbientWildlifeEnabled ? .on : .off
         ambientWildlifeItem.image = NSImage(
             systemSymbolName: "ladybug.fill",
             accessibilityDescription: ambientWildlifeItem.title
+        )
+        autoGardenerDrawingItem.title = isAutoGardenerDrawingMode
+            ? "Done Drawing Auto Gardener Areas"
+            : "Auto Gardener"
+        autoGardenerDrawingItem.state = isAutoGardenerDrawingMode ? .on : .off
+        autoGardenerDrawingItem.toolTip = isAutoGardenerDrawingMode
+            ? "Click when plantable areas are highlighted, or use Auto-Plant in the setup panel."
+            : "Highlight where plants can go, set placement and size hints, then Auto-Plant the scene."
+        autoGardenerDrawingItem.image = NSImage(
+            systemSymbolName: isAutoGardenerDrawingMode ? "wand.and.stars.inverse" : "wand.and.stars",
+            accessibilityDescription: autoGardenerDrawingItem.title
+        )
+        clearAutoGardenerZonesItem.title = "Clear Auto Gardener Areas"
+        clearAutoGardenerZonesItem.isEnabled = !store.state.autoGardenerZones.isEmpty
+        clearAutoGardenerZonesItem.toolTip = store.state.autoGardenerZones.isEmpty
+            ? "No Auto Gardener areas exist in this scene yet."
+            : "Remove every highlighted Auto Gardener planting area from this scene."
+        clearAutoGardenerZonesItem.image = NSImage(
+            systemSymbolName: "eraser",
+            accessibilityDescription: clearAutoGardenerZonesItem.title
         )
         gnomeZoneDrawingItem.title = isGnomeZoneDrawingMode
             ? "Done Drawing Gnome Areas"
@@ -2741,14 +3057,16 @@ final class GardenStatusMenu: NSObject {
         updatePlantingShortcut(plantEdibleItem, kind: .edible)
         for sceneItem in wallpaperSceneItems {
             let rawValue = sceneItem.representedObject as? String
-            sceneItem.state = rawValue == wallpaperManager.wallpaperSceneRootKey() ? .on : .off
+            sceneItem.state = rawValue == activeSceneRootKey ? .on : .off
         }
         sceneQuickSwitchLabel?.stringValue = GardenMenuTitleFormatter.compactStatusTitle(
             activeSceneName,
             maxLength: 32
         )
         sceneQuickSwitchLabel?.toolTip = "Current scene: \(activeSceneName)"
-        let versionEntries = wallpaperManager.wallpaperVersions()
+        let versionEntries = store.state.settings.experienceMode == .rainforest
+            ? []
+            : wallpaperManager.wallpaperVersions()
         let editedVersionCount = versionEntries.filter { !$0.isOriginal }.count
         generationStatusItem.isHidden = !isUpdatingWallpaper
         generationStatusItem.title = "Generating wallpaper... Cancel"
@@ -2790,7 +3108,7 @@ final class GardenStatusMenu: NSObject {
             ? "Generating Flythrough..."
             : "Generate Flythrough Video..."
         flythroughVideoItem.isEnabled = !isGeneratingFlythroughVideo
-        flythroughVideoItem.toolTip = "Choose a 10- to 60-second 1080p Seedance 2.0 flythrough, stitch 10-second clips when needed, and optionally use it as a desktop video wallpaper."
+        flythroughVideoItem.toolTip = "Choose a 5- to 60-second 1080p Seedance 2.0 flythrough, stitch clips when needed, and optionally use it as a desktop video wallpaper."
         flythroughVideoItem.image = NSImage(
             systemSymbolName: isGeneratingFlythroughVideo ? "hourglass" : "video.badge.sparkles",
             accessibilityDescription: flythroughVideoItem.title
@@ -2807,6 +3125,9 @@ final class GardenStatusMenu: NSObject {
             : "Flythrough video wallpaper plays once when you double-click the desktop."
         flythroughVideoSettingsItem.isEnabled = true
         flythroughVideoSettingsItem.toolTip = "Open saved flythrough videos and video wallpaper controls."
+        if let flythroughSavedVideosSubmenu {
+            populateFlythroughSavedVideosSubmenu(flythroughSavedVideosSubmenu)
+        }
         statusItem.button?.toolTip = "Plant Wallpaper - \(vitality.summary) - \(season.summary) - \(sunlight.summary) - \(dew.summary) - \(recommendation.summary)"
         if let lastError = store.lastError {
             let errorTitle = "Save Error: \(lastError)"
@@ -2959,11 +3280,13 @@ final class GardenStatusMenu: NSObject {
     }
 
     private func updatePlantingShortcut(_ item: NSMenuItem, kind: PlantKind) {
-        let sceneRootKey = wallpaperManager.wallpaperSceneRootKey()
-        let enabledSpecies = GardenPlantSpecificMenuCatalog.enabledSpecies(
-            sceneKey: sceneRootKey,
-            in: kind
-        )
+        let sceneRootKey = activeSceneRootKey
+        let enabledSpecies = store.state.settings.experienceMode == .rainforest
+            ? GardenPlantSpecificMenuCatalog.enabledRainforestSpecies(in: kind)
+            : GardenPlantSpecificMenuCatalog.enabledSpecies(
+                sceneKey: sceneRootKey,
+                in: kind
+            )
         let environment = GardenScenePlantEnvironment(sceneKey: sceneRootKey)
         item.isEnabled = !enabledSpecies.isEmpty
         let style = Self.plantMenuStyle(for: kind)
@@ -3223,9 +3546,6 @@ final class GardenStatusMenu: NSObject {
     }
 
     @objc private func toggleJarvisAssistant() {
-        guard requireProFeature(.jarvisAssistant) else {
-            return
-        }
         assistantWindowController.toggle()
         updateDynamicItems()
     }
@@ -3304,7 +3624,7 @@ final class GardenStatusMenu: NSObject {
             }
 
             do {
-                let videoURL = try await GardenFlythroughVideoGenerator(segmentCount: pathSelection.segmentCount).generate(
+                let videoURL = try await GardenFlythroughVideoGenerator(durationSeconds: pathSelection.durationSeconds).generate(
                     snapshotPNGData: snapshotData,
                     apiKey: apiKey,
                     pathInstruction: pathSelection.pathInstruction
@@ -3338,10 +3658,10 @@ final class GardenStatusMenu: NSObject {
     }
 
     private func confirmFalFlythroughGeneration(durationSeconds: Int) -> Bool {
-        let segmentCount = max(1, durationSeconds / 10)
+        let segmentCount = GardenFlythroughVideoGenerator.segmentDurations(for: durationSeconds).count
         let alert = NSAlert()
         alert.messageText = "Generate \(durationSeconds)-second looping flythrough?"
-        alert.informativeText = "This sends the current clean garden snapshot to fal.ai and starts \(segmentCount) 10-second 1080p Seedance 2.0 video job\(segmentCount == 1 ? "" : "s") billed to your fal account. The finished MP4 is stitched locally when needed."
+        alert.informativeText = "This sends the current clean garden snapshot to fal.ai and starts \(segmentCount) 1080p Seedance 2.0 video job\(segmentCount == 1 ? "" : "s") billed to your fal account. The finished MP4 is stitched locally when needed."
         alert.alertStyle = .informational
         alert.addButton(withTitle: "Generate")
         alert.addButton(withTitle: "Cancel")
@@ -3597,9 +3917,19 @@ final class GardenStatusMenu: NSObject {
 
     private func plantRandomSpecies(in kind: PlantKind) {
         guard let species = GardenPlantSpecificMenuCatalog.enabledSpecies(
-            sceneKey: wallpaperManager.wallpaperSceneRootKey(),
+            sceneKey: activeSceneRootKey,
             in: kind
         ).randomElement() else {
+            return
+        }
+
+        plant(species)
+    }
+
+    @objc private func plantRandomRainforestSpecies(_ sender: NSMenuItem) {
+        guard let rawValue = sender.representedObject as? String,
+              let kind = PlantKind(rawValue: rawValue),
+              let species = GardenPlantSpecificMenuCatalog.enabledRainforestSpecies(in: kind).randomElement() else {
             return
         }
 
@@ -3700,6 +4030,9 @@ final class GardenStatusMenu: NSObject {
             if isBirdSkyZoneDrawingMode {
                 cancelBirdSkyZoneDrawingMode()
             }
+            if isAutoGardenerDrawingMode {
+                cancelAutoGardenerDrawingMode()
+            }
             if isSoilBrushMode {
                 cancelSoilBrushMode()
             }
@@ -3714,10 +4047,14 @@ final class GardenStatusMenu: NSObject {
             currentSceneKey: currentSceneKey,
             targetMode: mode
         ) {
-            applyWallpaperSceneKey(
-                wallpaperManager.latestWallpaperKey(forSceneRootKey: handoffKey),
-                settingsOverride: nextSettings
-            )
+            if GardenExperienceModeScenePolicy.isRainforestCanvasKey(handoffKey) {
+                switchRainforestCanvas(settingsOverride: nextSettings)
+            } else {
+                applyWallpaperSceneKey(
+                    wallpaperManager.latestWallpaperKey(forSceneRootKey: handoffKey),
+                    settingsOverride: nextSettings
+                )
+            }
         } else {
             store.updateSettings(nextSettings)
         }
@@ -3802,7 +4139,8 @@ final class GardenStatusMenu: NSObject {
         guard PlantAssetLibrary.shared.hasDisplayableAsset(for: species) else {
             return
         }
-        guard GardenScenePlantEnvironment(sceneKey: wallpaperManager.wallpaperSceneRootKey()).isSuitable(species) else {
+        guard store.state.settings.experienceMode == .rainforest
+            || GardenScenePlantEnvironment(sceneKey: activeSceneRootKey).isSuitable(species) else {
             return
         }
 
@@ -3870,6 +4208,43 @@ final class GardenStatusMenu: NSObject {
         store.toggleAmbientWildlifeForCurrentMode()
     }
 
+    @objc private func toggleAutoGardenerDrawingMode() {
+        if isAutoGardenerDrawingMode {
+            finishAutoGardenerDrawingMode(shouldPlant: false)
+            return
+        }
+
+        if isGnomeZoneDrawingMode {
+            cancelGnomeZoneDrawingMode()
+        }
+        if isBirdSkyZoneDrawingMode {
+            cancelBirdSkyZoneDrawingMode()
+        }
+        if isGnomePerspectiveAdjustmentMode {
+            setGnomePerspectiveAdjustmentMode(false)
+        }
+        if isSoilBrushMode {
+            cancelSoilBrushMode()
+        }
+
+        isAutoGardenerDrawingMode = true
+        NotificationCenter.default.post(
+            name: .gardenAutoGardenerDrawingModeDidChange,
+            object: self,
+            userInfo: ["isEnabled": true]
+        )
+        showAutoGardenerSetupPanel()
+        updateDynamicItems()
+    }
+
+    @objc private func clearAutoGardenerZones() {
+        if isAutoGardenerDrawingMode {
+            cancelAutoGardenerDrawingMode()
+        }
+        store.clearAutoGardenerZones()
+        updateDynamicItems()
+    }
+
     @objc private func toggleGnomeZoneDrawingMode() {
         guard requireProFeature(.gnomeSocieties) else {
             return
@@ -3884,6 +4259,9 @@ final class GardenStatusMenu: NSObject {
         }
         if isBirdSkyZoneDrawingMode {
             cancelBirdSkyZoneDrawingMode()
+        }
+        if isAutoGardenerDrawingMode {
+            cancelAutoGardenerDrawingMode()
         }
         if isSoilBrushMode {
             cancelSoilBrushMode()
@@ -3914,6 +4292,9 @@ final class GardenStatusMenu: NSObject {
         if nextValue, isBirdSkyZoneDrawingMode {
             cancelBirdSkyZoneDrawingMode()
         }
+        if nextValue, isAutoGardenerDrawingMode {
+            cancelAutoGardenerDrawingMode()
+        }
         if nextValue, isSoilBrushMode {
             cancelSoilBrushMode()
         }
@@ -3929,6 +4310,9 @@ final class GardenStatusMenu: NSObject {
     @objc private func removeAllGnomesFromScene() {
         if isGnomeZoneDrawingMode {
             cancelGnomeZoneDrawingMode()
+        }
+        if isAutoGardenerDrawingMode {
+            cancelAutoGardenerDrawingMode()
         }
         if isGnomePerspectiveAdjustmentMode {
             setGnomePerspectiveAdjustmentMode(false)
@@ -3951,6 +4335,9 @@ final class GardenStatusMenu: NSObject {
         }
         if isGnomePerspectiveAdjustmentMode {
             setGnomePerspectiveAdjustmentMode(false)
+        }
+        if isAutoGardenerDrawingMode {
+            cancelAutoGardenerDrawingMode()
         }
         if isSoilBrushMode {
             cancelSoilBrushMode()
@@ -3990,6 +4377,9 @@ final class GardenStatusMenu: NSObject {
         if isBirdSkyZoneDrawingMode {
             cancelBirdSkyZoneDrawingMode()
         }
+        if isAutoGardenerDrawingMode {
+            cancelAutoGardenerDrawingMode()
+        }
         if isGnomePerspectiveAdjustmentMode {
             setGnomePerspectiveAdjustmentMode(false)
         }
@@ -4022,6 +4412,60 @@ final class GardenStatusMenu: NSObject {
             object: self,
             userInfo: ["isEnabled": false]
         )
+        updateDynamicItems()
+    }
+
+    private func showAutoGardenerSetupPanel() {
+        if let existing = autoGardenerSetupPanelController {
+            existing.showNearStatusItem()
+            return
+        }
+
+        let controller = AutoGardenerSetupPanelController(
+            store: store,
+            onDone: { [weak self] in
+                self?.finishAutoGardenerDrawingMode(shouldPlant: false)
+            },
+            onAutoPlant: { [weak self] in
+                self?.finishAutoGardenerDrawingMode(shouldPlant: true)
+            }
+        )
+        autoGardenerSetupPanelController = controller
+        controller.showNearStatusItem()
+    }
+
+    private func finishAutoGardenerDrawingMode(shouldPlant: Bool) {
+        if isAutoGardenerDrawingMode {
+            isAutoGardenerDrawingMode = false
+            NotificationCenter.default.post(
+                name: .gardenAutoGardenerDrawingModeDidChange,
+                object: self,
+                userInfo: ["isEnabled": false]
+            )
+        }
+
+        autoGardenerSetupPanelController?.close()
+        autoGardenerSetupPanelController = nil
+
+        if shouldPlant {
+            _ = store.autoPlantGardenerZones()
+        }
+        updateDynamicItems()
+    }
+
+    private func cancelAutoGardenerDrawingMode() {
+        guard isAutoGardenerDrawingMode || autoGardenerSetupPanelController != nil else {
+            return
+        }
+
+        isAutoGardenerDrawingMode = false
+        NotificationCenter.default.post(
+            name: .gardenAutoGardenerDrawingModeDidChange,
+            object: self,
+            userInfo: ["isEnabled": false]
+        )
+        autoGardenerSetupPanelController?.close()
+        autoGardenerSetupPanelController = nil
         updateDynamicItems()
     }
 
@@ -4186,6 +4630,11 @@ final class GardenStatusMenu: NSObject {
             return
         }
 
+        if store.state.settings.experienceMode == .rainforest {
+            showTodayInRainforest()
+            return
+        }
+
         guard store.state.settings.experienceMode == .garden else {
             showTodayInRoomStudio()
             return
@@ -4220,6 +4669,23 @@ final class GardenStatusMenu: NSObject {
             openSettings()
         default:
             return
+        }
+    }
+
+    private func showTodayInRainforest() {
+        let alert = NSAlert()
+        alert.messageText = "Today in Rainforest"
+        alert.informativeText = [
+            "Next up: use Build Rainforest Here, then layer big foliage, vines, floor cover, and foreground leaves until the screen feels dense.",
+            "Good first assets: Monstera, Fern, Ivy, Bamboo, Moss Carpet, Staghorn Fern, Black Coral Colocasia, and Mushrooms.",
+            "Coming-soon rainforest props are greyed out for now so the catalog is ready for rocks, logs, roots, mist layers, and canopy pieces."
+        ].joined(separator: "\n\n")
+        alert.alertStyle = .informational
+        alert.addButton(withTitle: "OK")
+        alert.addButton(withTitle: "Open Settings")
+        NSApplication.shared.activate(ignoringOtherApps: true)
+        if alert.runModal() == .alertSecondButtonReturn {
+            openSettings()
         }
     }
 
@@ -4518,9 +4984,6 @@ final class GardenStatusMenu: NSObject {
             openGardenData()
             return .success("Opened Garden Data in Finder.")
         case .toggleJarvisAssistant:
-            guard requireProFeature(.jarvisAssistant) else {
-                return .unavailable(GardenProFeature.jarvisAssistant.paywallMessage)
-            }
             toggleJarvisAssistant()
             return .success("Toggled Jarvis Assistant.")
         case .openAPIKeySettings:
@@ -4589,6 +5052,16 @@ final class GardenStatusMenu: NSObject {
         controller.showFlythroughVideosSection()
     }
 
+    @objc private func applySavedFlythroughVideoFromMenu(_ sender: NSMenuItem) {
+        guard let id = sender.representedObject as? String,
+              let record = flythroughVideoRecordsProvider?().first(where: { $0.id.uuidString == id }) else {
+            return
+        }
+
+        applyFlythroughVideoRecordHandler?(record)
+        updateDynamicItems()
+    }
+
     @objc private func deactivateFlythroughVideoWallpaper() {
         deactivateFlythroughVideoWallpaperHandler?()
         updateDynamicItems()
@@ -4625,10 +5098,18 @@ final class GardenStatusMenu: NSObject {
                 wallpaperManager: wallpaperManager,
                 actions: GardenSettingsWindowController.Actions(
                     applyScene: { [weak self] sceneKey in
-                        self?.applyWallpaperSceneKey(sceneKey)
+                        if GardenExperienceModeScenePolicy.isRainforestCanvasKey(sceneKey) {
+                            self?.switchRainforestCanvas()
+                        } else {
+                            self?.applyWallpaperSceneKey(sceneKey)
+                        }
                     },
                     applySceneWithSettings: { [weak self] sceneKey, settings in
-                        self?.applyWallpaperSceneKey(sceneKey, settingsOverride: settings)
+                        if GardenExperienceModeScenePolicy.isRainforestCanvasKey(sceneKey) {
+                            self?.switchRainforestCanvas(settingsOverride: settings)
+                        } else {
+                            self?.applyWallpaperSceneKey(sceneKey, settingsOverride: settings)
+                        }
                     },
                     chooseWallpaper: { [weak self] in
                         self?.chooseWallpaper()
@@ -4733,17 +5214,27 @@ final class GardenStatusMenu: NSObject {
     }
 
     private var activeSceneName: String {
-        let key = wallpaperManager.wallpaperSceneRootKey()
+        let key = activeSceneRootKey
+        if GardenExperienceModeScenePolicy.isRainforestCanvasKey(key) {
+            return "Rainforest Canvas"
+        }
+
         return GardenWallpaperScene(rawValue: key)?.displayName
             ?? wallpaperManager.customWallpapers.first { $0.key == key }?.displayName
             ?? "Custom Scene"
+    }
+
+    private var activeSceneRootKey: String {
+        store.state.settings.experienceMode == .rainforest
+            ? GardenExperienceModeScenePolicy.rainforestCanvasSceneKey
+            : wallpaperManager.wallpaperSceneRootKey()
     }
 
     private func assistantRuntimeContext() -> GardenAssistantRuntimeContext {
         GardenAssistantRuntimeContext(
             state: store.state,
             activeSceneDisplayName: activeSceneName,
-            activeSceneKey: wallpaperManager.selectedWallpaperSceneKey,
+            activeSceneKey: activeSceneRootKey,
             selectedPlant: store.selectedPlant
         )
     }
@@ -4785,6 +5276,10 @@ final class GardenStatusMenu: NSObject {
         applyWallpaperSceneRootKey(sceneKey)
     }
 
+    @objc private func applyRainforestCanvasScene() {
+        switchRainforestCanvas(settingsOverride: store.state.settings.updating(experienceMode: .rainforest))
+    }
+
     @objc private func applyWallpaperVersion(_ sender: NSMenuItem) {
         guard let sceneKey = sender.representedObject as? String else {
             return
@@ -4808,6 +5303,11 @@ final class GardenStatusMenu: NSObject {
     }
 
     private func applyAdjacentWallpaperScene(_ direction: GardenSceneNavigationDirection) {
+        if store.state.settings.experienceMode == .rainforest {
+            switchRainforestCanvas()
+            return
+        }
+
         let sceneKey = GardenSceneNavigator.adjacentSceneKey(
             from: wallpaperManager.wallpaperSceneRootKey(),
             customWallpapers: wallpaperManager.customWallpapers,
@@ -4843,6 +5343,27 @@ final class GardenStatusMenu: NSObject {
                 settingsOverride: settingsOverride
             )
             afterSwitch?()
+            self.store.removePlantsWithoutDisplayableAssets()
+            self.refreshPlantingMenus()
+            self.updateDynamicItems()
+        }
+    }
+
+    private func switchRainforestCanvas(
+        settingsOverride: GardenSettings? = nil,
+        screensOverride: [NSScreen]? = nil
+    ) {
+        let playingRadioStation = GardenRadioPlayer.shared.playingRadioStation
+        let playingRadioStream = GardenRadioPlayer.shared.playingRadioStream
+        let screens = screensOverride ?? targetScreens()
+        performSceneTransition {
+            self.store.switchGardenScene(
+                to: GardenExperienceModeScenePolicy.rainforestCanvasSceneKey,
+                screenCount: screens.count,
+                playingRadioStation: playingRadioStation,
+                playingRadioStream: playingRadioStream,
+                settingsOverride: settingsOverride
+            )
             self.store.removePlantsWithoutDisplayableAssets()
             self.refreshPlantingMenus()
             self.updateDynamicItems()
@@ -5145,7 +5666,7 @@ final class GardenStatusMenu: NSObject {
         let quality = store.state.settings.wallpaperGenerationQuality
         let alert = NSAlert()
         alert.messageText = "Generate Level \(targetLevel): \(levelTitle)?"
-        alert.informativeText = "This sends the current wallpaper image to OpenAI at \(quality.displayName) (\(quality.openAISize)). \(quality.settingsNote)"
+        alert.informativeText = "This sends a progression prompt to OpenAI at \(quality.displayName) (\(quality.openAISize)). \(quality.settingsNote)"
         alert.alertStyle = .informational
         alert.addButton(withTitle: "Generate")
         alert.addButton(withTitle: "Cancel")
@@ -5190,7 +5711,7 @@ final class GardenStatusMenu: NSObject {
         let quality = store.state.settings.wallpaperGenerationQuality
         let alert = NSAlert()
         alert.messageText = "Regenerate Level \(targetLevel): \(levelTitle)?"
-        alert.informativeText = "This re-rolls the current level into a new version without advancing. It sends the current wallpaper image to OpenAI at \(quality.displayName) (\(quality.openAISize)). \(quality.settingsNote)"
+        alert.informativeText = "This re-rolls the current level into a new version without advancing. It sends a progression prompt to OpenAI at \(quality.displayName) (\(quality.openAISize)). \(quality.settingsNote)"
         alert.alertStyle = .informational
         alert.addButton(withTitle: "Regenerate")
         alert.addButton(withTitle: "Cancel")
@@ -5540,7 +6061,7 @@ final class GardenStatusMenu: NSObject {
             color: .secondaryLabelColor
         )
 
-        let templates = GardenProgressionFantasyTemplateCatalog.all
+        let templates = GardenProgressionFantasyTemplateCatalog.templates(for: store.state.settings.experienceMode)
         let columnsPerRow = 2
         var rows: [NSView] = []
         var index = 0
@@ -5590,7 +6111,7 @@ final class GardenStatusMenu: NSObject {
     /// confirm clicking a template fills every field. Returns the resulting
     /// profile, or nil if the template id is unknown.
     func applyProgressionTemplateForSelfTest(_ templateID: String) -> GardenProgressionProfile? {
-        guard let template = GardenProgressionFantasyTemplateCatalog.all
+        guard let template = GardenProgressionFantasyTemplateCatalog.templates(for: store.state.settings.experienceMode)
             .first(where: { $0.id == templateID }) else {
             return nil
         }
@@ -5701,10 +6222,13 @@ final class GardenStatusMenu: NSObject {
     private func customPlantAssetRequest(kind: PlantKind) -> CustomPlantAssetRequest? {
         let mode = store.state.settings.experienceMode
         let isAlienMode = mode == .alienUFO
+        let isRainforestMode = mode == .rainforest
         let isRoomMode = mode == .roomStudio
         let alert = NSAlert()
         alert.messageText = if isAlienMode {
             AlienPlantMenuCatalog.addNewTitle(for: kind)
+        } else if isRainforestMode {
+            RainforestAssetMenuCatalog.addNewTitle(for: kind)
         } else if isRoomMode {
             RoomStudioPlantMenuCatalog.addNewTitle
         } else {
@@ -5712,6 +6236,8 @@ final class GardenStatusMenu: NSObject {
         }
         alert.informativeText = if isAlienMode {
             "Create a high-fidelity exobiology plant cutout for this alien scene."
+        } else if isRainforestMode {
+            "Create a high-fidelity rainforest cutout for this layered canvas."
         } else if isRoomMode {
             "Create a high-fidelity indoor plant cutout for this room. Pots and planters are welcome here."
         } else {
@@ -5726,6 +6252,8 @@ final class GardenStatusMenu: NSObject {
         let nameField = NSTextField(frame: .zero)
         nameField.placeholderString = if isAlienMode {
             "Name this alien plant (optional)"
+        } else if isRainforestMode {
+            "Name this rainforest asset (optional)"
         } else if isRoomMode {
             "Name this indoor plant (optional)"
         } else {
@@ -5743,6 +6271,8 @@ final class GardenStatusMenu: NSObject {
         descriptionTextView.toolTip = CustomPlantAssetPromptStudio.descriptionTooltip
         descriptionTextView.placeholderString = if isAlienMode {
             AlienPlantMenuCatalog.starterDescription(for: kind)
+        } else if isRainforestMode {
+            RainforestAssetMenuCatalog.starterDescription(for: kind)
         } else if isRoomMode {
             RoomStudioPlantMenuCatalog.starterDescription
         } else {

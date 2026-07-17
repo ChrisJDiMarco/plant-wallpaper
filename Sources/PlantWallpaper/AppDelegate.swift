@@ -225,6 +225,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationWillTerminate(_ notification: Notification) {
         store?.save()
         videoWallpaperController.close()
+        catCompanion?.shutdown()
+        birdFlocks?.shutdown()
+        gnomeTribes?.shutdown()
+        rainbowMoment?.shutdown()
+        weatherService?.shutdown()
+        statusMenu?.shutdown()
         overlayController?.shutdown()
         if let screenParametersObserver {
             NotificationCenter.default.removeObserver(screenParametersObserver)

@@ -550,6 +550,10 @@ final class GardenSettingsWindowController: NSWindowController {
         ]
     }
 
+    func customSceneTitlesForSelfTest() -> [String] {
+        settingsCustomSceneRecords.map(\.displayName)
+    }
+
     /// Renders every section and reports how many live-updating controls each
     /// one registered. Exercises the full view-building path for all panes.
     func renderAllSectionsForSelfTest() -> [String: Int] {
@@ -569,6 +573,21 @@ final class GardenSettingsWindowController: NSWindowController {
     }
 
     // MARK: - Window lifecycle
+
+    deinit {
+        MainActor.assumeIsolated {
+            cleanup()
+        }
+    }
+
+    private func cleanup() {
+        stopUIRefreshTimer()
+        flushPendingSettingsSave()
+        if let storeObserver {
+            NotificationCenter.default.removeObserver(storeObserver)
+            self.storeObserver = nil
+        }
+    }
 
     private func windowWillClose() {
         stopUIRefreshTimer()
@@ -1313,13 +1332,16 @@ final class GardenSettingsWindowController: NSWindowController {
                 guard let self else {
                     return ""
                 }
-                let key = self.wallpaperManager.wallpaperSceneRootKey()
+                let key = self.activeSceneRootKey
+                if GardenExperienceModeScenePolicy.isRainforestCanvasKey(key) {
+                    return "Rainforest Canvas"
+                }
                 return GardenWallpaperScene(rawValue: key)?.displayName
                     ?? self.wallpaperManager.customWallpapers.first { $0.key == key }?.displayName
                     ?? "Custom Scene"
             }),
             infoRow(title: "Environment", value: { [weak self] in
-                GardenScenePlantEnvironment(sceneKey: self?.wallpaperManager.wallpaperSceneRootKey()).displayName
+                GardenScenePlantEnvironment(sceneKey: self?.activeSceneRootKey).displayName
             }),
             infoRow(title: "Plants in scene", value: { [weak self] in
                 "\(self?.store.state.plants.count ?? 0)"
@@ -1361,7 +1383,7 @@ final class GardenSettingsWindowController: NSWindowController {
             )
         ])
 
-        let customWallpapers = wallpaperManager.customWallpapers
+        let customWallpapers = settingsCustomSceneRecords
         if !customWallpapers.isEmpty {
             addGroup(
                 title: "Your Scenes",
@@ -1369,6 +1391,16 @@ final class GardenSettingsWindowController: NSWindowController {
                 rows: customWallpapers.map { customSceneRow(for: $0) }
             )
         }
+    }
+
+    private var settingsCustomSceneRecords: [CustomWallpaperRecord] {
+        wallpaperManager.customWallpaperSceneRoots
+    }
+
+    private var activeSceneRootKey: String {
+        store.state.settings.experienceMode == .rainforest
+            ? GardenExperienceModeScenePolicy.rainforestCanvasSceneKey
+            : wallpaperManager.wallpaperSceneRootKey()
     }
 
     private func buildFlythroughVideosSection(in stack: NSStackView) {
@@ -2362,7 +2394,7 @@ final class GardenSettingsWindowController: NSWindowController {
     private func experienceModeRow(selectedMode: GardenExperienceMode) -> NSView {
         popupRow(
             title: "Experience mode",
-            subtitle: "Garden, Room Studio, and Alien/UFO Garden each switch the scene pack and creation menus.",
+            subtitle: "Garden, Rainforest, Room Studio, and Alien/UFO Garden each switch the canvas, scene pack, and creation menus.",
             selectedRawValue: selectedMode.rawValue,
             options: GardenExperienceMode.allCases.map { mode in
                 let feature = Self.proFeature(for: mode)
@@ -2376,6 +2408,8 @@ final class GardenSettingsWindowController: NSWindowController {
     private static func proFeature(for mode: GardenExperienceMode) -> GardenProFeature? {
         switch mode {
         case .garden:
+            nil
+        case .rainforest:
             nil
         case .roomStudio:
             .roomStudio
@@ -2575,15 +2609,20 @@ final class GardenSettingsWindowController: NSWindowController {
     /// A visual scene picker: thumbnail cards for every built-in and custom
     /// scene, with a green ring and badge on the active one.
     private func sceneGalleryView() -> NSView {
-        let selectedKey = wallpaperManager.wallpaperSceneRootKey()
-        var sceneEntries: [(key: String, name: String, isEnabled: Bool)] = GardenWallpaperScene.scenes(for: store.state.settings.experienceMode).map {
-            ($0.rawValue, $0.displayName, $0.isSelectableScene)
+        let selectedKey = activeSceneRootKey
+        var sceneEntries: [(key: String, name: String, isEnabled: Bool)]
+        if store.state.settings.experienceMode == .rainforest {
+            sceneEntries = [(GardenExperienceModeScenePolicy.rainforestCanvasSceneKey, "Rainforest Canvas", true)]
+        } else {
+            sceneEntries = GardenWallpaperScene.scenes(for: store.state.settings.experienceMode).map {
+                ($0.rawValue, $0.displayName, $0.isSelectableScene)
+            }
+            sceneEntries.append(
+                contentsOf: wallpaperManager
+                    .customWallpaperSceneRoots(for: store.state.settings.experienceMode)
+                    .map { ($0.key, $0.displayName, true) }
+            )
         }
-        sceneEntries.append(
-            contentsOf: wallpaperManager
-                .customWallpaperSceneRoots(for: store.state.settings.experienceMode)
-                .map { ($0.key, $0.displayName, true) }
-        )
 
         let columnsPerRow = 3
         let gallery = NSStackView()
@@ -2632,6 +2671,9 @@ final class GardenSettingsWindowController: NSWindowController {
         button.toolTip = isEnabled ? name : "\(name) - coming soon"
         if let image = wallpaperManager.thumbnailImage(forSceneKey: key) {
             button.image = image
+        } else if GardenExperienceModeScenePolicy.isRainforestCanvasKey(key),
+                  let placeholder = NSImage(systemSymbolName: "leaf.circle.fill", accessibilityDescription: name) {
+            button.image = placeholder
         } else if let placeholder = NSImage(systemSymbolName: "photo", accessibilityDescription: name) {
             button.image = placeholder
         }
@@ -2662,6 +2704,12 @@ final class GardenSettingsWindowController: NSWindowController {
         }
 
         let sceneKey = String(identifier.dropFirst("scene-thumb:".count))
+        if GardenExperienceModeScenePolicy.isRainforestCanvasKey(sceneKey) {
+            actions.applyScene(sceneKey)
+            renderSelectedSection(preservingScroll: true)
+            return
+        }
+
         presentSceneDetail(forSceneKey: sceneKey)
     }
 
@@ -2702,7 +2750,11 @@ final class GardenSettingsWindowController: NSWindowController {
     }
 
     private func sceneDisplayName(forKey key: String) -> String {
-        GardenWallpaperScene(rawValue: key)?.displayName
+        if GardenExperienceModeScenePolicy.isRainforestCanvasKey(key) {
+            return "Rainforest Canvas"
+        }
+
+        return GardenWallpaperScene(rawValue: key)?.displayName
             ?? wallpaperManager.customWallpapers.first { $0.key == key }?.displayName
             ?? "Custom Scene"
     }
@@ -3100,11 +3152,13 @@ final class GardenSettingsWindowController: NSWindowController {
 
         let nextSettings = store.state.settings.updating(experienceMode: mode)
         if let handoffKey = GardenExperienceModeScenePolicy.sceneHandoffKey(
-            currentSceneKey: wallpaperManager.selectedWallpaperSceneKey,
+            currentSceneKey: activeSceneRootKey,
             targetMode: mode
         ) {
             actions.applySceneWithSettings(
-                wallpaperManager.latestWallpaperKey(forSceneRootKey: handoffKey),
+                GardenExperienceModeScenePolicy.isRainforestCanvasKey(handoffKey)
+                    ? handoffKey
+                    : wallpaperManager.latestWallpaperKey(forSceneRootKey: handoffKey),
                 nextSettings
             )
         } else {

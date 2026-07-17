@@ -50,6 +50,27 @@ public struct GardenSceneVisualProfile: Equatable, Sendable {
     }
 
     private static func preset(for key: String) -> GardenSceneVisualProfilePreset {
+        if key.contains("rainforest")
+            || key.contains("jungle") {
+            return GardenSceneVisualProfilePreset(
+                lightDirectionX: -0.04,
+                lightDirectionY: 0.02,
+                shadowLengthMultiplier: 0.92,
+                shadowOpacityMultiplier: 0.68,
+                contactSoftness: 0.88,
+                warmth: 0.42,
+                humidity: 0.96,
+                mistOpacity: 0.20,
+                dustMoteOpacity: 0.08,
+                wildlifeDensity: 0.90,
+                foregroundOcclusionBands: [
+                    GardenSceneOcclusionBand(minX: 0.00, maxX: 1.00, minY: 0.84, maxY: 1.00, opacity: 0.20),
+                    GardenSceneOcclusionBand(minX: 0.00, maxX: 0.18, minY: 0.00, maxY: 1.00, opacity: 0.10),
+                    GardenSceneOcclusionBand(minX: 0.82, maxX: 1.00, minY: 0.00, maxY: 1.00, opacity: 0.10)
+                ]
+            )
+        }
+
         if key.contains("moonlit") {
             return GardenSceneVisualProfilePreset(
                 lightDirectionX: 0.02,

@@ -32,6 +32,7 @@ public struct GardenState: Codable, Equatable, Sendable {
     /// Scene-authored sky corridors where procedural Three.js birds can fly.
     public var birdSkyZones: [BirdSkyZone]
     public var areBirdFlocksHidden: Bool
+    public var autoGardenerZones: [AutoGardenerZone]
     /// Hand-painted patches of fresh soil. Plants placed on top of a patch
     /// sink their base into the dirt so they read as planted in the ground.
     public var soilPatches: [SoilPatch]
@@ -83,6 +84,7 @@ public struct GardenState: Codable, Equatable, Sendable {
         gnomeTribePerspective: GnomeTribePerspective = .defaultValue,
         birdSkyZones: [BirdSkyZone] = [],
         areBirdFlocksHidden: Bool = false,
+        autoGardenerZones: [AutoGardenerZone] = [],
         soilPatches: [SoilPatch] = [],
         settings: GardenSettings = .default,
         weather: GardenWeatherCondition? = nil,
@@ -121,6 +123,7 @@ public struct GardenState: Codable, Equatable, Sendable {
         self.gnomeTribePerspective = gnomeTribePerspective
         self.birdSkyZones = birdSkyZones.filter(\.isPlayable)
         self.areBirdFlocksHidden = areBirdFlocksHidden
+        self.autoGardenerZones = autoGardenerZones.filter(\.isPlayable)
         self.soilPatches = soilPatches.filter(\.isPlayable)
         self.settings = settings
         self.weather = weather
@@ -151,6 +154,7 @@ public struct GardenState: Codable, Equatable, Sendable {
         case gnomeTribePerspective
         case birdSkyZones
         case areBirdFlocksHidden
+        case autoGardenerZones
         case soilPatches
         case settings
         case weather
@@ -192,6 +196,10 @@ public struct GardenState: Codable, Equatable, Sendable {
             ) ?? .defaultValue,
             birdSkyZones: try container.decodeIfPresent([BirdSkyZone].self, forKey: .birdSkyZones) ?? [],
             areBirdFlocksHidden: try container.decodeIfPresent(Bool.self, forKey: .areBirdFlocksHidden) ?? false,
+            autoGardenerZones: try container.decodeIfPresent(
+                [AutoGardenerZone].self,
+                forKey: .autoGardenerZones
+            ) ?? [],
             soilPatches: try container.decodeIfPresent([SoilPatch].self, forKey: .soilPatches) ?? [],
             settings: try container.decodeIfPresent(GardenSettings.self, forKey: .settings) ?? .default,
             weather: try container.decodeIfPresent(GardenWeatherCondition.self, forKey: .weather),
@@ -224,6 +232,7 @@ public struct GardenState: Codable, Equatable, Sendable {
         try container.encode(gnomeTribePerspective, forKey: .gnomeTribePerspective)
         try container.encode(birdSkyZones, forKey: .birdSkyZones)
         try container.encode(areBirdFlocksHidden, forKey: .areBirdFlocksHidden)
+        try container.encode(autoGardenerZones, forKey: .autoGardenerZones)
         try container.encode(soilPatches, forKey: .soilPatches)
         try container.encode(settings, forKey: .settings)
         try container.encodeIfPresent(weather, forKey: .weather)

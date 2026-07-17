@@ -968,9 +968,11 @@ struct GardenAssistantCommandCenterViewModel: Equatable {
 final class GardenAssistantWindowController: NSWindowController {
     private static let preferredSize = NSSize(width: 1160, height: 760)
     private let assistantViewController: GardenAssistantViewController
+    private let downloadViewController: GardenUniversalDownloadViewController
 
     init(contextProvider: @escaping () -> GardenAssistantRuntimeContext? = { nil }) {
         assistantViewController = GardenAssistantViewController(contextProvider: contextProvider)
+        downloadViewController = GardenUniversalDownloadViewController()
         let panel = GardenAssistantPanel(
             contentRect: NSRect(origin: .zero, size: Self.preferredSize),
             styleMask: [.borderless, .resizable],
@@ -989,7 +991,8 @@ final class GardenAssistantWindowController: NSWindowController {
             .fullScreenAuxiliary
         ]
         super.init(window: panel)
-        contentViewController = assistantViewController
+        // ponytail: legacy Jarvis chat stays here; restore by assigning assistantViewController.
+        contentViewController = downloadViewController
     }
 
     @available(*, unavailable)
@@ -1012,7 +1015,7 @@ final class GardenAssistantWindowController: NSWindowController {
         window.orderFrontRegardless()
         NSApp.activate(ignoringOtherApps: true)
         window.makeKey()
-        assistantViewController.focusInput()
+        downloadViewController.focusPrimaryButton()
     }
 
     static func frameForTesting(visibleFrame: NSRect, preferredSize: NSSize) -> NSRect {
@@ -1034,6 +1037,256 @@ final class GardenAssistantWindowController: NSWindowController {
             width: width,
             height: height
         )
+    }
+}
+
+@MainActor
+private final class GardenUniversalDownloadViewController: NSViewController {
+    private static let sourceURLString = "https://github.com/ChrisJDiMarco/jarvis-universal"
+    private static let downloadURLString = "https://github.com/ChrisJDiMarco/jarvis-universal/archive/refs/heads/main.zip"
+    private let downloadButton = NSButton()
+
+    override func loadView() {
+        view = NSView()
+        view.wantsLayer = true
+        view.layer?.backgroundColor = NSColor.clear.cgColor
+    }
+
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        buildInterface()
+    }
+
+    func focusPrimaryButton() {
+        view.window?.makeFirstResponder(downloadButton)
+    }
+
+    private func buildInterface() {
+        let surface = AssistantRoundedView(
+            fill: GardenAssistantStyle.surfaceFill,
+            radius: 30,
+            border: GardenAssistantStyle.strongBorder
+        )
+        surface.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(surface)
+
+        let content = NSStackView()
+        content.orientation = .vertical
+        content.spacing = 24
+        content.edgeInsets = NSEdgeInsets(top: 34, left: 38, bottom: 34, right: 38)
+        content.translatesAutoresizingMaskIntoConstraints = false
+        surface.addSubview(content)
+
+        NSLayoutConstraint.activate([
+            surface.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+            surface.centerYAnchor.constraint(equalTo: view.centerYAnchor),
+            surface.widthAnchor.constraint(equalToConstant: 860).withPriority(.defaultHigh),
+            surface.widthAnchor.constraint(lessThanOrEqualTo: view.widthAnchor, constant: -72),
+            surface.topAnchor.constraint(greaterThanOrEqualTo: view.topAnchor, constant: 36),
+            surface.bottomAnchor.constraint(lessThanOrEqualTo: view.bottomAnchor, constant: -36),
+            content.leadingAnchor.constraint(equalTo: surface.leadingAnchor),
+            content.trailingAnchor.constraint(equalTo: surface.trailingAnchor),
+            content.topAnchor.constraint(equalTo: surface.topAnchor),
+            content.bottomAnchor.constraint(equalTo: surface.bottomAnchor)
+        ])
+
+        content.addArrangedSubview(header())
+        content.addArrangedSubview(featureRow())
+        content.addArrangedSubview(downloadNote())
+        content.addArrangedSubview(actionRow())
+    }
+
+    private func header() -> NSView {
+        let row = NSStackView()
+        row.orientation = .horizontal
+        row.alignment = .top
+        row.spacing = 18
+
+        row.addArrangedSubview(badgeIcon("sparkles", accent: GardenAssistantAccent.blue.color, size: 58))
+
+        let copy = NSStackView()
+        copy.orientation = .vertical
+        copy.spacing = 9
+        copy.addArrangedSubview(label("LOGIC OUT LOUD OPEN SOURCE", size: 11, weight: .bold, color: GardenAssistantAccent.green.color))
+        copy.addArrangedSubview(label("Download Jarvis Universal", size: 33, weight: .semibold, color: GardenAssistantStyle.primaryText, lines: 2))
+        copy.addArrangedSubview(label(
+            "The full Jarvis experience now lives in Jarvis Universal: a separate open-source app for agent workflows, local command-center work, and whatever you want to wire into it next.",
+            size: 14.5,
+            weight: .regular,
+            color: GardenAssistantStyle.secondaryText,
+            lines: 4
+        ))
+        row.addArrangedSubview(copy)
+        row.addArrangedSubview(NSView.spacer())
+        row.addArrangedSubview(iconButton("xmark", action: #selector(closeWindow), accessibilityDescription: "Close"))
+        return row
+    }
+
+    private func featureRow() -> NSView {
+        let row = NSStackView()
+        row.orientation = .horizontal
+        row.distribution = .fillEqually
+        row.spacing = 18
+        row.addArrangedSubview(feature("terminal.fill", "Run It Locally", "Clone or download the repo and launch the app on your Mac.", .green))
+        row.addArrangedSubview(feature("hammer.fill", "Hackable", "Open source from Logic Out Loud, built to be inspected and extended.", .orange))
+        row.addArrangedSubview(feature("arrow.triangle.branch", "Agent Ready", "A bigger home for Codex, Claude Code, and desktop workflows.", .purple))
+        return row
+    }
+
+    private func feature(_ symbolName: String, _ title: String, _ subtitle: String, _ accent: GardenAssistantAccent) -> NSView {
+        let stack = NSStackView()
+        stack.orientation = .vertical
+        stack.spacing = 8
+        stack.addArrangedSubview(badgeIcon(symbolName, accent: accent.color, size: 42))
+        stack.addArrangedSubview(label(title, size: 14, weight: .semibold, color: GardenAssistantStyle.primaryText))
+        stack.addArrangedSubview(label(subtitle, size: 12.5, weight: .regular, color: GardenAssistantStyle.secondaryText, lines: 3))
+        return stack
+    }
+
+    private func downloadNote() -> NSView {
+        let note = AssistantRoundedView(
+            fill: GardenAssistantStyle.panelFill,
+            radius: 18,
+            border: GardenAssistantStyle.border
+        )
+        note.translatesAutoresizingMaskIntoConstraints = false
+
+        let row = NSStackView()
+        row.orientation = .horizontal
+        row.alignment = .centerY
+        row.spacing = 14
+        row.edgeInsets = NSEdgeInsets(top: 16, left: 18, bottom: 16, right: 18)
+        row.translatesAutoresizingMaskIntoConstraints = false
+        note.addSubview(row)
+
+        row.addArrangedSubview(badgeIcon("arrow.down.circle.fill", accent: GardenAssistantAccent.blue.color, size: 38))
+        row.addArrangedSubview(label(
+            "Download the ZIP from GitHub, or open the repo if you want the source, docs, and install notes before running it.",
+            size: 13.5,
+            weight: .regular,
+            color: GardenAssistantStyle.secondaryText,
+            lines: 3
+        ))
+
+        NSLayoutConstraint.activate([
+            row.leadingAnchor.constraint(equalTo: note.leadingAnchor),
+            row.trailingAnchor.constraint(equalTo: note.trailingAnchor),
+            row.topAnchor.constraint(equalTo: note.topAnchor),
+            row.bottomAnchor.constraint(equalTo: note.bottomAnchor)
+        ])
+        return note
+    }
+
+    private func actionRow() -> NSView {
+        let row = NSStackView()
+        row.orientation = .horizontal
+        row.alignment = .centerY
+        row.spacing = 12
+
+        configure(downloadButton, title: "Download ZIP", symbolName: "arrow.down.circle.fill", fill: GardenAssistantAccent.blue.color, action: #selector(downloadJarvisUniversal))
+        row.addArrangedSubview(downloadButton)
+        row.addArrangedSubview(button("Open GitHub", symbolName: "chevron.right", fill: GardenAssistantStyle.elevatedFill, action: #selector(openSource)))
+        row.addArrangedSubview(NSView.spacer())
+        return row
+    }
+
+    private func button(_ title: String, symbolName: String, fill: NSColor, action: Selector) -> NSButton {
+        let button = NSButton()
+        configure(button, title: title, symbolName: symbolName, fill: fill, action: action)
+        return button
+    }
+
+    private func configure(_ button: NSButton, title: String, symbolName: String, fill: NSColor, action: Selector) {
+        button.title = title
+        button.target = self
+        button.action = action
+        button.isBordered = false
+        button.font = .systemFont(ofSize: 13.5, weight: .semibold)
+        button.contentTintColor = GardenAssistantStyle.primaryText
+        button.imagePosition = .imageLeading
+        button.imageHugsTitle = true
+        button.wantsLayer = true
+        button.layer?.cornerRadius = 20
+        button.layer?.backgroundColor = fill.cgColor
+        button.layer?.borderColor = GardenAssistantStyle.border.cgColor
+        button.layer?.borderWidth = fill == GardenAssistantAccent.blue.color ? 0 : 1
+        button.heightAnchor.constraint(equalToConstant: 42).isActive = true
+        button.widthAnchor.constraint(greaterThanOrEqualToConstant: title == "Download ZIP" ? 168 : 148).isActive = true
+        if let image = NSImage(systemSymbolName: symbolName, accessibilityDescription: title) {
+            image.isTemplate = true
+            button.image = image
+        }
+    }
+
+    private func iconButton(_ symbolName: String, action: Selector, accessibilityDescription: String) -> NSButton {
+        let button = NSButton()
+        button.target = self
+        button.action = action
+        button.isBordered = false
+        button.contentTintColor = GardenAssistantStyle.secondaryText
+        button.wantsLayer = true
+        button.layer?.cornerRadius = 17
+        button.layer?.backgroundColor = GardenAssistantStyle.elevatedFill.cgColor
+        button.layer?.borderColor = GardenAssistantStyle.border.cgColor
+        button.layer?.borderWidth = 1
+        button.widthAnchor.constraint(equalToConstant: 34).isActive = true
+        button.heightAnchor.constraint(equalToConstant: 34).isActive = true
+        if let image = NSImage(systemSymbolName: symbolName, accessibilityDescription: accessibilityDescription) {
+            image.isTemplate = true
+            button.image = image
+        }
+        return button
+    }
+
+    private func badgeIcon(_ symbolName: String, accent: NSColor, size: CGFloat) -> NSView {
+        let container = AssistantRoundedView(fill: accent.withAlphaComponent(0.14), radius: size / 2, border: nil)
+        container.translatesAutoresizingMaskIntoConstraints = false
+        container.widthAnchor.constraint(equalToConstant: size).isActive = true
+        container.heightAnchor.constraint(equalToConstant: size).isActive = true
+        let image = NSImageView()
+        image.image = NSImage(systemSymbolName: symbolName, accessibilityDescription: symbolName)
+        image.symbolConfiguration = NSImage.SymbolConfiguration(pointSize: size * 0.42, weight: .medium)
+        image.contentTintColor = accent
+        image.translatesAutoresizingMaskIntoConstraints = false
+        container.addSubview(image)
+        NSLayoutConstraint.activate([
+            image.centerXAnchor.constraint(equalTo: container.centerXAnchor),
+            image.centerYAnchor.constraint(equalTo: container.centerYAnchor)
+        ])
+        return container
+    }
+
+    private func label(
+        _ text: String,
+        size: CGFloat,
+        weight: NSFont.Weight,
+        color: NSColor,
+        lines: Int = 1
+    ) -> NSTextField {
+        let label = NSTextField(labelWithString: text)
+        label.translatesAutoresizingMaskIntoConstraints = false
+        label.font = .systemFont(ofSize: size, weight: weight)
+        label.textColor = color
+        label.lineBreakMode = lines == 1 ? .byTruncatingTail : .byWordWrapping
+        label.maximumNumberOfLines = lines
+        return label
+    }
+
+    @objc private func downloadJarvisUniversal() {
+        open(Self.downloadURLString)
+    }
+
+    @objc private func openSource() {
+        open(Self.sourceURLString)
+    }
+
+    @objc private func closeWindow() {
+        view.window?.orderOut(nil)
+    }
+
+    private func open(_ urlString: String) {
+        guard let url = URL(string: urlString) else { return }
+        NSWorkspace.shared.open(url)
     }
 }
 

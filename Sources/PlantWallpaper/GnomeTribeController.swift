@@ -148,6 +148,20 @@ final class GnomeTribeController: NSObject {
         }
     }
 
+    deinit {
+        MainActor.assumeIsolated {
+            shutdown()
+        }
+    }
+
+    func shutdown() {
+        if let storeObserver {
+            NotificationCenter.default.removeObserver(storeObserver)
+            self.storeObserver = nil
+        }
+        teardownWindows()
+    }
+
     func show() {
         _ = ensureWindowsIfNeeded()
         refresh(force: true)
@@ -287,6 +301,10 @@ final class GnomeTribeController: NSObject {
     }
 
     private func teardownWindows() {
+        webViews.forEach {
+            $0.stopLoading()
+            $0.navigationDelegate = nil
+        }
         windows.forEach { $0.close() }
         windows = []
         webViews = []

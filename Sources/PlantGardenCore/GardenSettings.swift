@@ -19,6 +19,7 @@ public enum GardenTimeLapseCadence: String, Codable, CaseIterable, Sendable {
 
 public enum GardenExperienceMode: String, Codable, CaseIterable, Sendable {
     case garden
+    case rainforest
     case roomStudio
     case alienUFO
 
@@ -26,6 +27,8 @@ public enum GardenExperienceMode: String, Codable, CaseIterable, Sendable {
         switch self {
         case .garden:
             "Garden"
+        case .rainforest:
+            "Rainforest"
         case .roomStudio:
             "Room Studio"
         case .alienUFO:

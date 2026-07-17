@@ -274,6 +274,34 @@ final class CatCompanionController: NSObject {
         startClickMonitors()
     }
 
+    deinit {
+        MainActor.assumeIsolated {
+            shutdown()
+        }
+    }
+
+    func shutdown() {
+        mouseTimer?.invalidate()
+        mouseTimer = nil
+        desktopEnvironmentTimer?.invalidate()
+        desktopEnvironmentTimer = nil
+        clickSnapshotTimer?.invalidate()
+        clickSnapshotTimer = nil
+        if let globalClickMonitor {
+            NSEvent.removeMonitor(globalClickMonitor)
+            self.globalClickMonitor = nil
+        }
+        if let localClickMonitor {
+            NSEvent.removeMonitor(localClickMonitor)
+            self.localClickMonitor = nil
+        }
+        notificationObservers.forEach { NotificationCenter.default.removeObserver($0) }
+        notificationObservers = []
+        workspaceObservers.forEach { NSWorkspace.shared.notificationCenter.removeObserver($0) }
+        workspaceObservers = []
+        teardownWindows()
+    }
+
     private func observeNotification(
         name: Notification.Name,
         object: Any? = nil,
@@ -514,17 +542,7 @@ final class CatCompanionController: NSObject {
 
     func rebuildWindows() {
         NSLog("CatCompanion rebuildWindows: enabled=%d existing=%d", isEnabled ? 1 : 0, windows.count)
-        windows.forEach { $0.close() }
-        windows = []
-        webViews = []
-        screens = []
-        navigationDelegates = []
-        lastSentMouse = nil
-        lastMouseWebViewIndex = nil
-        lastEnvironmentFingerprints = [:]
-        lastGnomeTerritoryFingerprints = [:]
-        lastPlantMissionTargetFingerprints = [:]
-        clickSnapshots = [:]
+        teardownWindows()
 
         guard isEnabled, let indexURL = Self.webAssetsIndexURL() else {
             if isEnabled {
@@ -545,6 +563,25 @@ final class CatCompanionController: NSObject {
         }
         loadedBuildFingerprint = settings.buildFingerprint
         NSLog("CatCompanion rebuildWindows: created %d window(s)", windows.count)
+    }
+
+    private func teardownWindows() {
+        for webView in webViews {
+            webView.stopLoading()
+            webView.navigationDelegate = nil
+            webView.configuration.userContentController.removeScriptMessageHandler(forName: "catEvent")
+        }
+        windows.forEach { $0.close() }
+        windows = []
+        webViews = []
+        screens = []
+        navigationDelegates = []
+        lastSentMouse = nil
+        lastMouseWebViewIndex = nil
+        lastEnvironmentFingerprints = [:]
+        lastGnomeTerritoryFingerprints = [:]
+        lastPlantMissionTargetFingerprints = [:]
+        clickSnapshots = [:]
     }
 
     func setPaused(_ paused: Bool) {

@@ -43,9 +43,9 @@ enum WallpaperProgressionPrompt {
         let creativeDirection = creativeDirection(forLevel: safeLevel, using: &rng)
 
         return """
-        Recreate the attached current WallpaperGarden scene as the next chapter of a personal fantasy that levels up across 20 stages.
+        Create a brand-new \(modeSubject(for: experienceMode)) for a personal fantasy that levels up across 20 stages.
 
-        The attached image is the source of truth. Keep the same camera angle, broad composition, perspective, scene identity, and desktop-wallpaper readability. Evolve the scene to Level \(safeLevel) of 20: \(title).
+        Do not recreate, reskin, trace, preserve, or loosely copy any current or previous wallpaper. This should feel like a new video-game progression level built from the fantasy profile, the active mode, and Level \(safeLevel) of 20: \(title).
 
         The fantasy this scene is growing into:
         - Lifestyle direction: \(profile.lifestyleFantasy)
@@ -62,13 +62,15 @@ enum WallpaperProgressionPrompt {
         \(creativeDirection)
 
         Progression rules:
-        - Make this feel like a natural next stage from the current image, not an unrelated replacement — but make THIS pass a distinct, clever, fresh interpretation, never the same formulaic upgrade.
+        - Treat the 20 levels like a clear climb from bare-bones origin story to ultimate lifestyle fantasy.
+        - Make THIS pass a distinct, clever, fresh interpretation, never the same formulaic upgrade.
         - Increase quality, scale, materials, comfort, architecture, lighting polish, and aspirational lifestyle detail only as much as Level \(safeLevel) warrants.
-        - Level 1 should feel bare-bones and beginner; Level 20 should feel almost absurdly luxurious — a legendary, billionaire/sultan/lord-scale version of this specific fantasy.
+        - Level 1 should be the shoddiest believable first foothold for this exact profile: scavenged, cramped, improvised, broke, cardboard-box/tarp/mattress-on-floor energy when the fantasy calls for it.
+        - Level 20 should feel almost absurdly luxurious — a legendary, billionaire/sultan/lord-scale version of this specific fantasy.
         - Do not add text, labels, logos, watermarks, app UI, people, desktop icons, Dock, menu bar, or visible computer interface artifacts.
         - \(placementRule)
 
-        Output a polished, realistic Mac desktop wallpaper that still works as an interactive WallpaperGarden/Room Studio canvas.
+        Output a polished, realistic Mac desktop wallpaper that still works as an interactive \(modeCanvasName(for: experienceMode)) canvas.
         """
     }
 
@@ -155,6 +157,8 @@ enum WallpaperProgressionPrompt {
         switch experienceMode {
         case .garden:
             "Preserve clean, believable planting zones where WallpaperGarden can overlay separate plants later. Do not fill every pot, bed, soil patch, planter, or open garden area with baked-in plants."
+        case .rainforest:
+            "Preserve broad open misty canvas space for WallpaperGarden Rainforest mode to overlay separate large plant, vine, moss, rock, and log cutouts later. Do not bake in the final dense collage."
         case .roomStudio:
             "Preserve open walls, shelves, tabletops, floor corners, and usable negative space where Room Studio can overlay separate objects later. Do not clutter every surface with baked-in props."
         case .alienUFO:
@@ -162,10 +166,36 @@ enum WallpaperProgressionPrompt {
         }
     }
 
+    private static func modeSubject(for experienceMode: GardenExperienceMode) -> String {
+        switch experienceMode {
+        case .garden:
+            "garden lifestyle scene"
+        case .rainforest:
+            "rainforest collage canvas"
+        case .roomStudio:
+            "room or hangout interior"
+        case .alienUFO:
+            "alien/UFO garden scene"
+        }
+    }
+
+    private static func modeCanvasName(for experienceMode: GardenExperienceMode) -> String {
+        switch experienceMode {
+        case .garden:
+            "WallpaperGarden"
+        case .rainforest:
+            "Rainforest"
+        case .roomStudio:
+            "Room Studio"
+        case .alienUFO:
+            "Alien/UFO Garden"
+        }
+    }
+
     private static func stageScale(for level: Int, experienceMode: GardenExperienceMode) -> String {
         switch (experienceMode, level) {
         case (.garden, 1):
-            "A humble beginner garden: small patch of prepared soil, simple borders, basic path, modest fence or wall, almost no luxury, quiet optimism."
+            "A shoddy beginner garden: cracked bare soil, scavenged containers, cardboard or scrap-wood edges, improvised watering, almost no comfort or luxury yet."
         case (.garden, 2...4):
             "Early progress: tidier beds, a few better planters, simple irrigation details, nicer path materials, still modest and achievable."
         case (.garden, 5...8):
@@ -178,8 +208,22 @@ enum WallpaperProgressionPrompt {
             "Legendary estate: sprawling acreage, formal axes, rare materials, cinematic water and stonework, private garden wings, almost royal scale."
         case (.garden, 20):
             "Absurd endgame paradise: $50M+ world-class estate garden, palace-level terraces, sprawling grounds, sultan/lord fantasy scale, breathtaking but still realistic."
+        case (.rainforest, 1):
+            "A bare misty canvas: pale sky haze, subtle damp atmosphere, open space reserved for later plant cutouts, almost no baked-in vegetation."
+        case (.rainforest, 2...4):
+            "First jungle layers: a few soft atmospheric hints, light shafts, and depth cues, but still mostly open for app-rendered vines and foliage."
+        case (.rainforest, 5...8):
+            "Dense understory canvas: richer mist, humid color, subtle ground/floor atmosphere, and strong empty zones for large cutout plants."
+        case (.rainforest, 9...12):
+            "Overgrown desktop canvas: cinematic rainforest lighting and depth, but no final baked-in collage; leave room for user-layered assets."
+        case (.rainforest, 13...16):
+            "Private rainforest ambience: lush humidity, dramatic sky and haze, strong depth cues, still designed as a clean overlay canvas."
+        case (.rainforest, 17...19):
+            "Ancient jungle atmosphere: grand humid scale, cinematic light, deep air, and broad empty spaces for huge foreground plant layers."
+        case (.rainforest, 20):
+            "Absurd endgame rainforest canvas: epic misty jungle atmosphere, magnificent light and depth, still open enough for the app assets to create the actual dense rainforest."
         case (.roomStudio, 1):
-            "A bare beginner room: small dorm-like bedroom or first apartment room, plain walls, simple bed or seating, basic lighting, sparse but not depressing."
+            "A bare origin room: cardboard-box crash space, mattress on floor, tiny dorm-like bedroom, or first apartment corner with plain walls, basic lighting, and almost nothing owned yet."
         case (.roomStudio, 2...4):
             "Cozy starter room: better bedding, a few personal touches, simple desk or lounge corner, more warmth, still budget-conscious."
         case (.roomStudio, 5...8):
@@ -193,7 +237,7 @@ enum WallpaperProgressionPrompt {
         case (.roomStudio, 20):
             "Absurd endgame palace suite: billionaire/sultan-level bedroom/lounge, vast scale, astonishing materials, cinematic luxury, fantastical but coherent."
         case (.alienUFO, 1):
-            "A bare crater plot: simple xenosoil patch, a few empty pod planters, low-tech field equipment, quiet first-contact botany energy."
+            "A bare survival crater plot: rough xenosoil scrape, salvaged pod planters, low-tech field gear, improvised shelter, quiet first-contact botany energy."
         case (.alienUFO, 2...4):
             "First alien habitat: tidier crater beds, glowing irrigation conduits, small specimen stations, still modest and exploratory."
         case (.alienUFO, 5...8):

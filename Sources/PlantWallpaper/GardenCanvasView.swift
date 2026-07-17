@@ -127,7 +127,9 @@ final class GardenCanvasView: NSView {
     static let pendingCustomAssetAnimationInterval: TimeInterval = 1.0 / 60.0
     static let gnomeZoneMarkerWidth: CGFloat = 46
     static let birdSkyZoneMarkerWidth: CGFloat = 54
+    static let autoGardenerMarkerWidth: CGFloat = 24
     private static let gardenPlantLayerCachePixelBudget = 18_000_000
+    private static let rainforestPlantLayerCachePixelBudget = 22_000_000
     private static let roomStudioPlantLayerCachePixelBudget = 6_000_000
     private static let alienPlantLayerCachePixelBudget = 10_000_000
 
@@ -186,6 +188,18 @@ final class GardenCanvasView: NSView {
         }
     }
     var birdSkyZoneDraftPoints: [NSPoint] = []
+    var isAutoGardenerDrawingMode = false {
+        didSet {
+            guard oldValue != isAutoGardenerDrawingMode else {
+                return
+            }
+            if !isAutoGardenerDrawingMode {
+                autoGardenerDraftPoints = []
+            }
+            needsDisplay = true
+        }
+    }
+    var autoGardenerDraftPoints: [NSPoint] = []
     var isSoilBrushMode = false {
         didSet {
             guard oldValue != isSoilBrushMode else {
@@ -324,11 +338,12 @@ final class GardenCanvasView: NSView {
             return
         }
         let profile = sceneVisualProfile()
+        if store.state.settings.experienceMode == .rainforest {
+            drawRainforestCanvasBackdrop(profile: profile)
+        }
         let drawsGardenAtmosphere = drawsGardenAtmosphericCanvasEffects()
         if drawsGardenAtmosphere {
             drawAtmosphereBehindPlants(profile: profile)
-            drawSceneMist(profile: profile)
-            drawGroundGlow(profile: profile)
         }
 
         let plants = store.state.plants
@@ -364,6 +379,7 @@ final class GardenCanvasView: NSView {
 
         drawFocusSessionRingIfNeeded()
         drawSoilBrushDraftIfNeeded()
+        drawAutoGardenerZonesIfNeeded()
         drawGnomeTribeZonesIfNeeded()
         drawGnomePerspectiveOverlayIfNeeded()
         drawBirdSkyZonesIfNeeded()
@@ -672,6 +688,89 @@ final class GardenCanvasView: NSView {
         cap.stroke()
     }
 
+    private func drawAutoGardenerZonesIfNeeded() {
+        guard isAutoGardenerDrawingMode || !autoGardenerDraftPoints.isEmpty else {
+            return
+        }
+
+        NSGraphicsContext.saveGraphicsState()
+        if isAutoGardenerDrawingMode {
+            let savedZones = store.state.autoGardenerZones.filter { $0.screenIndex == screenIndex }
+            for zone in savedZones {
+                let points = zone.points.map { point in
+                    NSPoint(
+                        x: bounds.width * CGFloat(point.x),
+                        y: bounds.height * CGFloat(point.y)
+                    )
+                }
+                drawAutoGardenerZonePath(
+                    points: points,
+                    fill: NSColor.systemMint.withAlphaComponent(0.07),
+                    stroke: NSColor.systemMint.withAlphaComponent(0.36)
+                )
+            }
+        }
+
+        if !autoGardenerDraftPoints.isEmpty {
+            drawAutoGardenerZonePath(
+                points: autoGardenerDraftPoints,
+                fill: NSColor.systemMint.withAlphaComponent(0.14),
+                stroke: NSColor.systemGreen.withAlphaComponent(0.64)
+            )
+            drawAutoGardenerMarkerCaps(points: autoGardenerDraftPoints)
+        }
+        NSGraphicsContext.restoreGraphicsState()
+    }
+
+    private func drawAutoGardenerZonePath(points: [NSPoint], fill: NSColor, stroke: NSColor) {
+        guard points.count >= 2 else {
+            return
+        }
+
+        let path = NSBezierPath()
+        path.lineJoinStyle = .round
+        path.lineCapStyle = .round
+        path.lineWidth = Self.autoGardenerMarkerWidth
+        path.move(to: points[0])
+        for point in points.dropFirst() {
+            path.line(to: point)
+        }
+        stroke.setStroke()
+        path.stroke()
+
+        guard points.count >= AutoGardenerZone.minimumPointCount else {
+            return
+        }
+
+        let filledPath = NSBezierPath()
+        filledPath.move(to: points[0])
+        for point in points.dropFirst() {
+            filledPath.line(to: point)
+        }
+        filledPath.close()
+        fill.setFill()
+        filledPath.fill()
+    }
+
+    private func drawAutoGardenerMarkerCaps(points: [NSPoint]) {
+        guard let last = points.last else {
+            return
+        }
+
+        let capRect = NSRect(
+            x: last.x - Self.autoGardenerMarkerWidth / 2,
+            y: last.y - Self.autoGardenerMarkerWidth / 2,
+            width: Self.autoGardenerMarkerWidth,
+            height: Self.autoGardenerMarkerWidth
+        )
+        let cap = NSBezierPath(ovalIn: capRect)
+        NSColor.systemMint.withAlphaComponent(0.34).setFill()
+        cap.fill()
+        NSColor.white.withAlphaComponent(0.56).setStroke()
+        cap.lineWidth = 1.5
+        cap.stroke()
+    }
+
     /// Everything the plant renderer reads, quantized so imperceptible
     /// simulation drift (growth creeping by fractions of a percent each
     /// tick) doesn't force rebuilds.
@@ -739,6 +838,8 @@ final class GardenCanvasView: NSView {
         switch store.state.settings.experienceMode {
         case .garden:
             Self.gardenPlantLayerCachePixelBudget
+        case .rainforest:
+            Self.rainforestPlantLayerCachePixelBudget
         case .roomStudio:
             Self.roomStudioPlantLayerCachePixelBudget
         case .alienUFO:
@@ -844,6 +945,10 @@ final class GardenCanvasView: NSView {
 
     func birdSkyZoneGuideVisibleForSelfTest() -> Bool {
         isBirdSkyZoneDrawingMode || !birdSkyZoneDraftPoints.isEmpty
+    }
+
+    func autoGardenerGuideVisibleForSelfTest() -> Bool {
+        isAutoGardenerDrawingMode || !autoGardenerDraftPoints.isEmpty
     }
 
     func drawsGardenAtmosphericCanvasEffectsForSelfTest() -> Bool {
@@ -1108,7 +1213,7 @@ final class GardenCanvasView: NSView {
     }
 
     func shouldReceiveMouseEvents(at point: NSPoint) -> Bool {
-        if isGnomeZoneDrawingMode || isBirdSkyZoneDrawingMode || isSoilBrushMode || isGnomePerspectiveAdjustmentMode {
+        if isGnomeZoneDrawingMode || isBirdSkyZoneDrawingMode || isAutoGardenerDrawingMode || isSoilBrushMode || isGnomePerspectiveAdjustmentMode {
             return true
         }
         return containsInteractiveElement(at: point) || canClearSelectionFromEmptyInteraction(at: point)
@@ -1143,7 +1248,7 @@ final class GardenCanvasView: NSView {
     }
 
     func interactionRegionRects() -> [NSRect] {
-        if isGnomeZoneDrawingMode || isBirdSkyZoneDrawingMode || isSoilBrushMode || isGnomePerspectiveAdjustmentMode {
+        if isGnomeZoneDrawingMode || isBirdSkyZoneDrawingMode || isAutoGardenerDrawingMode || isSoilBrushMode || isGnomePerspectiveAdjustmentMode {
             return [bounds]
         }
 
@@ -1282,6 +1387,9 @@ final class GardenCanvasView: NSView {
         }
         if isBirdSkyZoneDrawingMode {
             return beginBirdSkyZoneDraft(at: point) ? .drag : .none
+        }
+        if isAutoGardenerDrawingMode {
+            return beginAutoGardenerDraft(at: point) ? .drag : .none
         }
 
         if plantExplorerContains(point) {
@@ -1436,6 +1544,58 @@ final class GardenCanvasView: NSView {
             )
         }
         store.addBirdSkyZone(screenIndex: screenIndex, points: points)
+        return true
+    }
+
+    @discardableResult
+    func beginAutoGardenerDraft(at point: NSPoint) -> Bool {
+        guard bounds.contains(point) else {
+            return false
+        }
+
+        autoGardenerDraftPoints = [point]
+        needsDisplay = true
+        return true
+    }
+
+    @discardableResult
+    func continueAutoGardenerDraft(at point: NSPoint) -> Bool {
+        guard !autoGardenerDraftPoints.isEmpty else {
+            return false
+        }
+
+        let clippedPoint = NSPoint(
+            x: min(bounds.width, max(0, point.x)),
+            y: min(bounds.height, max(0, point.y))
+        )
+        if let lastPoint = autoGardenerDraftPoints.last,
+           hypot(clippedPoint.x - lastPoint.x, clippedPoint.y - lastPoint.y) < 6 {
+            return true
+        }
+
+        autoGardenerDraftPoints.append(clippedPoint)
+        setNeedsDisplay(bounds)
+        return true
+    }
+
+    @discardableResult
+    func endAutoGardenerDraft() -> Bool {
+        defer {
+            autoGardenerDraftPoints = []
+            needsDisplay = true
+        }
+
+        guard autoGardenerDraftPoints.count >= AutoGardenerZone.minimumPointCount else {
+            return false
+        }
+
+        let points = autoGardenerDraftPoints.map { point in
+            GardenPoint(
+                x: Double(point.x / max(1, bounds.width)),
+                y: Double(point.y / max(1, bounds.height))
+            )
+        }
+        store.addAutoGardenerZone(screenIndex: screenIndex, points: points)
         return true
     }
 

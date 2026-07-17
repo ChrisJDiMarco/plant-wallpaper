@@ -71,6 +71,15 @@ public struct GardenScenePlantEnvironment: Equatable, Sendable {
     }
 
     private static func preset(for key: String) -> GardenScenePlantEnvironmentPreset {
+        if key.contains("rainforest")
+            || key.contains("jungle") {
+            return GardenScenePlantEnvironmentPreset(
+                displayName: "Rainforest Canvas",
+                summary: "warm humid layered jungle",
+                tags: [.glasshouse, .indoor, .warm, .humid, .wet, .shade, .woodland, .bog, .meadow]
+            )
+        }
+
         if key.contains("water")
             || key.contains("pond")
             || key.contains("wetland")

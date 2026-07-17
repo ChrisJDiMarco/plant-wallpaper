@@ -28,6 +28,21 @@ struct GardenFlythroughVideoGeneratorTests {
         #expect(prompt.contains("Follow normalized path"))
     }
 
+    @Test("five second request sends selected fal duration")
+    func fiveSecondRequestSendsSelectedFalDuration() throws {
+        let imageURL = URL(string: "https://v3.fal.media/files/test/snapshot.png")!
+        let body = GardenFlythroughVideoGenerator.imageRequestBodyForSelfTest(
+            snapshotURL: imageURL,
+            pathInstruction: nil,
+            segmentDurationSeconds: 5,
+            totalDurationSeconds: 5
+        )
+
+        #expect(body["duration"] as? String == "5")
+        let prompt = try #require(body["prompt"] as? String)
+        #expect(prompt.contains("5-second seamless"))
+    }
+
     @Test("continuation request carries current frame and original garden map")
     func continuationRequestCarriesCurrentFrameAndOriginalGardenMap() throws {
         let startURL = URL(string: "https://v3.fal.media/files/test/segment-start.png")!
@@ -58,12 +73,24 @@ struct GardenFlythroughVideoGeneratorTests {
             startFrameURL: startURL,
             originalMapURL: originalURL,
             pathInstruction: nil,
-            segmentCount: 3
+            segmentCount: 2,
+            segmentDurationSeconds: 15,
+            totalDurationSeconds: 20
         )
 
+        #expect(body["duration"] as? String == "15")
         let prompt = try #require(body["prompt"] as? String)
-        #expect(prompt.contains("30-second continuous"))
+        #expect(prompt.contains("20-second continuous"))
+        #expect(prompt.contains("15-second segment"))
         #expect(!prompt.contains("60-second continuous"))
+    }
+
+    @Test("selected duration is split into fal sized clips")
+    func selectedDurationIsSplitIntoFalSizedClips() {
+        #expect(GardenFlythroughVideoGenerator.segmentDurations(for: 5) == [5])
+        #expect(GardenFlythroughVideoGenerator.segmentDurations(for: 20) == [10, 10])
+        #expect(GardenFlythroughVideoGenerator.segmentDurations(for: 35) == [15, 10, 10])
+        #expect(GardenFlythroughVideoGenerator.segmentDurations(for: 60) == [15, 15, 15, 15])
     }
 
     @Test("fal content policy errors are shown as a short useful message")

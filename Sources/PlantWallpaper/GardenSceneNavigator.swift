@@ -11,6 +11,10 @@ enum GardenSceneNavigator {
         customWallpapers: [CustomWallpaperRecord],
         experienceMode: GardenExperienceMode? = nil
     ) -> [String] {
+        if experienceMode == .rainforest {
+            return [GardenExperienceModeScenePolicy.rainforestCanvasSceneKey]
+        }
+
         let builtInScenes = experienceMode.map { GardenWallpaperScene.selectableScenes(for: $0) } ?? GardenWallpaperScene.allCases
         let visibleCustomWallpapers = customWallpapers.filter { record in
             guard !record.isWallpaperUpdate else {
@@ -59,6 +63,8 @@ enum GardenSceneNavigator {
 
     private static func defaultSceneKey(for mode: GardenExperienceMode?) -> String {
         switch mode {
+        case .rainforest:
+            GardenExperienceModeScenePolicy.rainforestCanvasSceneKey
         case .roomStudio:
             GardenWallpaperScene.defaultRoomStudioScene.rawValue
         case .alienUFO:

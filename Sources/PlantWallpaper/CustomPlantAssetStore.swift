@@ -31,10 +31,16 @@ struct CustomPlantAssetRecord: Codable, Equatable, Identifiable {
             && !prompt.contains("Room object category:")
     }
 
+    var isRainforestPlantAsset: Bool {
+        roomObjectCategory == nil
+            && prompt.contains("WallpaperGarden Rainforest mode")
+    }
+
     var isGardenPlantAsset: Bool {
         roomObjectCategory == nil
             && !isAlienPlantAsset
             && !isRoomStudioPlantAsset
+            && !isRainforestPlantAsset
     }
 }
 
@@ -142,6 +148,10 @@ enum CustomPlantAssetPrompt {
             return alienPlantMasterPrompt(for: request)
         }
 
+        if request.experienceMode == .rainforest {
+            return rainforestPlantMasterPrompt(for: request)
+        }
+
         if request.experienceMode == .roomStudio {
             return roomStudioPlantMasterPrompt(for: request)
         }
@@ -210,6 +220,28 @@ enum CustomPlantAssetPrompt {
         - Bioluminescence is allowed, but it must be part of the plant anatomy, not a background glow or aura.
         - Realistic detailed cutout, premium app asset quality, crisp edges, soft natural internal shadows.
         - Front-facing three-quarter view that can sit convincingly on top of an alien garden wallpaper.
+        - Keep the whole silhouette inside the canvas with padding so the app can scale and drag it cleanly.
+        """
+    }
+
+    private static func rainforestPlantMasterPrompt(for request: CustomPlantAssetRequest) -> String {
+        """
+        Create a high-fidelity PNG rainforest collage asset for WallpaperGarden Rainforest mode.
+        User rainforest asset request: \(request.userDescription)
+
+        Asset type: Rainforest \(request.kind.displayName)
+        Display name: \(request.displayName)
+        Visual guidance: Lush humid rainforest understory, canopy, vines, moss, epiphytes, and layered jungle collage; \(guidance(for: request.kind))
+
+        Hard constraints:
+        - Render the rainforest asset on a single perfectly flat pure chroma-magenta background (#FF00FF) that touches every canvas edge.
+        - The #FF00FF background must be one uniform color with no shadows, gradients, texture, floor plane, reflections, lighting variation, vignette, or halo.
+        - Do not use pure #FF00FF anywhere inside the asset itself; keep the subject fully separated from the chroma background with crisp edges and generous padding.
+        - Do not render a checkerboard transparency pattern; the app will remove the #FF00FF background after generation.
+        - no full forest scene, no room, no wall, no floor, no pot, no planter, no label, no UI, no readable text.
+        - Isolated single rainforest cutout, centered, fully visible, with an organic base or edge that layers naturally over other assets.
+        - Realistic detailed cutout, premium app asset quality, crisp edges, soft natural internal shadows, believable leaf translucency.
+        - Front-facing three-quarter view that can sit convincingly in a full-screen plant collage.
         - Keep the whole silhouette inside the canvas with padding so the app can scale and drag it cleanly.
         """
     }
@@ -381,6 +413,8 @@ final class CustomPlantAssetStore {
             let matchesMode = switch mode {
             case .garden:
                 record.isGardenPlantAsset
+            case .rainforest:
+                record.isRainforestPlantAsset
             case .roomStudio:
                 record.isRoomStudioPlantAsset
             case .alienUFO:

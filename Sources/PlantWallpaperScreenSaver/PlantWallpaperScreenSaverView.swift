@@ -20,6 +20,8 @@ final class PlantWallpaperScreenSaverView: ScreenSaverView, WKNavigationDelegate
     private weak var scenePopup: NSPopUpButton?
     private var catWebView: WKWebView?
     private var catWebViewLoaded = false
+    private var catConfigurationFingerprint = ""
+    private var restoredCatMemoryJSON: String?
 
     override var isFlipped: Bool { true }
 
@@ -56,6 +58,10 @@ final class PlantWallpaperScreenSaverView: ScreenSaverView, WKNavigationDelegate
         super.stopAnimation()
     }
 
+    deinit {
+        teardownCatWebView()
+    }
+
     override func animateOneFrame() {
         reloadGardenIfNeeded()
         gardenState = GardenEngine.advance(gardenState, to: Date())
@@ -73,6 +79,7 @@ final class PlantWallpaperScreenSaverView: ScreenSaverView, WKNavigationDelegate
             date: Date(),
             desktopWallpaperImageURL: effectiveDesktopWallpaperImageURL(),
             animationElapsed: Date().timeIntervalSince(startedAt),
+            backingScale: window?.backingScaleFactor ?? 2,
             isPreview: isPreview
         )
     }
@@ -256,9 +263,7 @@ final class PlantWallpaperScreenSaverView: ScreenSaverView, WKNavigationDelegate
 
     private func updateCatWebView() {
         guard effectiveCatEnabled(), let indexURL = catIndexURL() else {
-            catWebView?.removeFromSuperview()
-            catWebView = nil
-            catWebViewLoaded = false
+            teardownCatWebView()
             return
         }
 
@@ -297,6 +302,9 @@ final class PlantWallpaperScreenSaverView: ScreenSaverView, WKNavigationDelegate
     }
 
     private func loadCatWebView(_ webView: WKWebView, indexURL: URL) {
+        catWebViewLoaded = false
+        catConfigurationFingerprint = ""
+        restoredCatMemoryJSON = nil
         let settings = ScreenSaverCatSettings(defaults: appDefaults)
         let variant = ScreenSaverCatSettings.webVariant(settings.variant)
         var components = URLComponents(url: indexURL, resolvingAgainstBaseURL: false)
@@ -322,6 +330,18 @@ final class PlantWallpaperScreenSaverView: ScreenSaverView, WKNavigationDelegate
 
         let settings = ScreenSaverCatSettings(defaults: appDefaults)
         let groundFraction = catGroundFraction()
+        let fingerprint = [
+            String(groundFraction),
+            String(settings.sizePoints),
+            String(Double(max(1, bounds.width))),
+            String(Double(max(1, bounds.height))),
+            String(settings.furLength)
+        ].joined(separator: ":")
+        guard fingerprint != catConfigurationFingerprint else {
+            restoreCatMemoryIfNeeded()
+            return
+        }
+        catConfigurationFingerprint = fingerprint
         let script = """
         window.catBridge && window.catBridge.configure({
           groundFraction: \(groundFraction),
@@ -346,6 +366,16 @@ final class PlantWallpaperScreenSaverView: ScreenSaverView, WKNavigationDelegate
         restoreCatMemoryIfNeeded()
     }
 
+    private func teardownCatWebView() {
+        catWebView?.stopLoading()
+        catWebView?.navigationDelegate = nil
+        catWebView?.removeFromSuperview()
+        catWebView = nil
+        catWebViewLoaded = false
+        catConfigurationFingerprint = ""
+        restoredCatMemoryJSON = nil
+    }
+
     private func setCatPaused(_ isPaused: Bool) {
         catWebView?.evaluateJavaScript(
             "window.catBridge && window.catBridge.setPaused(\(isPaused ? "true" : "false"))"
@@ -368,11 +398,13 @@ final class PlantWallpaperScreenSaverView: ScreenSaverView, WKNavigationDelegate
 
     private func restoreCatMemoryIfNeeded() {
         guard let memoryJSON = appDefaults.string(forKey: ScreenSaverGardenConstants.catMemoryDefaultsKey),
-              !memoryJSON.isEmpty else {
+              !memoryJSON.isEmpty,
+              memoryJSON != restoredCatMemoryJSON else {
             return
         }
 
         catWebView?.evaluateJavaScript("window.catBridge && window.catBridge.restoreCatMemory(\(memoryJSON))")
+        restoredCatMemoryJSON = memoryJSON
     }
 
     private func resolvedScreenIndex() -> Int {
@@ -584,9 +616,18 @@ private struct ScreenSaverCustomWallpaperRecord: Codable, Equatable {
 }
 
 private final class ScreenSaverGardenRenderer {
+    private struct ResampledImageKey: Hashable {
+        let source: ObjectIdentifier
+        let pixelHeight: Int
+    }
+
+    private static let resampledCacheLimit = 192
+
     private let assetLibrary: ScreenSaverPlantAssetLibrary
     private let customAssetLibrary: ScreenSaverCustomPlantAssetLibrary
     private let sceneLibrary: ScreenSaverSceneLibrary
+    private var resampledImageCache: [ResampledImageKey: NSImage] = [:]
+    private var backingScale: CGFloat = 2
 
     init(bundle: Bundle) {
         assetLibrary = ScreenSaverPlantAssetLibrary(bundle: bundle)
@@ -606,11 +647,13 @@ private final class ScreenSaverGardenRenderer {
         date: Date,
         desktopWallpaperImageURL: URL?,
         animationElapsed: TimeInterval,
+        backingScale: CGFloat,
         isPreview: Bool
     ) {
         guard bounds.width > 0, bounds.height > 0 else {
             return
         }
+        self.backingScale = max(1, backingScale)
 
         drawBackground(
             sceneKey: sceneKey,
@@ -1076,14 +1119,73 @@ private final class ScreenSaverGardenRenderer {
     }
 
     private func drawAsset(_ image: NSImage, in rect: NSRect, opacity: CGFloat) {
-        image.draw(
+        let resampled = resampledImage(for: image, targetHeight: rect.height)
+        resampled.draw(
             in: rect,
-            from: NSRect(origin: .zero, size: image.size),
+            from: NSRect(origin: .zero, size: resampled.size),
             operation: .sourceOver,
             fraction: max(0, min(1, opacity)),
             respectFlipped: true,
-            hints: [.interpolation: NSImageInterpolation.high]
+            hints: [.interpolation: NSImageInterpolation.medium]
         )
+    }
+
+    private func resampledImage(for image: NSImage, targetHeight: CGFloat) -> NSImage {
+        guard image.size.height > 0, image.size.width > 0, targetHeight > 0 else {
+            return image
+        }
+
+        let bucketHeight = ceil(max(16, targetHeight) / 32) * 32
+        let pixelHeight = Int(bucketHeight * backingScale)
+        guard CGFloat(pixelHeight) < image.size.height else {
+            return image
+        }
+
+        let key = ResampledImageKey(source: ObjectIdentifier(image), pixelHeight: pixelHeight)
+        if let cached = resampledImageCache[key] {
+            return cached
+        }
+
+        let aspect = image.size.width / image.size.height
+        let pixelWidth = max(1, Int((CGFloat(pixelHeight) * aspect).rounded()))
+        guard let rep = NSBitmapImageRep(
+            bitmapDataPlanes: nil,
+            pixelsWide: pixelWidth,
+            pixelsHigh: pixelHeight,
+            bitsPerSample: 8,
+            samplesPerPixel: 4,
+            hasAlpha: true,
+            isPlanar: false,
+            colorSpaceName: .deviceRGB,
+            bytesPerRow: 0,
+            bitsPerPixel: 0
+        ) else {
+            return image
+        }
+        rep.size = NSSize(width: bucketHeight * aspect, height: bucketHeight)
+
+        NSGraphicsContext.saveGraphicsState()
+        if let context = NSGraphicsContext(bitmapImageRep: rep) {
+            NSGraphicsContext.current = context
+            context.imageInterpolation = .high
+            image.draw(
+                in: NSRect(origin: .zero, size: rep.size),
+                from: NSRect(origin: .zero, size: image.size),
+                operation: .copy,
+                fraction: 1
+            )
+            context.flushGraphics()
+        }
+        NSGraphicsContext.restoreGraphicsState()
+
+        let resampled = NSImage(size: rep.size)
+        resampled.addRepresentation(rep)
+        resampled.cacheMode = .always
+        if resampledImageCache.count >= Self.resampledCacheLimit {
+            resampledImageCache.removeAll(keepingCapacity: true)
+        }
+        resampledImageCache[key] = resampled
+        return resampled
     }
 
     private func realisticAssetRect(
@@ -1237,9 +1339,13 @@ private struct ScreenSaverCustomPlantAssetRecord: Decodable {
 }
 
 private final class ScreenSaverCustomPlantAssetLibrary {
+    private static let imageCacheLimit = 32
+
     private let manifestURL: URL
     private let bundle: Bundle
     private var imageCache: [String: NSImage] = [:]
+    private var imageCacheAccessOrder: [String] = []
+    private var recordsCache: (modifiedAt: Date, records: [ScreenSaverCustomPlantAssetRecord])?
 
     init(
         baseDirectoryURL: URL = GardenPersistence.defaultDirectoryURL(),
@@ -1265,6 +1371,7 @@ private final class ScreenSaverCustomPlantAssetLibrary {
 
     func image(for id: String) -> NSImage? {
         if let cachedImage = imageCache[id] {
+            markImageCacheAccess(id)
             return cachedImage
         }
 
@@ -1275,7 +1382,7 @@ private final class ScreenSaverCustomPlantAssetLibrary {
         }
 
         image.cacheMode = .always
-        imageCache[id] = image
+        cacheImage(image, for: id)
         return image
     }
 
@@ -1284,13 +1391,39 @@ private final class ScreenSaverCustomPlantAssetLibrary {
     }
 
     private func records() -> [ScreenSaverCustomPlantAssetRecord] {
-        guard FileManager.default.fileExists(atPath: manifestURL.path),
-              let data = try? Data(contentsOf: manifestURL),
-              let records = try? JSONDecoder().decode([ScreenSaverCustomPlantAssetRecord].self, from: data) else {
+        guard FileManager.default.fileExists(atPath: manifestURL.path) else {
+            recordsCache = nil
             return []
         }
 
+        let modifiedAt = (try? manifestURL.resourceValues(forKeys: [.contentModificationDateKey]))
+            .flatMap(\.contentModificationDate) ?? .distantPast
+        if let recordsCache, recordsCache.modifiedAt == modifiedAt {
+            return recordsCache.records
+        }
+
+        guard let data = try? Data(contentsOf: manifestURL),
+              let records = try? JSONDecoder().decode([ScreenSaverCustomPlantAssetRecord].self, from: data) else {
+            recordsCache = (modifiedAt, [])
+            return []
+        }
+
+        recordsCache = (modifiedAt, records)
         return records
+    }
+
+    private func cacheImage(_ image: NSImage, for id: String) {
+        imageCache[id] = image
+        markImageCacheAccess(id)
+        while imageCache.count > Self.imageCacheLimit, let evictedID = imageCacheAccessOrder.first {
+            imageCacheAccessOrder.removeFirst()
+            imageCache.removeValue(forKey: evictedID)
+        }
+    }
+
+    private func markImageCacheAccess(_ id: String) {
+        imageCacheAccessOrder.removeAll { $0 == id }
+        imageCacheAccessOrder.append(id)
     }
 
     private func bundledAlienImageURL(for id: String) -> URL? {
@@ -1377,8 +1510,13 @@ private final class ScreenSaverPlantAssetLibrary {
 }
 
 private final class ScreenSaverSceneLibrary {
+    private static let imageCacheLimit = 12
+
     private let bundle: Bundle
     private let fileManager: FileManager
+    private var imageCache: [String: NSImage] = [:]
+    private var imageCacheAccessOrder: [String] = []
+    private var customWallpaperRecordsCache: (modifiedAt: Date, records: [ScreenSaverCustomWallpaperRecord])?
 
     init(bundle: Bundle, fileManager: FileManager = .default) {
         self.bundle = bundle
@@ -1388,22 +1526,22 @@ private final class ScreenSaverSceneLibrary {
     func image(for sceneKey: String, date: Date, desktopWallpaperImageURL: URL? = nil) -> NSImage? {
         if let desktopWallpaperImageURL,
            fileManager.fileExists(atPath: desktopWallpaperImageURL.path),
-           let desktopImage = NSImage(contentsOf: desktopWallpaperImageURL) {
+           let desktopImage = cachedImage(contentsOf: desktopWallpaperImageURL) {
             return desktopImage
         }
 
         let phase = ScreenSaverSceneDayCyclePhase(date: date)
         if let phaseURL = bundledImageURL(for: "\(sceneKey)-\(phase.rawValue)") {
-            return NSImage(contentsOf: phaseURL)
+            return cachedImage(contentsOf: phaseURL)
         }
 
         if let url = bundledImageURL(for: sceneKey) {
-            return NSImage(contentsOf: url)
+            return cachedImage(contentsOf: url)
         }
 
         return customWallpaperRecords()
             .first { $0.key == sceneKey }
-            .flatMap { NSImage(contentsOf: $0.imageURL) }
+            .flatMap { cachedImage(contentsOf: $0.imageURL) }
     }
 
     private func bundledImageURL(for resourceName: String) -> URL? {
@@ -1414,12 +1552,54 @@ private final class ScreenSaverSceneLibrary {
         let manifestURL = GardenPersistence.defaultDirectoryURL(fileManager: fileManager)
             .appendingPathComponent("Wallpaper", isDirectory: true)
             .appendingPathComponent("custom-wallpapers.json")
-        guard fileManager.fileExists(atPath: manifestURL.path),
-              let data = try? Data(contentsOf: manifestURL) else {
+        guard fileManager.fileExists(atPath: manifestURL.path) else {
+            customWallpaperRecordsCache = nil
             return []
         }
 
-        return (try? JSONDecoder().decode([ScreenSaverCustomWallpaperRecord].self, from: data)) ?? []
+        let modifiedAt = (try? manifestURL.resourceValues(forKeys: [.contentModificationDateKey]))
+            .flatMap(\.contentModificationDate) ?? .distantPast
+        if let customWallpaperRecordsCache, customWallpaperRecordsCache.modifiedAt == modifiedAt {
+            return customWallpaperRecordsCache.records
+        }
+
+        guard let data = try? Data(contentsOf: manifestURL),
+              let records = try? JSONDecoder().decode([ScreenSaverCustomWallpaperRecord].self, from: data) else {
+            customWallpaperRecordsCache = (modifiedAt, [])
+            return []
+        }
+
+        customWallpaperRecordsCache = (modifiedAt, records)
+        return records
+    }
+
+    private func cachedImage(contentsOf url: URL) -> NSImage? {
+        let values = try? url.resourceValues(forKeys: [.contentModificationDateKey, .fileSizeKey])
+        let modifiedAt = values?.contentModificationDate?.timeIntervalSinceReferenceDate ?? 0
+        let fileSize = values?.fileSize ?? 0
+        let key = "\(url.path):\(modifiedAt):\(fileSize)"
+        if let cachedImage = imageCache[key] {
+            markImageCacheAccess(key)
+            return cachedImage
+        }
+
+        guard let image = NSImage(contentsOf: url) else {
+            return nil
+        }
+
+        image.cacheMode = .always
+        imageCache[key] = image
+        markImageCacheAccess(key)
+        while imageCache.count > Self.imageCacheLimit, let evictedKey = imageCacheAccessOrder.first {
+            imageCacheAccessOrder.removeFirst()
+            imageCache.removeValue(forKey: evictedKey)
+        }
+        return image
+    }
+
+    private func markImageCacheAccess(_ key: String) {
+        imageCacheAccessOrder.removeAll { $0 == key }
+        imageCacheAccessOrder.append(key)
     }
 }
 

@@ -19,6 +19,7 @@ final class GardenWeatherService: NSObject, CLLocationManagerDelegate {
     private(set) var statusDescription = "Off"
     private var storeObserver: NSObjectProtocol?
     private var wakeObserver: NSObjectProtocol?
+    private var fetchTask: Task<Void, Never>?
 
     init(store: GardenStore) {
         self.store = store
@@ -42,6 +43,24 @@ final class GardenWeatherService: NSObject, CLLocationManagerDelegate {
             }
         }
         syncWithSettings()
+    }
+
+    deinit {
+        MainActor.assumeIsolated {
+            shutdown()
+        }
+    }
+
+    func shutdown() {
+        if let storeObserver {
+            NotificationCenter.default.removeObserver(storeObserver)
+            self.storeObserver = nil
+        }
+        if let wakeObserver {
+            NSWorkspace.shared.notificationCenter.removeObserver(wakeObserver)
+            self.wakeObserver = nil
+        }
+        stopIfNeeded(clearWeather: false)
     }
 
     private func storeDidChange() {
@@ -99,17 +118,19 @@ final class GardenWeatherService: NSObject, CLLocationManagerDelegate {
         refreshTimer?.tolerance = 120
     }
 
-    private func stopIfNeeded() {
+    private func stopIfNeeded(clearWeather: Bool = true) {
         guard refreshTimer != nil || locationManager != nil else {
             return
         }
 
         refreshTimer?.invalidate()
         refreshTimer = nil
+        fetchTask?.cancel()
+        fetchTask = nil
         locationManager?.delegate = nil
         locationManager = nil
         statusDescription = "Off"
-        if store.state.weather != nil {
+        if clearWeather, store.state.weather != nil {
             store.setWeather(nil)
         }
     }
@@ -194,14 +215,17 @@ final class GardenWeatherService: NSObject, CLLocationManagerDelegate {
             return
         }
 
-        Task { [weak self] in
+        fetchTask?.cancel()
+        fetchTask = Task { [weak self] in
             do {
                 let (data, _) = try await URLSession.shared.data(from: url)
+                try Task.checkCancellation()
                 let response = try JSONDecoder().decode(OpenMeteoResponse.self, from: data)
                 let kind = GardenWeatherKind.fromWMOCode(response.currentWeather.weathercode)
                 let temperature = response.currentWeather.temperature
+                try Task.checkCancellation()
                 await MainActor.run { [weak self] in
-                    guard let self else {
+                    guard let self, self.store.state.settings.isWeatherSyncEnabled else {
                         return
                     }
 
@@ -226,10 +250,14 @@ final class GardenWeatherService: NSObject, CLLocationManagerDelegate {
                     self.lastFetchedCondition = condition
                     self.statusDescription = condition.summary
                     self.store.setWeather(condition)
+                    self.fetchTask = nil
                 }
+            } catch is CancellationError {
+                return
             } catch {
                 await MainActor.run { [weak self] in
                     self?.statusDescription = "Weather fetch failed"
+                    self?.fetchTask = nil
                 }
             }
         }

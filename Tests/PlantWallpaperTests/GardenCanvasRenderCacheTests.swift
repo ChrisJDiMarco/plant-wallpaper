@@ -218,12 +218,25 @@ struct GardenCanvasRenderCacheTests {
     @Test("only Garden mode draws garden atmosphere canvas effects")
     func onlyGardenModeDrawsGardenAtmosphereCanvasEffects() {
         let gardenCanvas = canvas(for: .garden)
+        let rainforestCanvas = canvas(for: .rainforest)
         let roomCanvas = canvas(for: .roomStudio)
         let alienCanvas = canvas(for: .alienUFO)
 
         #expect(gardenCanvas.drawsGardenAtmosphericCanvasEffectsForSelfTest())
+        #expect(!rainforestCanvas.drawsGardenAtmosphericCanvasEffectsForSelfTest())
         #expect(!roomCanvas.drawsGardenAtmosphericCanvasEffectsForSelfTest())
         #expect(!alienCanvas.drawsGardenAtmosphericCanvasEffectsForSelfTest())
+    }
+
+    @Test("Rainforest canvas backdrop image is bundled")
+    func rainforestCanvasBackdropImageIsBundled() throws {
+        let key = GardenExperienceModeScenePolicy.rainforestCanvasSceneKey
+        let url = try #require(
+            Bundle.appResources.url(forResource: key, withExtension: "png", subdirectory: "SceneAssets")
+                ?? Bundle.appResources.url(forResource: key, withExtension: "png")
+        )
+
+        #expect(NSImage(contentsOf: url) != nil)
     }
 
     @Test("progression level zero draws the waiting overlay")
@@ -268,7 +281,7 @@ struct GardenCanvasRenderCacheTests {
                     directoryURL: FileManager.default.temporaryDirectory
                         .appendingPathComponent("garden-atmosphere-test-\(UUID().uuidString)", isDirectory: true)
                 ),
-                activeSceneKey: GardenExperienceModeScenePolicy.defaultScene(for: mode).rawValue
+                activeSceneKey: GardenExperienceModeScenePolicy.defaultSceneKey(for: mode)
             )
         )
     }

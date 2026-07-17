@@ -39,6 +39,14 @@ final class GardenPricingWindowController: NSObject {
         }
     }
 
+    deinit {
+        MainActor.assumeIsolated {
+            if let entitlementsObserver {
+                NotificationCenter.default.removeObserver(entitlementsObserver)
+            }
+        }
+    }
+
     func show(lockedFeature: GardenProFeature? = nil) {
         if window == nil {
             buildWindow()

@@ -370,12 +370,15 @@ struct WallpaperManagerTests {
         )
 
         #expect(gardenPrompt.contains("Level 20 of 20"))
+        #expect(gardenPrompt.contains("brand-new garden lifestyle scene"))
         #expect(gardenPrompt.contains("surreal founder estate"))
         #expect(gardenPrompt.contains("coastal Brazil"))
         #expect(gardenPrompt.contains("sultan/lord fantasy scale"))
         #expect(gardenPrompt.contains("Preserve clean, believable planting zones"))
+        #expect(!gardenPrompt.contains("Recreate the attached"))
+        #expect(!gardenPrompt.contains("source of truth"))
         #expect(roomPrompt.contains("Level 1 of 20"))
-        #expect(roomPrompt.contains("small dorm-like bedroom"))
+        #expect(roomPrompt.contains("cardboard-box crash space"))
         #expect(roomPrompt.contains("Preserve open walls"))
     }
 
@@ -436,6 +439,32 @@ struct WallpaperManagerTests {
         #expect(prompt(seed: 7) == prompt(seed: 7))
         let distinct = Set([1, 2, 3, 4, 5, 6, 7, 8].map { prompt(seed: UInt64($0)) })
         #expect(distinct.count >= 5)
+    }
+
+    @Test("level 1 progression starts from a shoddy origin instead of the current wallpaper")
+    func progressionPromptStartsFromOriginStory() {
+        let progression = GardenSceneProgression(
+            level: 0,
+            profile: GardenProgressionProfile(
+                lifestyleFantasy: "Tokyo cyberpunk netrunner lifestyle",
+                placeInWorld: "rain-slick Neo-Tokyo",
+                ageBracket: "mid 20s",
+                vibe: "neon, broke, ambitious",
+                avoidList: "polished penthouse at the start"
+            )
+        )
+
+        let prompt = WallpaperProgressionPrompt.masterPrompt(
+            progression: progression,
+            targetLevel: 1,
+            experienceMode: .roomStudio,
+            seed: 42
+        )
+
+        #expect(prompt.contains("Do not recreate, reskin"))
+        #expect(prompt.contains("bare-bones origin story"))
+        #expect(prompt.contains("cardboard-box/tarp/mattress-on-floor energy"))
+        #expect(!prompt.contains("natural next stage from the current image"))
     }
 
     @Test("smart lock wallpaper prompt preserves layout and excludes baked bugs")
@@ -530,6 +559,44 @@ struct WallpaperManagerTests {
         #expect(!versions[0].isOriginal)
     }
 
+    @Test("normal version history hides progression generated scenes")
+    func normalVersionHistoryHidesProgressionGeneratedScenes() throws {
+        let fixture = try TemporaryWallpaperFixture()
+        defer { fixture.cleanup() }
+
+        let manager = WallpaperManager(
+            baseDirectoryURL: fixture.directoryURL,
+            defaults: fixture.defaults
+        )
+        let sceneKey = GardenWallpaperScene.swedishPatioGarden.rawValue
+        let normalRecord = try manager.storeEditedWallpaperForSelfTest(
+            updatePrompt: "add warmer evening light",
+            parentSceneKey: sceneKey,
+            editedFromKey: sceneKey,
+            imageData: try fixture.pngData(),
+            createdAt: Date(timeIntervalSince1970: 10)
+        )
+        let progressionRecord = try manager.storeEditedWallpaperForSelfTest(
+            updatePrompt: "Progression Level 1: Bare First Garden",
+            parentSceneKey: sceneKey,
+            editedFromKey: normalRecord.key,
+            imageData: try fixture.pngData(),
+            createdAt: Date(timeIntervalSince1970: 20)
+        )
+
+        #expect(manager.wallpaperVersions(forSceneKey: sceneKey).map(\.key) == [
+            normalRecord.key,
+            sceneKey
+        ])
+        #expect(manager.latestWallpaperKey(forSceneRootKey: sceneKey) == normalRecord.key)
+        #expect(manager.wallpaperVersions(forSceneKey: sceneKey, includingProgression: true).map(\.key) == [
+            progressionRecord.key,
+            normalRecord.key,
+            sceneKey
+        ])
+        #expect(manager.latestWallpaperKey(forSceneRootKey: sceneKey, includingProgression: true) == progressionRecord.key)
+    }
+
     @Test("deleting wallpaper version removes history entry and files")
     func deletingWallpaperVersionRemovesHistoryEntryAndFiles() throws {
         let fixture = try TemporaryWallpaperFixture()
@@ -571,6 +638,37 @@ struct WallpaperManagerTests {
         ])
         #expect(manager.customWallpapers.contains { $0.key == firstRecord.key })
         #expect(!manager.customWallpapers.contains { $0.key == secondRecord.key })
+    }
+
+    @Test("deleting normal wallpaper version does not fall forward to progression")
+    func deletingNormalWallpaperVersionDoesNotFallForwardToProgression() throws {
+        let fixture = try TemporaryWallpaperFixture()
+        defer { fixture.cleanup() }
+
+        let manager = WallpaperManager(
+            baseDirectoryURL: fixture.directoryURL,
+            defaults: fixture.defaults
+        )
+        let sceneKey = GardenWallpaperScene.swedishPatioGarden.rawValue
+        let normalRecord = try manager.storeEditedWallpaperForSelfTest(
+            updatePrompt: "add warmer evening light",
+            parentSceneKey: sceneKey,
+            editedFromKey: sceneKey,
+            imageData: try fixture.pngData(),
+            createdAt: Date(timeIntervalSince1970: 10)
+        )
+        _ = try manager.storeEditedWallpaperForSelfTest(
+            updatePrompt: "Progression Level 2: Designed Garden",
+            parentSceneKey: sceneKey,
+            editedFromKey: normalRecord.key,
+            imageData: try fixture.pngData(),
+            createdAt: Date(timeIntervalSince1970: 20)
+        )
+        _ = manager.applyWallpaperSceneKey(normalRecord.key, to: [])
+
+        let fallbackKey = try manager.deleteWallpaperVersion(key: normalRecord.key, moveToTrash: false)
+
+        #expect(fallbackKey == sceneKey)
     }
 
     @Test("scene roots resolve to the latest edited wallpaper")

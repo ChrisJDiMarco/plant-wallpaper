@@ -368,6 +368,14 @@ enum CatCompanionCommandRouter {
             )
         }
 
+        if containsAny(prompt, ["rainforest mode", "jungle mode", "rainforest canvas"]) {
+            return CatCompanionCommand(
+                action: .switchExperienceMode(.rainforest),
+                title: "switch to Rainforest mode",
+                successMessage: "Switched to Rainforest mode."
+            )
+        }
+
         if containsAny(prompt, ["garden mode", "switch to garden", "back to garden"]) {
             return CatCompanionCommand(
                 action: .switchExperienceMode(.garden),

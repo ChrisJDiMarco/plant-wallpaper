@@ -47,4 +47,23 @@ struct GardenProgressionFantasyTemplatesTests {
             #expect(ids.contains(id), "catalog should include \(id)")
         }
     }
+
+    @Test("garden mode uses botanist and garden-lover templates")
+    func gardenModeUsesPlantPersonTemplates() {
+        let gardenIDs = Set(GardenProgressionFantasyTemplateCatalog.templates(for: .garden).map(\.id))
+
+        #expect(gardenIDs.contains("rooftop-botanist-nyc"))
+        #expect(gardenIDs.contains("neon-rooftop-plant-hacker"))
+        #expect(!gardenIDs.contains("modern-finance-bro"))
+        #expect(!gardenIDs.contains("tokyo-cyberpunk"))
+    }
+
+    @Test("room studio keeps persona lifestyle templates")
+    func roomStudioKeepsPersonaTemplates() {
+        let roomIDs = Set(GardenProgressionFantasyTemplateCatalog.templates(for: .roomStudio).map(\.id))
+
+        #expect(roomIDs.contains("tokyo-cyberpunk"))
+        #expect(roomIDs.contains("modern-finance-bro"))
+        #expect(!roomIDs.contains("rooftop-botanist-nyc"))
+    }
 }

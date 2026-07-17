@@ -141,6 +141,11 @@ final class CatCompanionChatWindowController: NSWindowController {
         return true
     }
 
+    override func close() {
+        (contentViewController as? CatCompanionChatViewController)?.cancelOutstandingWork()
+        super.close()
+    }
+
     static func frameForTesting(near point: NSPoint, visibleFrame: NSRect, preferredSize: NSSize) -> NSRect {
         frame(near: point, visibleFrame: visibleFrame, preferredSize: preferredSize)
     }
@@ -271,8 +276,23 @@ private final class CatCompanionChatViewController: NSViewController {
     }
 
     deinit {
+        MainActor.assumeIsolated {
+            cancelOutstandingWork()
+        }
+    }
+
+    func cancelOutstandingWork() {
         activeTask?.cancel()
+        activeTask = nil
         voiceTask?.cancel()
+        voiceTask = nil
+        voiceAudio.cancelRecording()
+        voiceAudio.stopPlayback()
+        voiceModeState = .idle
+        shouldSpeakNextAssistantResponse = false
+        if isViewLoaded {
+            updateVoiceButton()
+        }
     }
 
     private func buildInterface() {
@@ -900,10 +920,7 @@ private final class CatCompanionChatViewController: NSViewController {
     }
 
     @objc private func closePanel() {
-        voiceTask?.cancel()
-        voiceAudio.cancelRecording()
-        voiceAudio.stopPlayback()
-        voiceModeState = .idle
+        cancelOutstandingWork()
         closeHandler()
     }
 

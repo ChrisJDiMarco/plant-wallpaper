@@ -6,7 +6,7 @@ struct GardenFlythroughPathSelection {
     let durationSeconds: Int
 
     var segmentCount: Int {
-        max(1, durationSeconds / 10)
+        GardenFlythroughVideoGenerator.segmentDurations(for: durationSeconds).count
     }
 }
 
@@ -89,11 +89,11 @@ final class GardenFlythroughPathWindowController: NSObject, NSWindowDelegate {
         generateWithPathButton.keyEquivalent = "\r"
         generateWithPathButton.isEnabled = false
         applyAsWallpaperButton.state = .off
-        for seconds in stride(from: 10, through: 60, by: 10) {
+        for seconds in stride(from: 5, through: 60, by: 5) {
             durationPopup.addItem(withTitle: "\(seconds) seconds")
             durationPopup.lastItem?.representedObject = seconds
         }
-        durationPopup.selectItem(withTitle: "60 seconds")
+        durationPopup.selectItem(withTitle: "15 seconds")
 
         let durationLabel = NSTextField(labelWithString: "Video length")
         durationLabel.font = .systemFont(ofSize: 13, weight: .medium)
@@ -160,7 +160,7 @@ final class GardenFlythroughPathWindowController: NSObject, NSWindowDelegate {
     }
 
     private func selectedDurationSeconds() -> Int {
-        durationPopup.selectedItem?.representedObject as? Int ?? 60
+        durationPopup.selectedItem?.representedObject as? Int ?? 15
     }
 }
 

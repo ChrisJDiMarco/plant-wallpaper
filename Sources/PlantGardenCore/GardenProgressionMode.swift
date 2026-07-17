@@ -193,6 +193,20 @@ public struct GardenSceneProgression: Codable, Equatable, Sendable {
             "Legendary Estate"
         case (.garden, 20):
             "Sultan-Level Paradise"
+        case (.rainforest, 1):
+            "Bare Mist Canvas"
+        case (.rainforest, 2...4):
+            "First Jungle Layers"
+        case (.rainforest, 5...8):
+            "Dense Understory"
+        case (.rainforest, 9...12):
+            "Overgrown Desktop"
+        case (.rainforest, 13...16):
+            "Private Rainforest"
+        case (.rainforest, 17...19):
+            "Ancient Jungle Wall"
+        case (.rainforest, 20):
+            "Desktop Rainforest Kingdom"
         case (.roomStudio, 1):
             "Bare First Room"
         case (.roomStudio, 2...4):

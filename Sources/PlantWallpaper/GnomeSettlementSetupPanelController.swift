@@ -59,12 +59,22 @@ final class GnomeSettlementSetupPanelController: NSWindowController {
         nil
     }
 
+    deinit {
+        MainActor.assumeIsolated {
+            removeStoreObserver()
+        }
+    }
+
     override func close() {
+        removeStoreObserver()
+        super.close()
+    }
+
+    private func removeStoreObserver() {
         if let storeObserver {
             NotificationCenter.default.removeObserver(storeObserver)
             self.storeObserver = nil
         }
-        super.close()
     }
 
     var selectedStartingZoneID: UUID? {

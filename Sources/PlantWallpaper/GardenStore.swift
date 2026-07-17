@@ -6,6 +6,7 @@ extension Notification.Name {
     static let gardenGnomeZoneDrawingModeDidChange = Notification.Name("gardenGnomeZoneDrawingModeDidChange")
     static let gardenGnomePerspectiveAdjustmentModeDidChange = Notification.Name("gardenGnomePerspectiveAdjustmentModeDidChange")
     static let gardenBirdSkyZoneDrawingModeDidChange = Notification.Name("gardenBirdSkyZoneDrawingModeDidChange")
+    static let gardenAutoGardenerDrawingModeDidChange = Notification.Name("gardenAutoGardenerDrawingModeDidChange")
     static let gardenSoilBrushModeDidChange = Notification.Name("gardenSoilBrushModeDidChange")
 }
 
@@ -438,12 +439,14 @@ final class GardenStore: NSObject {
         let safeScreenIndex = max(0, screenIndex)
         let point: GardenPoint
         if let position {
-            point = GardenComposition.resolvedPlantingPosition(
-                for: species,
-                preferredPosition: position,
-                existingPlants: state.plants,
-                screenIndex: safeScreenIndex
-            )
+            point = state.settings.experienceMode == .rainforest
+                ? position.clamped
+                : GardenComposition.resolvedPlantingPosition(
+                    for: species,
+                    preferredPosition: position,
+                    existingPlants: state.plants,
+                    screenIndex: safeScreenIndex
+                )
         } else {
             point = GardenComposition.nextPosition(
                 for: species,
@@ -462,7 +465,7 @@ final class GardenStore: NSObject {
                 screenIndex: safeScreenIndex,
                 position: point,
                 initialGrowth: initialGrowth,
-                initialScale: state.settings.defaultPlantScale
+                initialScale: defaultScaleForNewAsset(species: species)
             )
         )
         setSelectedPlantSilently(nextState.plants.last?.id)
@@ -479,12 +482,14 @@ final class GardenStore: NSObject {
         let species = record.baseSpecies
         let point: GardenPoint
         if let position {
-            point = GardenComposition.resolvedPlantingPosition(
-                for: species,
-                preferredPosition: position,
-                existingPlants: state.plants,
-                screenIndex: safeScreenIndex
-            )
+            point = state.settings.experienceMode == .rainforest
+                ? position.clamped
+                : GardenComposition.resolvedPlantingPosition(
+                    for: species,
+                    preferredPosition: position,
+                    existingPlants: state.plants,
+                    screenIndex: safeScreenIndex
+                )
         } else {
             point = GardenComposition.nextPosition(
                 for: species,
@@ -505,13 +510,33 @@ final class GardenStore: NSObject {
             hydration: 0.82,
             health: 0.88,
             nickname: record.displayName,
-            scale: state.settings.defaultPlantScale,
+            scale: defaultScaleForNewAsset(species: species),
             customAssetID: record.id
         )
         nextState.plants.append(plant)
         nextState.lastUpdatedAt = Date()
         replaceState(nextState, shouldSave: true, selectedPlantID: plant.id)
         journal?.append(.planted, "Created and planted \(record.displayName)")
+    }
+
+    private func defaultScaleForNewAsset(species: PlantSpecies) -> Double {
+        guard state.settings.experienceMode == .rainforest else {
+            return state.settings.defaultPlantScale
+        }
+
+        let multiplier: Double = switch species.kind {
+        case .tree:
+            1.72
+        case .foliage:
+            1.88
+        case .flower:
+            1.52
+        case .meadow:
+            2.05
+        case .edible:
+            1.55
+        }
+        return min(GardenEngine.maximumPlantScale, state.settings.defaultPlantScale * multiplier)
     }
 
     @discardableResult
@@ -1023,6 +1048,98 @@ final class GardenStore: NSObject {
         journal?.append(.moment, "The bird sky areas were cleared")
     }
 
+    func addAutoGardenerZone(screenIndex: Int, points: [GardenPoint]) {
+        let zone = AutoGardenerZone(screenIndex: screenIndex, points: points)
+        guard zone.isPlayable else {
+            return
+        }
+
+        var nextState = state
+        nextState.autoGardenerZones.append(zone)
+        nextState.lastUpdatedAt = Date()
+        replaceState(nextState, shouldSave: true)
+        journal?.append(.moment, "An Auto Gardener planting area was highlighted")
+    }
+
+    func updateAutoGardenerZone(
+        id: UUID,
+        placementType: AutoGardenerPlacementType? = nil,
+        size: AutoGardenerSize? = nil
+    ) {
+        guard let index = state.autoGardenerZones.firstIndex(where: { $0.id == id }) else {
+            return
+        }
+
+        var zone = state.autoGardenerZones[index]
+        zone.placementType = placementType ?? zone.placementType
+        zone.size = size ?? zone.size
+        guard zone != state.autoGardenerZones[index] else {
+            return
+        }
+
+        var nextState = state
+        nextState.autoGardenerZones[index] = zone
+        nextState.lastUpdatedAt = Date()
+        replaceState(nextState, shouldSave: true)
+    }
+
+    @discardableResult
+    func autoPlantGardenerZones() -> Int {
+        let zones = state.autoGardenerZones.filter(\.isPlayable)
+        guard !zones.isEmpty else {
+            return 0
+        }
+
+        var nextState = state
+        let initialGrowth: (PlantSpecies) -> Double = { species in
+            self.state.settings.plantNewPlantsAtMaturity
+                ? 1.0
+                : PlantAssetLibrary.shared.initialGrowth(for: species)
+        }
+        var plantedCount = 0
+
+        for zone in zones {
+            let points = zone.plantingPoints()
+            let species = zone.recommendedSpecies(sceneKey: activeSceneKey)
+            for index in points.indices {
+                let plantSpecies = species[index]
+                nextState = GardenEngine.addPlant(
+                    nextState,
+                    species: plantSpecies,
+                    screenIndex: zone.screenIndex,
+                    position: points[index],
+                    initialGrowth: initialGrowth(plantSpecies),
+                    initialScale: zone.size.scale(for: plantSpecies) * state.settings.defaultPlantScale
+                )
+                plantedCount += 1
+            }
+        }
+
+        guard plantedCount > 0 else {
+            return 0
+        }
+
+        replaceState(
+            userAuthoredCompositionState(nextState),
+            shouldSave: true,
+            selectedPlantID: nextState.plants.last?.id
+        )
+        journal?.append(.planted, "Auto Gardener planted \(plantedCount) plant\(plantedCount == 1 ? "" : "s")")
+        return plantedCount
+    }
+
+    func clearAutoGardenerZones() {
+        guard !state.autoGardenerZones.isEmpty else {
+            return
+        }
+
+        var nextState = state
+        nextState.autoGardenerZones.removeAll()
+        nextState.lastUpdatedAt = Date()
+        replaceState(nextState, shouldSave: true)
+        journal?.append(.moment, "The Auto Gardener planting areas were cleared")
+    }
+
     func addSoilPatch(screenIndex: Int, points: [GardenPoint], seed: Int? = nil) {
         let patch = SoilPatch(screenIndex: screenIndex, points: points, soilSeed: seed)
         guard patch.isPlayable else {
@@ -1071,6 +1188,7 @@ final class GardenStore: NSObject {
 
     func resetGarden(screenCount: Int) {
         let resetState = state.settings.experienceMode == .roomStudio
+            || state.settings.experienceMode == .rainforest
             ? GardenState(settings: state.settings)
             : GardenState.defaultGarden(screenCount: max(1, screenCount))
         replaceState(

@@ -1,9 +1,99 @@
 import AppKit
 import PlantGardenCore
 
-/// Ambient scenery layers: weather (rain, snow, fog), ground glow, mist,
+/// Ambient scenery layers: weather (rain, snow, fog), mist,
 /// air particles, and the atmosphere gradients drawn behind the plants.
 extension GardenCanvasView {
+    @MainActor private static let rainforestCanvasBackdropImage: NSImage? = {
+        let key = GardenExperienceModeScenePolicy.rainforestCanvasSceneKey
+        let url = Bundle.appResources.url(forResource: key, withExtension: "png", subdirectory: "SceneAssets")
+            ?? Bundle.appResources.url(forResource: key, withExtension: "png")
+        guard let url,
+        let image = NSImage(contentsOf: url) else {
+            return nil
+        }
+
+        image.cacheMode = .always
+        return image
+    }()
+
+    func drawRainforestCanvasBackdrop(profile: GardenSceneVisualProfile) {
+        guard bounds.width > 0, bounds.height > 0 else {
+            return
+        }
+
+        let rect = NSRect(origin: .zero, size: bounds.size)
+        if let image = Self.rainforestCanvasBackdropImage {
+            drawRainforestCanvasImage(image, in: rect)
+            return
+        } else {
+            NSGradient(colors: [
+                color(red: 196, green: 222, blue: 225, alpha: 1.00),
+                color(red: 226, green: 235, blue: 211, alpha: 1.00),
+                color(red: 196, green: 213, blue: 179, alpha: 1.00)
+            ])?.draw(in: rect, angle: -90)
+        }
+
+        NSGradient(colors: [
+            color(red: 255, green: 246, blue: 205, alpha: 0.22),
+            color(red: 255, green: 246, blue: 205, alpha: 0.00)
+        ])?.draw(
+            in: NSRect(x: bounds.width * 0.30, y: 0, width: bounds.width * 0.50, height: bounds.height * 0.58),
+            angle: -72
+        )
+
+        for index in 0..<5 {
+            let fraction = CGFloat(index) / 4
+            let y = bounds.height * (0.12 + fraction * 0.15)
+            let height = bounds.height * (0.10 + fraction * 0.025)
+            NSGradient(colors: [
+                color(red: 234, green: 240, blue: 223, alpha: 0),
+                color(red: 234, green: 240, blue: 223, alpha: CGFloat(profile.mistOpacity) * (0.18 + fraction * 0.08)),
+                color(red: 234, green: 240, blue: 223, alpha: 0)
+            ])?.draw(
+                in: NSRect(x: -bounds.width * 0.08, y: y, width: bounds.width * 1.16, height: height),
+                angle: 0
+            )
+        }
+
+        color(red: 33, green: 67, blue: 47, alpha: 0.045).setFill()
+        NSBezierPath(rect: NSRect(x: 0, y: bounds.height * 0.83, width: bounds.width, height: bounds.height * 0.17)).fill()
+    }
+
+    private func drawRainforestCanvasImage(_ image: NSImage, in rect: NSRect) {
+        let sourceSize = image.size
+        let sourceAspect = sourceSize.width / max(1, sourceSize.height)
+        let targetAspect = rect.width / max(1, rect.height)
+        let sourceRect: NSRect
+
+        if targetAspect > sourceAspect {
+            let cropHeight = sourceSize.width / targetAspect
+            sourceRect = NSRect(
+                x: 0,
+                y: (sourceSize.height - cropHeight) / 2,
+                width: sourceSize.width,
+                height: cropHeight
+            )
+        } else {
+            let cropWidth = sourceSize.height * targetAspect
+            sourceRect = NSRect(
+                x: (sourceSize.width - cropWidth) / 2,
+                y: 0,
+                width: cropWidth,
+                height: sourceSize.height
+            )
+        }
+
+        image.draw(
+            in: rect,
+            from: sourceRect,
+            operation: .copy,
+            fraction: 1,
+            respectFlipped: true,
+            hints: [.interpolation: NSImageInterpolation.high]
+        )
+    }
+
     // MARK: - Weather overlay
 
     /// Draws real-world weather over the garden: rain streaks, drifting snow,
@@ -101,59 +191,6 @@ extension GardenCanvasView {
         }
     }
 
-    func drawGroundGlow(profile: GardenSceneVisualProfile) {
-        guard bounds.height > 0 else {
-            return
-        }
-
-        let groundY = bounds.height - 22
-        let vitality = store.state.vitality()
-        let season = store.state.seasonCondition()
-        let vitalityScore = CGFloat(vitality.score)
-        let seasonEnergy = CGFloat(season.growthEnergy)
-        let sceneWarmth = CGFloat(profile.warmth)
-        let sceneHumidity = CGFloat(profile.humidity)
-        let warmGroundAlpha = 0.035 + sceneWarmth * 0.030 + vitalityScore * 0.060
-        let greenGroundAlpha = 0.030 + sceneHumidity * 0.040 + vitalityScore * 0.075
-        let gradient = NSGradient(colors: [
-            NSColor(calibratedWhite: 0.05, alpha: 0.0),
-            color(red: 248, green: 237, blue: 196, alpha: warmGroundAlpha),
-            seasonalGroundColor(for: season.mood, alpha: 0.025 + seasonEnergy * 0.040),
-            color(red: 68, green: 87, blue: 62, alpha: greenGroundAlpha)
-        ])
-        gradient?.draw(
-            in: NSRect(x: 0, y: groundY - 70, width: bounds.width, height: 100),
-            angle: -90
-        )
-
-        for index in 0..<96 {
-            let x = CGFloat(index) / 95.0 * bounds.width
-            let sway: CGFloat = 0
-            let bladeHeight = 10 + CGFloat(index % 9) * 2
-            drawCurve(
-                from: NSPoint(x: x, y: groundY + 14),
-                control1: NSPoint(x: x + sway, y: groundY),
-                control2: NSPoint(x: x + sway * 0.7, y: groundY - bladeHeight),
-                to: NSPoint(x: x + sway * 0.5, y: groundY - bladeHeight - 6),
-                color: color(red: 63, green: 121, blue: 76, alpha: 0.09 + vitalityScore * 0.13),
-                width: 1.15
-            )
-        }
-    }
-
-    func seasonalGroundColor(for season: GardenSeasonMood, alpha: CGFloat) -> NSColor {
-        switch season {
-        case .spring:
-            color(red: 169, green: 210, blue: 129, alpha: alpha)
-        case .summer:
-            color(red: 93, green: 156, blue: 82, alpha: alpha)
-        case .autumn:
-            color(red: 184, green: 117, blue: 52, alpha: alpha)
-        case .winter:
-            color(red: 193, green: 213, blue: 224, alpha: alpha)
-        }
-    }
-
     func drawAtmosphereBehindPlants(profile: GardenSceneVisualProfile) {
         guard bounds.width > 0 && bounds.height > 0 else {
             return
@@ -180,19 +217,6 @@ extension GardenCanvasView {
         }
 
         NSGradient(colors: [topTint, bottomTint])?.draw(in: rect, angle: -90)
-
-        for index in 0..<4 {
-            let startX = bounds.width * (0.38 + CGFloat(index) * 0.07)
-            let endX = bounds.width * (0.20 + CGFloat(index) * 0.17)
-            let path = NSBezierPath()
-            path.move(to: NSPoint(x: startX, y: 0))
-            path.line(to: NSPoint(x: startX + bounds.width * 0.045, y: 0))
-            path.line(to: NSPoint(x: endX + bounds.width * 0.15, y: bounds.height))
-            path.line(to: NSPoint(x: endX, y: bounds.height))
-            path.close()
-            color(red: 255, green: 244, blue: 194, alpha: 0.006 + lightIntensity * 0.018).setFill()
-            path.fill()
-        }
     }
 
     func drawSceneMist(profile: GardenSceneVisualProfile) {

@@ -217,6 +217,114 @@ enum RoomStudioPlantMenuCatalog {
     ]
 }
 
+struct RainforestFutureAsset: Equatable {
+    let title: String
+    let kind: PlantKind
+    let promptSeed: String
+}
+
+struct RainforestPropAsset: Equatable {
+    let title: String
+    let symbolName: String
+    let promptSeed: String
+}
+
+enum RainforestAssetMenuCatalog {
+    static let title = "Build Rainforest Here"
+    static let propMenuTitle = "Rainforest Props & Atmosphere"
+    static let comingSoonTitle = "Coming Soon - needs PNG assets"
+
+    static func title(for kind: PlantKind) -> String {
+        switch kind {
+        case .flower:
+            "Rainforest Flowers Here"
+        case .tree:
+            "Rainforest Trees Here"
+        case .foliage:
+            "Rainforest Foliage Here"
+        case .meadow:
+            "Rainforest Floor Here"
+        case .edible:
+            "Rainforest Edibles Here"
+        }
+    }
+
+    static func addNewTitle(for kind: PlantKind) -> String {
+        switch kind {
+        case .meadow:
+            "Add New Rainforest Floor Asset..."
+        default:
+            "Add New Rainforest \(kind.displayName)..."
+        }
+    }
+
+    static func randomTitle(for kind: PlantKind) -> String {
+        switch kind {
+        case .meadow:
+            "Random Rainforest Floor Asset Here"
+        default:
+            "Random Rainforest \(kind.displayName) Here"
+        }
+    }
+
+    static func starterDescription(for kind: PlantKind) -> String {
+        switch kind {
+        case .flower:
+            "A large tropical orchid cluster with humid glossy leaves, hanging roots, saturated petals, and a clean natural base"
+        case .tree:
+            "A broad rainforest understory tree cutout with buttress roots, layered glossy canopy, mossy bark, and a clean root edge"
+        case .foliage:
+            "A huge layered monstera and fern foliage cluster with overlapping leaves, humid highlights, and a dramatic jungle silhouette"
+        case .meadow:
+            "A dense rainforest floor mat with moss, leaf litter, tiny ferns, wet stones, and an irregular organic edge"
+        case .edible:
+            "A lush tropical edible vine with broad leaves, tendrils, small fruit, and a clean natural base"
+        }
+    }
+
+    static func futureAssets(in kind: PlantKind) -> [RainforestFutureAsset] {
+        futureAssets.filter { $0.kind == kind }
+    }
+
+    static let futureAssets: [RainforestFutureAsset] = [
+        RainforestFutureAsset(title: "Canopy Leaf Wall", kind: .tree, promptSeed: "a tall wall of overlapping rainforest canopy leaves with deep layered silhouette"),
+        RainforestFutureAsset(title: "Buttress Root Tree", kind: .tree, promptSeed: "a rainforest tree trunk with dramatic buttress roots, moss, and damp bark texture"),
+        RainforestFutureAsset(title: "Strangler Fig Column", kind: .tree, promptSeed: "twisting strangler fig roots wrapping into a vertical rainforest column"),
+        RainforestFutureAsset(title: "Young Kapok Tree", kind: .tree, promptSeed: "young kapok tree cutout with broad leaves and sculptural rainforest roots"),
+        RainforestFutureAsset(title: "Palm Crown Layer", kind: .tree, promptSeed: "oversized palm fronds forming a dense upper canopy layer"),
+        RainforestFutureAsset(title: "Giant Banana Leaves", kind: .foliage, promptSeed: "huge torn banana leaves with glossy humid highlights for foreground layering"),
+        RainforestFutureAsset(title: "Philodendron Wall", kind: .foliage, promptSeed: "dense climbing philodendron leaf wall with overlapping heart-shaped leaves"),
+        RainforestFutureAsset(title: "Bird's Nest Fern Cluster", kind: .foliage, promptSeed: "large bird's nest fern cluster with rippled fronds and damp central rosette"),
+        RainforestFutureAsset(title: "Vine Curtain", kind: .foliage, promptSeed: "hanging curtain of rainforest vines with varied leaf sizes and dangling tendrils"),
+        RainforestFutureAsset(title: "Liana Rope Vines", kind: .foliage, promptSeed: "thick twisting liana vines looping downward with small leaves and moss"),
+        RainforestFutureAsset(title: "Foreground Monstera Leaves", kind: .foliage, promptSeed: "extra large foreground monstera leaves cropped-friendly but isolated as a full cutout"),
+        RainforestFutureAsset(title: "Heliconia Torch Cluster", kind: .flower, promptSeed: "bright red-orange heliconia flower bracts with lush tropical leaves"),
+        RainforestFutureAsset(title: "Bromeliad Nest", kind: .flower, promptSeed: "rainforest bromeliad cluster with water-catching rosettes and saturated flower spike"),
+        RainforestFutureAsset(title: "Passionflower Vine", kind: .flower, promptSeed: "delicate passionflower vine with curling tendrils and layered leaves"),
+        RainforestFutureAsset(title: "Jungle Ginger Bloom", kind: .flower, promptSeed: "torch ginger bloom with waxy pink bracts and tropical leaves"),
+        RainforestFutureAsset(title: "Mossy Floor Patch", kind: .meadow, promptSeed: "wet rainforest moss patch with leaf litter, tiny ferns, and irregular edges"),
+        RainforestFutureAsset(title: "Fern Floor Mat", kind: .meadow, promptSeed: "low carpet of young ferns for filling the bottom of a jungle collage"),
+        RainforestFutureAsset(title: "Leaf Litter Carpet", kind: .meadow, promptSeed: "brown-green rainforest leaf litter mat with damp natural texture"),
+        RainforestFutureAsset(title: "Tiny Mushroom Colony", kind: .meadow, promptSeed: "cluster of tiny rainforest mushrooms emerging from moss and wet bark"),
+        RainforestFutureAsset(title: "Cacao Sapling", kind: .edible, promptSeed: "young cacao plant with glossy leaves and small colorful pods"),
+        RainforestFutureAsset(title: "Coffee Shrub", kind: .edible, promptSeed: "lush coffee shrub with red berries and rainforest understory leaves"),
+        RainforestFutureAsset(title: "Vanilla Orchid Vine", kind: .edible, promptSeed: "vanilla orchid vine with thick leaves, tendrils, and pale flowers")
+    ]
+
+    static let propAssets: [RainforestPropAsset] = [
+        RainforestPropAsset(title: "Mossy Boulder", symbolName: "mountain.2.fill", promptSeed: "rounded wet rainforest boulder with moss, lichen, and soft shadow base"),
+        RainforestPropAsset(title: "Fallen Jungle Log", symbolName: "tree.fill", promptSeed: "fallen damp jungle log with moss, fungus, and exposed bark texture"),
+        RainforestPropAsset(title: "Root Tangle", symbolName: "point.3.connected.trianglepath.dotted", promptSeed: "tangled exposed rainforest roots for foreground layering"),
+        RainforestPropAsset(title: "Wet Stone Cluster", symbolName: "circle.hexagongrid.fill", promptSeed: "small cluster of wet stones with moss and leaf litter"),
+        RainforestPropAsset(title: "Mist Veil", symbolName: "cloud.fog.fill", promptSeed: "soft semi-transparent rainforest mist veil for depth layering"),
+        RainforestPropAsset(title: "Sunbeam Haze", symbolName: "sun.rays.fill", promptSeed: "warm diagonal jungle sunbeam haze layer"),
+        RainforestPropAsset(title: "Hanging Moss Strands", symbolName: "line.3.horizontal.decrease", promptSeed: "long hanging moss strands with small leaves and natural gaps"),
+        RainforestPropAsset(title: "Rain Droplet Leaf", symbolName: "drop.fill", promptSeed: "oversized leaf with rain droplets for close foreground framing"),
+        RainforestPropAsset(title: "Epiphyte Branch", symbolName: "leaf.fill", promptSeed: "branch covered in epiphytes, moss, tiny orchids, and dangling roots"),
+        RainforestPropAsset(title: "Jungle Edge Shadow", symbolName: "circle.lefthalf.filled", promptSeed: "soft dark foreground leaf-shadow layer for natural depth")
+    ]
+}
+
 struct AlienPlantMenuSpecimen: Equatable {
     let title: String
     let kind: PlantKind
@@ -461,6 +569,41 @@ enum GardenPlantSpecificMenuCatalog {
 
                 return leftIndex < rightIndex
             }
+    }
+
+    static func rainforestEntries(
+        in kind: PlantKind,
+        assetLibrary: PlantAssetLibrary = .shared
+    ) -> [GardenPlantSpecificMenuEntry] {
+        let rainforestSpecies = PlantSpecies.rainforestSpecies
+        return rainforestSpecies
+            .filter { $0.kind == kind }
+            .map { species in
+                let isAssetAvailable = assetLibrary.hasDisplayableAsset(for: species)
+                return GardenPlantSpecificMenuEntry(
+                    species: species,
+                    isAssetAvailable: isAssetAvailable,
+                    isSceneSuitable: true,
+                    disabledReason: isAssetAvailable ? nil : "\(species.displayName) needs high quality PNG growth assets"
+                )
+            }
+            .sorted { left, right in
+                guard let leftIndex = rainforestSpecies.firstIndex(of: left.species),
+                      let rightIndex = rainforestSpecies.firstIndex(of: right.species) else {
+                    return left.species.displayName < right.species.displayName
+                }
+
+                return leftIndex < rightIndex
+            }
+    }
+
+    static func enabledRainforestSpecies(
+        in kind: PlantKind,
+        assetLibrary: PlantAssetLibrary = .shared
+    ) -> [PlantSpecies] {
+        rainforestEntries(in: kind, assetLibrary: assetLibrary).compactMap { entry in
+            entry.isEnabled ? entry.species : nil
+        }
     }
 
     static func enabledSpecies(
