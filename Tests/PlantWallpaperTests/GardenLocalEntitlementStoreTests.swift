@@ -32,8 +32,8 @@ struct GardenLocalEntitlementStoreTests {
         #expect(store.selectedTier == nil)
     }
 
-    @Test("local pro selection resolves to an unlocked pro snapshot")
-    func localProResolvesToPro() {
+    @Test("beta full access overrides a local pro selection")
+    func betaFullAccessOverridesLocalPro() {
         let snapshot = GardenEntitlementResolver.resolve(
             environment: [:],
             infoDictionary: [:],
@@ -45,11 +45,11 @@ struct GardenLocalEntitlementStoreTests {
         #expect(snapshot.tier == .pro)
         #expect(!snapshot.isDevelopmentUnlocked)
         #expect(!snapshot.isPaidValidationConfigured)
-        #expect(snapshot.sourceDescription == "Local Pro (this Mac)")
+        #expect(snapshot.sourceDescription == "Beta Full Access")
     }
 
-    @Test("no local tier resolves to free")
-    func noLocalTierResolvesToFree() {
+    @Test("no local tier still resolves to beta full access")
+    func noLocalTierResolvesToBetaFullAccess() {
         let snapshot = GardenEntitlementResolver.resolve(
             environment: [:],
             infoDictionary: [:],
@@ -57,13 +57,13 @@ struct GardenLocalEntitlementStoreTests {
             localTier: nil
         )
 
-        #expect(!snapshot.isPro)
-        #expect(snapshot.tier == .free)
-        #expect(snapshot.sourceDescription == "Free")
+        #expect(snapshot.isPro)
+        #expect(snapshot.tier == .pro)
+        #expect(snapshot.sourceDescription == "Beta Full Access")
     }
 
-    @Test("an explicit local free selection stays free")
-    func localFreeStaysFree() {
+    @Test("beta full access overrides an old local free selection")
+    func betaFullAccessOverridesLocalFree() {
         let snapshot = GardenEntitlementResolver.resolve(
             environment: [:],
             infoDictionary: [:],
@@ -71,8 +71,9 @@ struct GardenLocalEntitlementStoreTests {
             localTier: .free
         )
 
-        #expect(!snapshot.isPro)
-        #expect(snapshot.tier == .free)
+        #expect(snapshot.isPro)
+        #expect(snapshot.tier == .pro)
+        #expect(snapshot.sourceDescription == "Beta Full Access")
     }
 
     @Test("development unlock outranks a local free selection")

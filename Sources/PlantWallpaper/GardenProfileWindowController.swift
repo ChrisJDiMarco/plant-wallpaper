@@ -352,6 +352,7 @@ final class GardenProfileWindowController: NSObject {
         planBadgeContainer?.layer?.backgroundColor = accent.withAlphaComponent(0.16).cgColor
         planDetailLabel?.stringValue = entitlements.sourceDescription
         managePlanButton?.title = isPro ? "Manage Plan" : "Upgrade to Pro"
+        managePlanButton?.isHidden = !entitlements.shouldShowPricing
 
         avatarImageView?.contentTintColor = accent
         avatarImageView?.layer?.backgroundColor = accent.withAlphaComponent(0.16).cgColor

@@ -135,11 +135,10 @@ struct GardenEntitlementSnapshot: Equatable {
     )
 }
 
-/// Persists the tier the operator selected on this Mac from the pricing page.
-/// This is a local, user-controlled override that unlocks Pro immediately while
-/// the real Stripe/StoreKit/license validation layer is still being connected.
-/// It is intentionally separate from `isPaidValidationConfigured`, which keeps
-/// reporting whether a real payment backend exists.
+/// Persists the tier selected on this Mac from the dormant pricing page.
+/// Public beta builds ignore this value while billing is unavailable and grant
+/// full access automatically. It remains for the future billing integration and
+/// existing user defaults migration.
 struct GardenLocalEntitlementStore {
     static let defaultsKey = "PlantWallpaperLocalEntitlementTier"
 
@@ -196,14 +195,17 @@ enum GardenEntitlementResolver {
             )
         }
 
-        if localTier == .pro {
+        // Until a real billing provider is connected, the public beta is the
+        // complete product. This also overrides stale local Free selections
+        // created by earlier builds.
+        if !paidValidationConfigured {
             return GardenEntitlementSnapshot(
                 tier: .pro,
                 isPro: true,
                 isDevelopmentUnlocked: false,
-                isPaidValidationConfigured: paidValidationConfigured,
+                isPaidValidationConfigured: false,
                 paidValidationProvider: paidValidationProvider,
-                sourceDescription: "Local Pro (this Mac)"
+                sourceDescription: "Beta Full Access"
             )
         }
 
@@ -337,6 +339,10 @@ final class GardenEntitlements {
 
     var sourceDescription: String {
         snapshot.sourceDescription
+    }
+
+    var shouldShowPricing: Bool {
+        snapshot.isPaidValidationConfigured
     }
 
     /// True when the current Pro access comes from the local pricing-page

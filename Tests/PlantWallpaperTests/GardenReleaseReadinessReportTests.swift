@@ -6,20 +6,20 @@ import Testing
 @MainActor
 @Suite("Garden release readiness report")
 struct GardenReleaseReadinessReportTests {
-    @Test("entitlements do not development unlock pro surfaces by default")
-    func entitlementsDoNotDevelopmentUnlockProSurfacesByDefault() {
+    @Test("beta entitlements unlock Pro when billing is unavailable")
+    func betaEntitlementsUnlockProWhenBillingIsUnavailable() {
         let snapshot = GardenEntitlementResolver.resolve(
             environment: [:],
             infoDictionary: [:],
             isDebugBuild: true
         )
 
-        #expect(!snapshot.isPro)
-        #expect(snapshot.tier == .free)
+        #expect(snapshot.isPro)
+        #expect(snapshot.tier == .pro)
         #expect(!snapshot.isDevelopmentUnlocked)
         #expect(!snapshot.isPaidValidationConfigured)
         #expect(snapshot.paidValidationProvider == .none)
-        #expect(snapshot.sourceDescription == "Free")
+        #expect(snapshot.sourceDescription == "Beta Full Access")
     }
 
     @Test("debug entitlement unlock is explicit and never counts as paid validation")
@@ -40,8 +40,8 @@ struct GardenReleaseReadinessReportTests {
         #expect(snapshot.sourceDescription == "Development unlock")
     }
 
-    @Test("release entitlements ignore development unlock flags")
-    func releaseEntitlementsIgnoreDevelopmentUnlockFlags() {
+    @Test("release beta entitlements ignore development flags but keep full access")
+    func releaseBetaEntitlementsIgnoreDevelopmentFlagsButKeepFullAccess() {
         let snapshot = GardenEntitlementResolver.resolve(
             environment: [
                 GardenEntitlementResolver.developmentUnlockEnvironmentKey: "true"
@@ -50,8 +50,8 @@ struct GardenReleaseReadinessReportTests {
             isDebugBuild: false
         )
 
-        #expect(!snapshot.isPro)
-        #expect(snapshot.tier == .free)
+        #expect(snapshot.isPro)
+        #expect(snapshot.tier == .pro)
         #expect(!snapshot.isDevelopmentUnlocked)
         #expect(!snapshot.isPaidValidationConfigured)
         #expect(snapshot.paidValidationProvider == .none)
@@ -80,8 +80,9 @@ struct GardenReleaseReadinessReportTests {
         #expect(configured.isPaidValidationConfigured)
         #expect(configured.paidValidationProvider == .stripe)
         #expect(configured.sourceDescription == "Validated Pro")
-        #expect(!unconfigured.isPro)
-        #expect(unconfigured.tier == .free)
+        #expect(unconfigured.isPro)
+        #expect(unconfigured.tier == .pro)
+        #expect(unconfigured.sourceDescription == "Beta Full Access")
     }
 
     @Test("paid validation provider stamps configuration even without legacy boolean")

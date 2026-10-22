@@ -84,12 +84,12 @@ struct GardenWelcomeSlide: Equatable {
             artwork: .worlds,
             eyebrow: "More worlds",
             title: "Room Studio and alien worlds",
-            body: "Switch the whole experience from Garden to Room Studio or Alien/UFO using the Mode menu. Room Studio and Alien are Pro features.",
+            body: "Switch the whole experience from Garden to Room Studio or Alien/UFO using the Mode menu. Every world is included during the beta.",
             accent: .systemIndigo,
             features: [
                 GardenWelcomeFeature(symbolName: "bed.double.fill", title: "Room Studio", detail: "Decorate cozy bedrooms, loft hangouts, and media dens with placeable objects instead of plants."),
                 GardenWelcomeFeature(symbolName: "sparkles", title: "Alien gardens", detail: "Grow otherworldly species inside glowing domes, terrariums, and orbital sanctuaries."),
-                GardenWelcomeFeature(symbolName: "crown.fill", title: "Free vs Pro", detail: "Check exactly what's included on the Pricing & Pro screen in the menu before you start.")
+                GardenWelcomeFeature(symbolName: "crown.fill", title: "Beta full access", detail: "All Pro features are unlocked while Plant Wallpaper is in public beta.")
             ]
         ),
         GardenWelcomeSlide(

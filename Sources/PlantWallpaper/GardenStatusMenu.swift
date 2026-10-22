@@ -800,11 +800,13 @@ final class GardenStatusMenu: NSObject {
             symbol: "gearshape.fill",
             action: #selector(openSettings)
         ))
-        menu.addItem(menuItem(
-            title: GardenPricingCatalog.menuTitle,
-            symbol: "crown.fill",
-            action: #selector(showPricing)
-        ))
+        if GardenEntitlements.shared.shouldShowPricing {
+            menu.addItem(menuItem(
+                title: GardenPricingCatalog.menuTitle,
+                symbol: "crown.fill",
+                action: #selector(showPricing)
+            ))
+        }
         menu.addItem(helpAndDataMenu())
         menu.addItem(NSMenuItem.separator())
 
@@ -4972,6 +4974,9 @@ final class GardenStatusMenu: NSObject {
             showTodayInGarden()
             return .success("Opened the Today panel.")
         case .showPricing:
+            guard GardenEntitlements.shared.shouldShowPricing else {
+                return .success("All Pro features are unlocked during the beta.")
+            }
             showPricing()
             return .success("Opened Pricing & Pro.")
         case .showWelcomeTour:

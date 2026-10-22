@@ -517,8 +517,8 @@ struct GardenAssistantCommandCenterTests {
         #expect(assistantIndex < settingsIndex)
     }
 
-    @Test("status menu exposes pricing beside settings")
-    func statusMenuExposesPricingBesideSettings() throws {
+    @Test("status menu hides pricing while billing is unavailable")
+    func statusMenuHidesPricingWithoutBilling() throws {
         let directoryURL = FileManager.default.temporaryDirectory
             .appendingPathComponent("GardenPricingStatusMenuTests-\(UUID().uuidString)", isDirectory: true)
         defer {
@@ -531,10 +531,8 @@ struct GardenAssistantCommandCenterTests {
         let menu = GardenStatusMenu(store: store, wallpaperManager: wallpaperManager)
         let titles = menu.menuTitlesForSelfTest()
 
-        let settingsIndex = try #require(titles.firstIndex(of: "Settings & Dashboard..."))
-        let pricingIndex = try #require(titles.firstIndex(of: GardenPricingCatalog.menuTitle))
-        // Settings and Pricing sit together in the "App & account" section.
-        #expect(pricingIndex == settingsIndex + 1)
+        #expect(titles.contains("Settings & Dashboard..."))
+        #expect(!titles.contains(GardenPricingCatalog.menuTitle))
     }
 
     @Test("pricing catalog offers launch-ready free and pro tiers")
