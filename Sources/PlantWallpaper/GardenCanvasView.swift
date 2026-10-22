@@ -805,9 +805,13 @@ final class GardenCanvasView: NSView {
             hasher.combine(plant.species)
             hasher.combine(Int((plant.position.x * Double(bounds.width) * Double(backingScale)).rounded()))
             hasher.combine(Int((plant.position.y * Double(bounds.height) * Double(backingScale)).rounded()))
-            hasher.combine(Int((plant.growth * 2000).rounded()))
-            hasher.combine(Int((plant.hydration * 100).rounded()))
-            hasher.combine(Int((plant.health * 100).rounded()))
+            // Steps sized to what is visible: growth drives drawn height
+            // (0.0025 is under a pixel on a tall plant) and vitality drives a
+            // droop of a fraction of a pixel per percent. Finer steps rebuilt
+            // the whole cached plant layer every few seconds as plants grew.
+            hasher.combine(Int((plant.growth * 400).rounded()))
+            hasher.combine(Int((plant.hydration * 50).rounded()))
+            hasher.combine(Int((plant.health * 50).rounded()))
             hasher.combine(Int((plant.bloomProgress * 100).rounded()))
             hasher.combine(Int((plant.scale * 1000).rounded()))
             hasher.combine(plant.swaySeed)
@@ -1851,10 +1855,6 @@ final class GardenCanvasView: NSView {
         path.stroke()
     }
 
-    func drawLeaf(center: NSPoint, size: NSSize, angle: CGFloat, fill: NSColor) {
-        drawOval(center: center, size: size, angle: angle, fill: fill, stroke: fill.shadow(withLevel: 0.28))
-    }
-
     func drawOval(center: NSPoint, size: NSSize, angle: CGFloat, fill: NSColor, stroke: NSColor?) {
         guard let context = NSGraphicsContext.current?.cgContext else {
             return
@@ -1872,10 +1872,6 @@ final class GardenCanvasView: NSView {
             path.stroke()
         }
         context.restoreGState()
-    }
-
-    func drawCircle(center: NSPoint, radius: CGFloat, fill: NSColor, stroke: NSColor?) {
-        // Intentionally disabled: circular renderer marks read as UI artifacts on the desktop garden.
     }
 
 }

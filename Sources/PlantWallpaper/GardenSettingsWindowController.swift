@@ -23,6 +23,9 @@ final class GardenSettingsWindowController: NSWindowController {
         var deactivateFlythroughVideo: () -> Void = {}
         var isFlythroughVideoWallpaperActive: () -> Bool = { false }
         var confirmAILockViewCanReplaceVideoWallpaper: () -> Bool = { true }
+        /// The menu's mode switch, which also ends any in-progress drawing
+        /// mode (gnome, bird, soil, Auto Gardener). Nil only in tests.
+        var switchExperienceMode: ((GardenExperienceMode) -> Void)? = nil
     }
 
     struct SidebarStyleSnapshot: Equatable {
@@ -383,7 +386,6 @@ final class GardenSettingsWindowController: NSWindowController {
     private var storeObserver: NSObjectProtocol?
     private var windowLifecycleDelegate: MainActorWindowDelegate?
     private var spotifyTextFieldDelegate: MainActorTextFieldDelegate?
-    private var renderedMusicSource: GardenMusicSource?
     private var renderedCustomSceneKeys: [String] = []
     private var renderedFlythroughVideoRecordIDs: [UUID] = []
     private var flythroughVideoRecordsByID: [String: GardenFlythroughVideoRecord] = [:]
@@ -747,7 +749,6 @@ final class GardenSettingsWindowController: NSWindowController {
         updateSidebarSelection()
         dynamicUpdates.removeAll()
         spotifyURLTextField = nil
-        renderedMusicSource = nil
         renderedCustomSceneKeys = []
         renderedFlythroughVideoRecordIDs = []
         flythroughVideoRecordsByID = [:]
@@ -821,13 +822,6 @@ final class GardenSettingsWindowController: NSWindowController {
     /// view tree, so scroll position and keyboard focus survive. Falls back to a
     /// structural re-render when the section's layout itself must change.
     private func refreshDynamicContent() {
-        if selectedSection == .audio,
-           let renderedMusicSource,
-           renderedMusicSource != store.state.settings.musicSource {
-            renderSelectedSection(preservingScroll: true)
-            return
-        }
-
         if selectedSection == .scene,
            renderedCustomSceneKeys != wallpaperManager.customWallpapers.map(\.key) {
             renderSelectedSection(preservingScroll: true)
@@ -1626,7 +1620,6 @@ final class GardenSettingsWindowController: NSWindowController {
     }
 
     private func buildAudioSection(in stack: NSStackView) {
-        renderedMusicSource = nil
         let companion = currentRadioCompanion
 
         addGroup(title: "Environmental Soundscape", to: stack, rows: [
@@ -2315,27 +2308,6 @@ final class GardenSettingsWindowController: NSWindowController {
         ])
     }
 
-    private func musicSourceRow(selectedSource: GardenMusicSource) -> NSView {
-        let popup = NSPopUpButton()
-        popup.target = self
-        popup.action = #selector(musicSourceChanged(_:))
-        popup.setContentHuggingPriority(.required, for: .horizontal)
-
-        for source in GardenMusicSource.allCases {
-            popup.addItem(withTitle: source.displayName)
-            popup.lastItem?.representedObject = source.rawValue
-        }
-        if let item = popup.itemArray.first(where: { ($0.representedObject as? String) == selectedSource.rawValue }) {
-            popup.select(item)
-        }
-
-        return rowContainer([
-            titledTextStack(title: "Source", subtitle: nil),
-            NSView.spacer(),
-            popup
-        ])
-    }
-
     private func radioCompanionRow(selectedCompanion: GardenRadioCompanion) -> NSView {
         let popup = NSPopUpButton()
         popup.target = self
@@ -2556,54 +2528,6 @@ final class GardenSettingsWindowController: NSWindowController {
             NSView.spacer(),
             popup
         ])
-    }
-
-    private func spotifyLinkRow(value: String) -> NSView {
-        let textField = NSTextField(string: value)
-        textField.identifier = NSUserInterfaceItemIdentifier("spotifyLaunchURL")
-        textField.placeholderString = GardenSettings.defaultSpotifyLaunchURLString
-        textField.font = .systemFont(ofSize: 12)
-        textField.target = self
-        textField.action = #selector(saveSpotifyLink)
-        let spotifyTextFieldDelegate = MainActorTextFieldDelegate { [weak self] event in
-            self?.controlTextDidEndEditing(event.notification)
-        }
-        self.spotifyTextFieldDelegate = spotifyTextFieldDelegate
-        textField.delegate = spotifyTextFieldDelegate
-        textField.lineBreakMode = .byTruncatingTail
-        spotifyURLTextField = textField
-
-        registerUpdate { [weak textField, weak self] in
-            guard let textField,
-                  let self,
-                  textField.currentEditor() == nil else {
-                return
-            }
-
-            let stored = self.store.state.settings.spotifyLaunchURLString
-            if textField.stringValue != stored {
-                textField.stringValue = stored
-            }
-        }
-
-        let column = NSStackView(views: [
-            titledTextStack(
-                title: "Spotify link",
-                subtitle: "Use an open.spotify.com link, spotify.link short link, or spotify: URI. Press Return to save."
-            ),
-            textField
-        ])
-        column.orientation = .vertical
-        column.alignment = .leading
-        column.spacing = 6
-
-        let row = rowContainer([column], orientation: .vertical)
-        column.widthAnchor.constraint(
-            equalTo: row.widthAnchor,
-            constant: -(Layout.rowHorizontalPadding * 2)
-        ).isActive = true
-        textField.widthAnchor.constraint(equalTo: column.widthAnchor).isActive = true
-        return row
     }
 
     /// A visual scene picker: thumbnail cards for every built-in and custom
@@ -2944,12 +2868,22 @@ final class GardenSettingsWindowController: NSWindowController {
         return layers.isEmpty ? "Quiet hour" : layers.joined(separator: " + ").capitalized
     }
 
+    /// Info rows re-evaluate on every store change and a 2 s timer; walking
+    /// hundreds of MB of wallpaper files that often stalled the window.
+    private static var storageByteCountCache: [URL: (bytes: Int64, measuredAt: Date)] = [:]
+
     private static func storageSummary(for directoryURL: URL?) -> String {
         guard let directoryURL else {
             return "Unavailable"
         }
 
-        let bytes = directoryByteCount(at: directoryURL)
+        let bytes: Int64
+        if let cached = storageByteCountCache[directoryURL], Date().timeIntervalSince(cached.measuredAt) < 15 {
+            bytes = cached.bytes
+        } else {
+            bytes = directoryByteCount(at: directoryURL)
+            storageByteCountCache[directoryURL] = (bytes, Date())
+        }
         let formatter = ByteCountFormatter()
         formatter.allowedUnits = [.useKB, .useMB, .useGB]
         formatter.countStyle = .file
@@ -3147,6 +3081,10 @@ final class GardenSettingsWindowController: NSWindowController {
 
     private func switchExperienceMode(to mode: GardenExperienceMode) {
         guard store.state.settings.experienceMode != mode else {
+            return
+        }
+        if let switchExperienceMode = actions.switchExperienceMode {
+            switchExperienceMode(mode)
             return
         }
 
@@ -3453,22 +3391,6 @@ final class GardenSettingsWindowController: NSWindowController {
             alert.alertStyle = .warning
             alert.addButton(withTitle: "OK")
             alert.runModal()
-        }
-    }
-
-    @objc private func musicSourceChanged(_ sender: NSPopUpButton) {
-        guard let rawValue = sender.selectedItem?.representedObject as? String,
-              let source = GardenMusicSource(rawValue: rawValue),
-              source != store.state.settings.musicSource else {
-            return
-        }
-
-        GardenRadioPlayer.shared.stop()
-        store.updateSettings(store.state.settings.updating(musicSource: source))
-        // The store-change notification re-renders the Audio section since the
-        // rendered source no longer matches; no explicit re-render needed.
-        if window?.isVisible != true {
-            renderSelectedSection(preservingScroll: true)
         }
     }
 
@@ -3855,24 +3777,10 @@ final class GardenSettingsWindowController: NSWindowController {
         refreshDynamicContent()
     }
 
-    @objc private func toggleSpotifyPlayback() {
-        if GardenRadioPlayer.shared.isPlaying {
-            GardenRadioPlayer.shared.stop()
-        } else {
-            saveSpotifyLink()
-            GardenRadioPlayer.shared.playSpotify(using: store.state.settings)
-        }
-        refreshDynamicContent()
-    }
-
     @objc private func openRadioStation() {
         if let url = currentRadioStream.filtermusicPageURL {
             NSWorkspace.shared.open(url)
         }
-    }
-
-    @objc private func saveSpotifyLink() {
-        updateSpotifyLink(spotifyURLTextField?.stringValue ?? "")
     }
 
     private func controlTextDidEndEditing(_ obj: Notification) {

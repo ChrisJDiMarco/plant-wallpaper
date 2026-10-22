@@ -207,6 +207,9 @@ final class CatCompanionController: NSObject {
     private let isChatOnClickEnabled: () -> Bool
     private let catChatBlockingGardenElementContains: (NSPoint) -> Bool
     private let desktopSceneCanReceiveClick: (NSPoint) -> Bool
+    /// Cheaper, cache-backed variant for the 10 Hz cursor watch; clicks keep
+    /// the fresh-window-list check above.
+    private let desktopSceneVisibleForTracking: (NSPoint) -> Bool
     private let gnomeTerritoryProvider: () -> [GnomeTribeZone]
     private let plantMissionTargetProvider: () -> [Plant]
     private var lastSentMouse: NSPoint?
@@ -215,6 +218,7 @@ final class CatCompanionController: NSObject {
     private var lastGnomeTerritoryFingerprints: [Int: String] = [:]
     private var lastPlantMissionTargetFingerprints: [Int: String] = [:]
     private var clickSnapshots: [Int: CatCompanionClickSnapshot] = [:]
+    private var screensWithEmptyPreySent: Set<Int> = []
 
     var isEnabled: Bool {
         UserDefaults.standard.object(forKey: Self.enabledDefaultsKey) as? Bool ?? true
@@ -222,7 +226,7 @@ final class CatCompanionController: NSObject {
 
     init(
         isChatOnClickEnabled: @escaping () -> Bool = { true },
-        foregroundGardenElementContains: @escaping (NSPoint) -> Bool = { _ in false },
+        desktopSceneVisibleForTracking: ((NSPoint) -> Bool)? = nil,
         catChatBlockingGardenElementContains: @escaping (NSPoint) -> Bool = { _ in false },
         desktopSceneCanReceiveClick: @escaping (NSPoint) -> Bool = { _ in true },
         gnomeTerritoryProvider: @escaping () -> [GnomeTribeZone] = { [] },
@@ -235,13 +239,13 @@ final class CatCompanionController: NSObject {
         self.isChatOnClickEnabled = isChatOnClickEnabled
         self.catChatBlockingGardenElementContains = catChatBlockingGardenElementContains
         self.desktopSceneCanReceiveClick = desktopSceneCanReceiveClick
+        self.desktopSceneVisibleForTracking = desktopSceneVisibleForTracking ?? desktopSceneCanReceiveClick
         self.gnomeTerritoryProvider = gnomeTerritoryProvider
         self.plantMissionTargetProvider = plantMissionTargetProvider
         self.chatWindowController = CatCompanionChatWindowController(
             contextProvider: chatContextProvider,
             commandExecutor: chatCommandExecutor
         )
-        _ = foregroundGardenElementContains
         super.init()
         mirrorEnabledStateToSharedDefaults()
         observeWorkspaceNotification(name: NSWorkspace.screensDidSleepNotification) { controller, _ in
@@ -258,9 +262,6 @@ final class CatCompanionController: NSObject {
         }
         observeNotification(name: NSWindow.didChangeOcclusionStateNotification) { controller, notification in
             controller.windowOcclusionChanged(notification)
-        }
-        observeNotification(name: NSApplication.didChangeScreenParametersNotification) { controller, _ in
-            controller.screenParametersChanged()
         }
         observeNotification(name: .gardenBugPreySnapshotDidChange) { controller, notification in
             controller.bugPreySnapshotChanged(notification)
@@ -566,6 +567,7 @@ final class CatCompanionController: NSObject {
     }
 
     private func teardownWindows() {
+        screensWithEmptyPreySent = []
         for webView in webViews {
             webView.stopLoading()
             webView.navigationDelegate = nil
@@ -887,18 +889,23 @@ final class CatCompanionController: NSObject {
 
     private func mouseTimerFired() {
         let mouse = NSEvent.mouseLocation
-        guard Self.shouldTrackMouse(
-            at: mouse,
-            isEnabled: isEnabled,
-            mouseReactions: settings.mouseReactions,
-            isDesktopSceneVisible: desktopSceneCanReceiveClick(mouse),
-            hasWindows: !windows.isEmpty
-        ) else {
+        // Cheap gates and the "cursor barely moved" check come before the
+        // desktop-visibility test, which consults the on-screen window list.
+        guard isEnabled, settings.mouseReactions, !windows.isEmpty else {
             clearMouseTracking()
             return
         }
-
         if let lastSentMouse, abs(lastSentMouse.x - mouse.x) < 2, abs(lastSentMouse.y - mouse.y) < 2 {
+            return
+        }
+        guard Self.shouldTrackMouse(
+            at: mouse,
+            isEnabled: true,
+            mouseReactions: true,
+            isDesktopSceneVisible: desktopSceneVisibleForTracking(mouse),
+            hasWindows: true
+        ) else {
+            clearMouseTracking()
             return
         }
         lastSentMouse = mouse
@@ -1077,10 +1084,6 @@ final class CatCompanionController: NSObject {
         rebuildWindows()
     }
 
-    private func screenParametersChanged() {
-        rebuildWindows()
-    }
-
     private func gardenStoreChanged(_ notification: Notification) {
         pushGnomeTerritoriesIfNeeded()
         pushPlantMissionTargetsIfNeeded()
@@ -1105,6 +1108,17 @@ final class CatCompanionController: NSObject {
               screenIndex < windows.count,
               let snapshots = notification.userInfo?["bugs"] as? [GardenBugSystem.PreySnapshot] else {
             return
+        }
+
+        // The bug system publishes 4x a second per screen even with no bugs;
+        // an empty list only needs to reach the web view once.
+        if snapshots.isEmpty, screensWithEmptyPreySent.contains(screenIndex) {
+            return
+        }
+        if snapshots.isEmpty {
+            screensWithEmptyPreySent.insert(screenIndex)
+        } else {
+            screensWithEmptyPreySent.remove(screenIndex)
         }
 
         let windowFrame = windows[screenIndex].frame

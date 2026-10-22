@@ -232,7 +232,7 @@ struct RainforestPropAsset: Equatable {
 enum RainforestAssetMenuCatalog {
     static let title = "Build Rainforest Here"
     static let propMenuTitle = "Rainforest Props & Atmosphere"
-    static let comingSoonTitle = "Coming Soon - needs PNG assets"
+    static let comingSoonTitle = "More Coming Soon"
 
     static func title(for kind: PlantKind) -> String {
         switch kind {

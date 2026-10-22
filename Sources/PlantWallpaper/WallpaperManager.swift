@@ -166,6 +166,7 @@ final class WallpaperManager {
     private static let appDefaultsSuiteName = "com.chrisdimarco.wallpapergarden"
     private let selectedSceneDefaultsKey = "PlantWallpaper.selectedWallpaperScene"
     private let currentWallpaperImageDefaultsKey = "PlantWallpaper.currentWallpaperImageURL"
+    private let previousWallpaperRestoredDefaultsKey = "PlantWallpaper.previousWallpaperRestored"
     private let customWallpaperManifestFilename = "custom-wallpapers.json"
     private let resourceBundleName = "WallpaperGarden_PlantWallpaper.bundle"
 
@@ -310,7 +311,17 @@ final class WallpaperManager {
         return fileManager.fileExists(atPath: url.path) ? url : nil
     }
 
+    /// True after "Restore Previous Wallpaper" until the user picks a scene
+    /// again. Without it, the next day-phase refresh, display change or
+    /// relaunch silently put the app's scene back over the restored desktop.
+    var isPreviousWallpaperRestored: Bool {
+        defaults.bool(forKey: previousWallpaperRestoredDefaultsKey)
+    }
+
     func applyLivingSceneWallpaper(to screens: [NSScreen] = NSScreen.screens, at date: Date = Date()) {
+        guard !isPreviousWallpaperRestored else {
+            return
+        }
         applyWallpaperSceneKey(selectedWallpaperSceneKey, to: screens, at: date, persistSelection: false)
     }
 
@@ -385,7 +396,8 @@ final class WallpaperManager {
     /// night instead of keeping the grade from launch time. Cheap to call
     /// every simulation tick: it's a string compare until a phase boundary.
     func refreshLivingSceneWallpaperIfStale(to screens: [NSScreen] = NSScreen.screens, at date: Date = Date()) {
-        guard let scene = GardenWallpaperScene(rawValue: selectedWallpaperSceneKey) else {
+        guard !isPreviousWallpaperRestored,
+              let scene = GardenWallpaperScene(rawValue: selectedWallpaperSceneKey) else {
             return
         }
 
@@ -404,10 +416,6 @@ final class WallpaperManager {
             dayPhase(for: date).rawValue,
             season.mood.rawValue
         ].joined(separator: "|")
-    }
-
-    func applyCalmWallpaper(to screens: [NSScreen] = NSScreen.screens) {
-        applyLivingSceneWallpaper(to: screens)
     }
 
     @discardableResult
@@ -603,6 +611,7 @@ final class WallpaperManager {
             .appendingPathExtension("png")
         let wallpaperURL = try renderSmartLockWallpaper(image, to: baseURL, screens: screens)
         try applyTemporaryWallpaperImage(wallpaperURL, to: screens)
+        pruneSmartLockWallpapers(sceneKey: sceneKey ?? selectedWallpaperSceneKey)
         return wallpaperURL
     }
 
@@ -956,6 +965,9 @@ final class WallpaperManager {
 
                 try NSWorkspace.shared.setDesktopImageURL(snapshot.wallpaperURL, for: screen, options: [:])
             }
+            if !snapshots.isEmpty {
+                defaults.set(true, forKey: previousWallpaperRestoredDefaultsKey)
+            }
         } catch {
             NSLog("Plant Wallpaper could not restore the previous desktop background: \(error.localizedDescription)")
         }
@@ -1109,6 +1121,7 @@ final class WallpaperManager {
     }
 
     private func setSelectedSceneKey(_ sceneKey: String) {
+        defaults.removeObject(forKey: previousWallpaperRestoredDefaultsKey)
         defaults.set(sceneKey, forKey: selectedSceneDefaultsKey)
         mirrorSelectedSceneToSharedDefaults(sceneKey)
     }
@@ -1597,13 +1610,42 @@ final class WallpaperManager {
             }
     }
 
+    /// Only the newest render per scene is ever shown, yet every regenerate
+    /// added another ~12 MB PNG. Keep the newest two per scene (one fallback)
+    /// and move the rest - plus pre-per-scene "smart-lock-<time>.png" files,
+    /// which nothing can load any more - to the Trash, so nothing paid for is
+    /// destroyed outright.
+    private func pruneSmartLockWallpapers(sceneKey: String, keepingNewest keepCount: Int = 2) {
+        let filenamePrefix = "smart-lock-\(smartLockSceneFilenameComponent(sceneKey))-"
+        let files = ((try? fileManager.contentsOfDirectory(
+            at: smartLockWallpaperDirectoryURL,
+            includingPropertiesForKeys: [.contentModificationDateKey]
+        )) ?? []).filter { $0.pathExtension.lowercased() == "png" }
+
+        func modificationDate(_ url: URL) -> Date {
+            (try? url.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast
+        }
+
+        let sceneFiles = files
+            .filter { $0.deletingPathExtension().lastPathComponent.hasPrefix(filenamePrefix) }
+            .sorted { modificationDate($0) > modificationDate($1) }
+        let legacyFiles = files.filter { url in
+            let name = url.deletingPathExtension().lastPathComponent
+            return name.hasPrefix("smart-lock-")
+                && name.dropFirst("smart-lock-".count).allSatisfy(\.isNumber)
+        }
+        for url in sceneFiles.dropFirst(keepCount) + legacyFiles {
+            try? fileManager.trashItem(at: url, resultingItemURL: nil)
+        }
+    }
+
     private func smartLockSceneFilenameComponent(_ sceneKey: String) -> String {
         let safeSceneKey = safeFilenameComponent(GardenWallpaperScene.canonicalKey(for: sceneKey))
         return safeSceneKey.isEmpty ? "scene" : safeSceneKey
     }
 
     private func saveCurrentWallpaperSnapshotsIfNeeded(for screens: [NSScreen]) throws {
-        let snapshots = screens.compactMap { screen -> WallpaperSnapshot? in
+        let freshSnapshots = screens.compactMap { screen -> WallpaperSnapshot? in
             guard let currentURL = NSWorkspace.shared.desktopImageURL(for: screen),
                   !currentURL.path.hasPrefix(directoryURL.path) else {
                 return nil
@@ -1612,9 +1654,15 @@ final class WallpaperManager {
             return WallpaperSnapshot(screenID: screenID(for: screen), wallpaperURL: currentURL)
         }
 
-        if !snapshots.isEmpty {
-            try saveSnapshots(snapshots)
+        guard !freshSnapshots.isEmpty else {
+            return
         }
+
+        // Merge by display: a pass that only sees some screens (main display
+        // only, a newly attached monitor) must not drop the others' originals.
+        let freshIDs = Set(freshSnapshots.map(\.screenID))
+        let keptSnapshots = ((try? loadSnapshots()) ?? []).filter { !freshIDs.contains($0.screenID) }
+        try saveSnapshots(freshSnapshots + keptSnapshots)
     }
 
     private func saveSnapshots(_ snapshots: [WallpaperSnapshot]) throws {
@@ -1653,15 +1701,11 @@ final class WallpaperManager {
         var records = try loadCustomWallpaperRecords()
         records.removeAll { $0.key == record.key }
         records.insert(record, at: 0)
-
-        let keptRecords = Array(records.prefix(20))
-        try saveCustomWallpaperRecords(keptRecords)
-
-        // Remove image files for records evicted by the cap so they don't
-        // accumulate invisibly on disk.
-        for evictedRecord in records.dropFirst(keptRecords.count) {
-            removeFiles(for: evictedRecord)
-        }
+        // No cap: these are the user's own (often paid-for) AI scenes and
+        // progression levels. Earlier builds silently deleted the oldest past
+        // 20, along with nothing of their saved garden. Removal is explicit,
+        // from the Scenes pane, which also trashes the scene's garden file.
+        try saveCustomWallpaperRecords(records)
     }
 
     private func resolvedWallpaperSceneKey(_ sceneKey: String?) -> String {

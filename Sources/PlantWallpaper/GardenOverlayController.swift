@@ -92,7 +92,9 @@ final class GardenOverlayController {
     private var globalMouseUpMonitor: Any?
     private var globalMouseMovedMonitor: Any?
     private var pointerRoutingTimer: Timer?
-    private var systemCapturePauseTimer: Timer?
+    private var runningApplicationsObservation: NSKeyValueObservation?
+    private var isPointerRoutingIdle = false
+    private var pointerRoutingIdleTicks = 0
     private var notificationObservers: [NSObjectProtocol] = []
     private var workspaceObservers: [NSObjectProtocol] = []
     private var mousePressCoordinator = GardenMousePressCoordinator()
@@ -164,22 +166,28 @@ final class GardenOverlayController {
         observeNotification(name: .gardenPlantSpotlightVisibilityChanged) { controller, notification in
             controller.plantSpotlightVisibilityChanged(notification)
         }
+        // While the session is inactive or the displays sleep there is no
+        // pointer to route, so the polling timer stops entirely.
         observeWorkspaceNotification(name: NSWorkspace.sessionDidResignActiveNotification) { controller, _ in
             controller.desktopInputSessionDidPause()
+            controller.stopPointerRoutingTimer()
         }
         observeWorkspaceNotification(name: NSWorkspace.sessionDidBecomeActiveNotification) { controller, _ in
             controller.desktopInputSessionDidResume()
+            controller.startPointerRoutingTimer()
         }
         observeWorkspaceNotification(name: NSWorkspace.screensDidSleepNotification) { controller, _ in
             controller.desktopInputSessionDidPause()
+            controller.stopPointerRoutingTimer()
         }
         observeWorkspaceNotification(name: NSWorkspace.screensDidWakeNotification) { controller, _ in
             controller.desktopInputSessionDidResume()
+            controller.startPointerRoutingTimer()
         }
         installEventMonitors()
         installEventTap()
         startPointerRoutingTimer()
-        startSystemCapturePauseTimer()
+        observeSystemCaptureUI()
     }
 
     deinit {
@@ -200,10 +208,9 @@ final class GardenOverlayController {
         notificationObservers = []
         workspaceObservers.forEach { NSWorkspace.shared.notificationCenter.removeObserver($0) }
         workspaceObservers = []
-        pointerRoutingTimer?.invalidate()
-        pointerRoutingTimer = nil
-        systemCapturePauseTimer?.invalidate()
-        systemCapturePauseTimer = nil
+        stopPointerRoutingTimer()
+        runningApplicationsObservation?.invalidate()
+        runningApplicationsObservation = nil
         if let globalMouseDownMonitor {
             NSEvent.removeMonitor(globalMouseDownMonitor)
             self.globalMouseDownMonitor = nil
@@ -347,6 +354,12 @@ final class GardenOverlayController {
 
     func canReceiveDesktopSceneClick(at screenPoint: NSPoint) -> Bool {
         canHandleDesktopMouse(at: screenPoint, forceFreshSnapshot: true)
+    }
+
+    /// Same gate as `canReceiveDesktopSceneClick`, but reuses the short-lived
+    /// window-list cache - for continuous cursor watching, not clicks.
+    func isDesktopSceneVisibleForTracking(at screenPoint: NSPoint) -> Bool {
+        canHandleDesktopMouse(at: screenPoint, forceFreshSnapshot: false)
     }
 
     func rebuildWindows() {
@@ -819,7 +832,7 @@ final class GardenOverlayController {
         globalMouseDraggedMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDragged]) { _ in
             relay.dispatch { controller in
                 let screenPoint = NSEvent.mouseLocation
-                guard controller.canHandleDesktopDrag(at: screenPoint, forceFreshSnapshot: true) else {
+                guard controller.canHandleDesktopDrag(at: screenPoint) else {
                     return
                 }
 
@@ -833,7 +846,7 @@ final class GardenOverlayController {
             }
         }
 
-        globalMouseMovedMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.mouseMoved, .leftMouseDragged]) { _ in
+        globalMouseMovedMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.mouseMoved]) { _ in
             relay.dispatch { controller in
                 controller.updateMouseRouting(at: NSEvent.mouseLocation)
             }
@@ -1004,10 +1017,11 @@ final class GardenOverlayController {
 
             _ = handleMouseDown(at: screenPoint, clickCount: clickCount)
         case .leftMouseDragged:
+            // Mouse-down already refreshed the window list; drags in other
+            // apps arrive at 60-120 Hz and must not re-query it each time.
             guard canHandleDesktopDrag(
                 at: screenPoint,
-                quartzLocation: quartzLocation,
-                forceFreshSnapshot: true
+                quartzLocation: quartzLocation
             ) else {
                 return
             }
@@ -1038,30 +1052,43 @@ final class GardenOverlayController {
         return false
     }
 
-    private func startPointerRoutingTimer() {
+    /// Polls at 25 Hz while the pointer is moving or pressed, and drops to
+    /// 4 Hz once it has been still for about a second - an idle desktop
+    /// should not wake the CPU 25 times a second.
+    private func startPointerRoutingTimer(idle: Bool = false) {
         pointerRoutingTimer?.invalidate()
-        pointerRoutingTimer = Timer.scheduledTimer(
-            withTimeInterval: GardenPointerRoutingCadence.refreshInterval,
-            repeats: true
-        ) { [weak self] _ in
+        isPointerRoutingIdle = idle
+        pointerRoutingIdleTicks = 0
+        let interval = idle
+            ? GardenPointerRoutingCadence.idleRefreshInterval
+            : GardenPointerRoutingCadence.refreshInterval
+        pointerRoutingTimer = Timer.scheduledTimer(withTimeInterval: interval, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated {
                 self?.pointerRoutingTimerFired()
             }
         }
-        pointerRoutingTimer?.tolerance = GardenPointerRoutingCadence.refreshInterval * 0.35
+        pointerRoutingTimer?.tolerance = interval * 0.35
     }
 
-    private func startSystemCapturePauseTimer() {
-        systemCapturePauseTimer?.invalidate()
-        systemCapturePauseTimer = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { [weak self] _ in
-            MainActor.assumeIsolated {
-                self?.systemCapturePauseTimerFired()
+    private func stopPointerRoutingTimer() {
+        pointerRoutingTimer?.invalidate()
+        pointerRoutingTimer = nil
+    }
+
+    /// The capture UI (Cmd-Shift-4/5) is its own process, so watch app
+    /// launches and quits instead of scanning every running app 4x a second.
+    private func observeSystemCaptureUI() {
+        runningApplicationsObservation = NSWorkspace.shared.observe(\.runningApplications) { [weak self] _, _ in
+            DispatchQueue.main.async {
+                MainActor.assumeIsolated {
+                    self?.systemCaptureUIStateMayHaveChanged()
+                }
             }
         }
-        systemCapturePauseTimer?.tolerance = 0.1
+        systemCaptureUIStateMayHaveChanged()
     }
 
-    private func systemCapturePauseTimerFired() {
+    private func systemCaptureUIStateMayHaveChanged() {
         let isCaptureUIActive = Self.isSystemCaptureUIActive()
         guard isCaptureUIActive != isDesktopInputPausedForSystemCaptureUI else {
             return
@@ -1160,7 +1187,7 @@ final class GardenOverlayController {
     private func pointerRoutingTimerFired() {
         let screenPoint = NSEvent.mouseLocation
         let isLeftMouseDown = CGEventSource.buttonState(.hidSystemState, button: .left)
-        if GardenPointerRoutingCadence.shouldUpdateMouseRouting(
+        let isActive = GardenPointerRoutingCadence.shouldUpdateMouseRouting(
             previousX: lastPointerRoutingScreenPoint.map { Double($0.x) },
             previousY: lastPointerRoutingScreenPoint.map { Double($0.y) },
             currentX: Double(screenPoint.x),
@@ -1169,10 +1196,22 @@ final class GardenOverlayController {
             hasActiveDrag: activeDragWindow != nil,
             hasActivePress: mousePressCoordinator.isPressActive,
             isPollingDragActive: isPointerPollingDragActive
-        ) {
+        )
+        if isActive {
             updateMouseRouting(at: screenPoint)
         }
         pollMouseButtonForDesktopDrag(at: screenPoint, isLeftMouseDown: isLeftMouseDown)
+
+        if isActive {
+            if isPointerRoutingIdle {
+                startPointerRoutingTimer(idle: false)
+            }
+        } else if !isPointerRoutingIdle {
+            pointerRoutingIdleTicks += 1
+            if pointerRoutingIdleTicks >= GardenPointerRoutingCadence.idleTickThreshold {
+                startPointerRoutingTimer(idle: true)
+            }
+        }
     }
 
     private func pollMouseButtonForDesktopDrag(at screenPoint: NSPoint, isLeftMouseDown: Bool) {

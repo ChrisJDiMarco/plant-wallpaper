@@ -454,18 +454,31 @@ extension GardenCanvasView {
             return
         }
 
-        musicButtonHoverAnimationTimer = Timer.scheduledTimer(withTimeInterval: 1 / 24, repeats: true) { [weak self] _ in
-            MainActor.assumeIsolated {
-                guard let self else {
-                    return
+        musicButtonHoverAnimationTimer = Timer.scheduledTimer(withTimeInterval: 1 / 24, repeats: true) { [weak self] timer in
+            let isFinished = MainActor.assumeIsolated { () -> Bool in
+                guard let self, let hoverState = self.musicButtonHoverState else {
+                    self?.musicButtonHoverAnimationTimer = nil
+                    return true
                 }
 
-                guard self.musicButtonHoverState != nil else {
-                    self.musicButtonHoverAnimationTimer?.invalidate()
-                    self.musicButtonHoverAnimationTimer = nil
-                    return
+                // Only the 0.45 s expand animation needs frames: nothing moves
+                // during the activation delay, and once expanded it is static.
+                // Repainting the full screen at 24 fps for as long as the
+                // cursor rested here used to pin a core.
+                let elapsed = Date().timeIntervalSince(hoverState.enteredAt)
+                let animationStart = Self.musicButtonHoverActivationInterval
+                guard elapsed >= animationStart else {
+                    return false
                 }
                 self.needsDisplay = true
+                if elapsed > animationStart + 0.5 {
+                    self.musicButtonHoverAnimationTimer = nil
+                    return true
+                }
+                return false
+            }
+            if isFinished {
+                timer.invalidate()
             }
         }
     }

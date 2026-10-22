@@ -35,6 +35,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var isSmartLockWallpaperActive = false
     private var activeFlythroughVideoSceneKey: String?
     private var isFlythroughVideoLooping = true
+    private var lastPublishedScreenSaverSignature: ScreenSaverPublishSignature?
+    private var didRemoveLegacyScreenSaverComposite = false
+    private lazy var lastScreenGeometry: [String] = NSScreen.screens.map { "\($0.frame)@\($0.backingScaleFactor)" }
+    private var cachedBatteryPowerState: (isOnBattery: Bool, checkedAt: TimeInterval)?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         terminateDuplicateInstances()
@@ -139,8 +143,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             isChatOnClickEnabled: { [weak gardenStore] in
                 gardenStore?.state.settings.isCatChatOnClickEnabled ?? true
             },
-            foregroundGardenElementContains: { [weak overlayController] point in
-                overlayController?.containsForegroundGardenElement(at: point) ?? false
+            desktopSceneVisibleForTracking: { [weak overlayController] point in
+                overlayController?.isDesktopSceneVisibleForTracking(at: point) ?? false
             },
             catChatBlockingGardenElementContains: { [weak overlayController] point in
                 overlayController?.containsCatChatBlockingGardenElement(at: point) ?? false
@@ -189,6 +193,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         catCompanion.show()
 
         startTimers()
+        reapplyCachedSmartLockWallpaperIfLocked()
 
         let welcomeController = GardenWelcomeController(store: gardenStore)
         self.welcomeController = welcomeController
@@ -245,7 +250,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         autosaveTimer?.invalidate()
         screenSaverSnapshotTimer?.invalidate()
         smartLockWallpaperTask?.cancel()
-        publishScreenSaverSnapshot()
+        publishScreenSaverSnapshot(force: true)
         ambienceEngine.setMix(.silent)
     }
 
@@ -479,15 +484,42 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return true
         }
 
-        return IOPSCopyExternalPowerAdapterDetails()?.takeRetainedValue() == nil
+        return isOnBatteryPower()
     }
 
+    /// The cadence check runs several times a second; the power source does
+    /// not change that fast, so the IOKit query is cached for a few seconds.
+    private func isOnBatteryPower() -> Bool {
+        let now = ProcessInfo.processInfo.systemUptime
+        if let cached = cachedBatteryPowerState, now - cached.checkedAt < 10 {
+            return cached.isOnBattery
+        }
+
+        let snapshot = IOPSCopyPowerSourcesInfo()?.takeRetainedValue()
+        let providingType = snapshot
+            .flatMap { IOPSGetProvidingPowerSourceType($0)?.takeUnretainedValue() as String? }
+        let isOnBattery = providingType == kIOPMBatteryPowerKey
+        cachedBatteryPowerState = (isOnBattery, now)
+        return isOnBattery
+    }
+
+    /// Screen-parameter notifications also fire for Dock and menu bar
+    /// changes. Only a real geometry change rebuilds the windows; each
+    /// rebuild reloads every WebGL view and resets the cat and gnomes.
     private func screensDidChange() {
         let screens = NSScreen.screens
+        let geometry = screens.map { "\($0.frame)@\($0.backingScaleFactor)" }
+        guard geometry != lastScreenGeometry else {
+            return
+        }
+        lastScreenGeometry = geometry
+
         let settings = store?.state.settings ?? .default
         let targetScreens = targetScreens(from: screens, settings: settings)
         store?.handleScreenConfigurationChange(screenCount: targetScreens.count)
-        wallpaperManager?.applyLivingSceneWallpaper(to: targetScreens)
+        if !reapplyCachedSmartLockWallpaperIfLocked() {
+            wallpaperManager?.applyLivingSceneWallpaper(to: targetScreens)
+        }
         overlayController?.rebuildWindows()
         rainbowMoment?.rebuildWindows()
         gnomeTribes?.rebuildWindows()
@@ -518,7 +550,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             ))
         }
         momentNotifier?.tick()
-        rainbowMoment?.refresh()
     }
 
     private func targetScreens(from screens: [NSScreen], settings: GardenSettings) -> [NSScreen] {
@@ -624,6 +655,37 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 to: targetScreens(from: NSScreen.screens, settings: store.state.settings)
             )
         }
+    }
+
+    /// AI Lock View is a wallpaper swap the system does not remember for us:
+    /// a relaunch or display change re-applies the plain scene while the live
+    /// plants stay hidden, leaving an empty desktop. Put the cached render
+    /// back (never a fresh paid generation) when the garden is still locked.
+    @discardableResult
+    private func reapplyCachedSmartLockWallpaperIfLocked() -> Bool {
+        guard let store,
+              let wallpaperManager,
+              store.state.settings.isGardenInteractionLocked,
+              store.state.settings.useAIGeneratedLockSnapshot,
+              GardenEntitlements.shared.isUnlocked(.aiLockView) else {
+            return false
+        }
+
+        let screens = targetScreens(from: NSScreen.screens, settings: store.state.settings)
+        do {
+            guard try wallpaperManager.applyLatestSmartLockWallpaper(
+                to: screens,
+                sceneKey: wallpaperManager.selectedWallpaperSceneKey
+            ) != nil else {
+                return false
+            }
+        } catch {
+            NSLog("Plant Wallpaper could not reapply cached AI lock view: \(error.localizedDescription)")
+            return false
+        }
+        isSmartLockWallpaperActive = true
+        overlayController?.arePlantsHiddenForAILockView = true
+        return true
     }
 
     private func regenerateSmartLockWallpaper() {
@@ -744,35 +806,43 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         screenSaverSnapshotTimer?.tolerance = min(0.35, delay * 0.5)
     }
 
-    private func publishScreenSaverSnapshot() {
+    /// The screen saver renders the garden itself from the snapshot JSON plus
+    /// the wallpaper image, so publishing only needs to rewrite that small
+    /// file - and only when something it would draw has changed. (Earlier
+    /// builds also rendered a full-resolution composited PNG here on every
+    /// autosave; nothing read it, so it is gone and the stale file removed.)
+    private func publishScreenSaverSnapshot(force: Bool = false) {
         guard let store else {
             return
         }
 
         let directoryURL = store.persistence.directoryURL
-        let imageURL = GardenScreenSaverSnapshot.primaryImageURL(directoryURL: directoryURL)
-        do {
-            try GardenDesktopSnapshotRenderer.writeSnapshotPNG(
-                store: store,
-                to: imageURL,
-                wallpaperImageURL: wallpaperManager?.currentWallpaperImageURL
-            )
-        } catch {
-            NSLog("Plant Wallpaper could not render screen saver garden snapshot: \(error.localizedDescription)")
+        let wallpaperImagePath = wallpaperManager?.currentWallpaperImageURL?.path
+        let isCatCompanionEnabled = catCompanion?.isEnabled
+            ?? (UserDefaults.standard.object(forKey: CatCompanionController.enabledDefaultsKey) as? Bool ?? true)
+        let signature = ScreenSaverPublishSignature(
+            render: GardenStateRenderSignature(of: store.state),
+            sceneKey: store.activeSceneKey,
+            wallpaperImagePath: wallpaperImagePath,
+            isCatCompanionEnabled: isCatCompanionEnabled
+        )
+        guard force || signature != lastPublishedScreenSaverSignature else {
+            return
         }
 
+        removeLegacyScreenSaverCompositeIfNeeded(directoryURL: directoryURL)
         let snapshot = GardenScreenSaverSnapshot(
             sceneKey: store.activeSceneKey,
             state: store.state,
-            wallpaperImagePath: wallpaperManager?.currentWallpaperImageURL?.path,
-            compositedImagePath: FileManager.default.fileExists(atPath: imageURL.path) ? imageURL.path : nil,
-            isCatCompanionEnabled: catCompanion?.isEnabled
-                ?? (UserDefaults.standard.object(forKey: CatCompanionController.enabledDefaultsKey) as? Bool ?? true)
+            wallpaperImagePath: wallpaperImagePath,
+            compositedImagePath: nil,
+            isCatCompanionEnabled: isCatCompanionEnabled
         )
         let snapshotURL = GardenScreenSaverSnapshot.fileURL(directoryURL: directoryURL)
 
         do {
             try snapshot.save(to: directoryURL)
+            lastPublishedScreenSaverSignature = signature
             UserDefaults.standard.set(snapshotURL.path, forKey: "PlantWallpaper.screenSaverSnapshotURL")
             let sharedDefaults = UserDefaults(suiteName: "com.chrisdimarco.wallpapergarden")
             sharedDefaults?.set(snapshotURL.path, forKey: "PlantWallpaper.screenSaverSnapshotURL")
@@ -781,4 +851,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             NSLog("Plant Wallpaper could not save screen saver garden snapshot: \(error.localizedDescription)")
         }
     }
+
+    private func removeLegacyScreenSaverCompositeIfNeeded(directoryURL: URL) {
+        guard !didRemoveLegacyScreenSaverComposite else {
+            return
+        }
+        didRemoveLegacyScreenSaverComposite = true
+        try? FileManager.default.removeItem(at: GardenScreenSaverSnapshot.primaryImageURL(directoryURL: directoryURL))
+    }
+}
+
+private struct ScreenSaverPublishSignature: Equatable {
+    let render: GardenStateRenderSignature
+    let sceneKey: String?
+    let wallpaperImagePath: String?
+    let isCatCompanionEnabled: Bool
 }

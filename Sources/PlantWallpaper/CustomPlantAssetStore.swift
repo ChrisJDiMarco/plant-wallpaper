@@ -381,6 +381,8 @@ final class CustomPlantAssetStore {
     private var imageCacheAccessOrder: [String] = []
     private var alphaMaskCache: [ObjectIdentifier: PlantArtworkAlphaMask?] = [:]
     private var displayableImageCache: [String: Bool] = [:]
+    /// True when the manifest existed but could not be decoded this launch.
+    private(set) var isManifestUnreadable = false
 
     init(
         baseDirectoryURL: URL? = nil,
@@ -393,7 +395,21 @@ final class CustomPlantAssetStore {
             .appendingPathComponent("CustomPlantAssets", isDirectory: true)
         self.manifestURL = self.baseDirectoryURL.appendingPathComponent(manifestFilename)
         self.imageDirectoryURL = self.baseDirectoryURL.appendingPathComponent(imageDirectoryName, isDirectory: true)
-        self.loadedRecords = (try? Self.loadRecords(from: self.manifestURL)) ?? []
+        do {
+            self.loadedRecords = try Self.loadRecords(from: self.manifestURL)
+        } catch {
+            // Keep the unreadable manifest for recovery instead of letting the
+            // next save overwrite it, and stop treating "unknown asset ID" as
+            // "asset deleted" so plants are not pruned from every scene.
+            self.loadedRecords = []
+            self.isManifestUnreadable = true
+            let stamp = Int(Date().timeIntervalSince1970)
+            try? fileManager.moveItem(
+                at: self.manifestURL,
+                to: self.manifestURL.appendingPathExtension("corrupt-\(stamp)")
+            )
+            NSLog("Plant Wallpaper could not read custom plant manifest: \(error.localizedDescription)")
+        }
         repairLoadedRecordsIfNeeded()
     }
 
@@ -482,7 +498,7 @@ final class CustomPlantAssetStore {
 
     func hasDisplayableAsset(forCustomAssetID id: String) -> Bool {
         guard let record = record(id: id) else {
-            return false
+            return isManifestUnreadable
         }
 
         if let cachedResult = displayableImageCache[id] {
@@ -798,10 +814,15 @@ final class CustomPlantAssetStore {
             return cachedResult
         }
 
-        guard fileManager.fileExists(atPath: record.imageURL.path),
-              let imageData = try? Data(contentsOf: record.imageURL) else {
+        guard fileManager.fileExists(atPath: record.imageURL.path) else {
             displayableImageCache[record.id] = false
             return false
+        }
+        guard let imageData = try? Data(contentsOf: record.imageURL) else {
+            // The file exists but could not be read right now. Callers prune
+            // plants whose asset reports as undisplayable, so keep the plant
+            // and re-check next time rather than deleting it over a hiccup.
+            return true
         }
 
         if !CustomPlantAssetPostProcessor.imageNeedsTransparencyRepair(imageData),

@@ -384,7 +384,7 @@ struct GardenStatusMenuModeSwitchTests {
         // on hover.
         let tooltips = fixture.menu.menuTooltipsForSelfTest()
         #expect(tooltips.count == 1)
-        #expect(tooltips.allSatisfy { $0.contains("AI Image Lock View Toggle") })
+        #expect(tooltips.allSatisfy { $0.contains("AI Lock View") })
     }
 
     @Test("keepsakes menu exposes looping flythrough generation")
@@ -536,17 +536,17 @@ struct GardenStatusMenuModeSwitchTests {
 
         let visibleTitles = fixture.menu.visibleMenuTitlesForSelfTest()
         let lockIndex = try #require(visibleTitles.firstIndex(of: "Lock Garden Interactions"))
-        let aiLockIndex = try #require(visibleTitles.firstIndex(of: "AI Image Lock View Toggle"))
+        let aiLockIndex = try #require(visibleTitles.firstIndex(of: "AI Lock View"))
         #expect(aiLockIndex == lockIndex + 1)
         #expect(fixture.menu.menuItemStateForSelfTest(named: "Lock Garden Interactions") == .off)
-        #expect(fixture.menu.menuItemStateForSelfTest(named: "AI Image Lock View Toggle") == .off)
+        #expect(fixture.menu.menuItemStateForSelfTest(named: "AI Lock View") == .off)
 
         fixture.store.updateSettings(
             fixture.store.state.settings.updating(useAIGeneratedLockSnapshot: true)
         )
 
         #expect(fixture.menu.menuItemStateForSelfTest(named: "Lock Garden Interactions") == .off)
-        #expect(fixture.menu.menuItemStateForSelfTest(named: "AI Image Lock View Toggle") == .on)
+        #expect(fixture.menu.menuItemStateForSelfTest(named: "AI Lock View") == .on)
     }
 
     @Test("AI lock view warns before replacing active video wallpaper")

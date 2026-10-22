@@ -751,7 +751,12 @@ final class GardenStore: NSObject {
             save()
             postChange()
         } catch {
-            lastError = error.localizedDescription
+            // Move the unreadable file aside before saving the fallback, or
+            // the save below would overwrite the user's garden for good.
+            let quarantineURL = try? persistence.quarantineGardenFile(sceneKey: sceneKey)
+            let loadErrorMessage = quarantineURL.map {
+                "This scene's garden file could not be read and was set aside as \($0.lastPathComponent)."
+            } ?? error.localizedDescription
             let fallbackState = GardenEngine.setSettings(
                 Self.defaultState(
                     forSceneKey: sceneKey,
@@ -761,7 +766,8 @@ final class GardenStore: NSObject {
                 settings: carriedSettings
             )
             state = Self.state(fallbackState, applyingGlobalPauseFrom: globalDefaults)
-            save()
+            save(shouldPostErrorChange: false)
+            lastError = loadErrorMessage
             postChange()
         }
     }

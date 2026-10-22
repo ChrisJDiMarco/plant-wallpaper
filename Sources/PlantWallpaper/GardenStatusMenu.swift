@@ -529,7 +529,6 @@ final class GardenStatusMenu: NSObject {
     private weak var wallpaperVersionsSubmenu: NSMenu?
     private var wallpaperSceneItems: [NSMenuItem] = []
     private weak var primaryWallpaperScenesSubmenu: NSMenu?
-    private weak var toolsWallpaperScenesSubmenu: NSMenu?
     private weak var sceneQuickSwitchLabel: NSTextField?
     private weak var seedPouchSubmenu: NSMenu?
     private let seedPouchItem = NSMenuItem()
@@ -554,6 +553,7 @@ final class GardenStatusMenu: NSObject {
     private var welcomeController: GardenWelcomeController?
     private var mouseTrackingTimer: Timer?
     private var menuDelegate: MainActorMenuDelegate?
+    private var lastFavoritePlantsSignature: [String] = []
     private var notificationObservers: [NSObjectProtocol] = []
     private var lastDesktopPlantingTarget: PlantingTarget?
     private var lastMouseSampleTime = ContinuousClock.now
@@ -669,10 +669,7 @@ final class GardenStatusMenu: NSObject {
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
             self.updateDesktopPlantingTarget(at: screenPoint)
-            self.refreshPlantingMenus()
-            self.refreshRoomStudioMenus()
-            self.refreshSeedPouchMenu()
-            self.updateDynamicItems()
+            // popUp triggers menuWillOpen, which refreshes every submenu.
             self.statusItem.menu?.popUp(positioning: nil, at: screenPoint, in: nil)
         }
     }
@@ -708,7 +705,7 @@ final class GardenStatusMenu: NSObject {
         menu.addItem(generationStatusItem)
         menu.addItem(sceneQuickSwitcherMenuItem())
         menu.addItem(wallpaperToolsMenu())
-        menu.addItem(wallpaperScenesMenu(placement: .primary))
+        menu.addItem(wallpaperScenesMenu())
         menu.addItem(experienceModeMenuItem())
 
         careSummaryItem.isEnabled = false
@@ -1313,7 +1310,7 @@ final class GardenStatusMenu: NSObject {
 
         if !placeholderEntries.isEmpty {
             submenu.addItem(NSMenuItem.separator())
-            let comingSoonItem = NSMenuItem(title: "Coming Soon - needs PNG assets", action: nil, keyEquivalent: "")
+            let comingSoonItem = NSMenuItem(title: "More Coming Soon", action: nil, keyEquivalent: "")
             comingSoonItem.isEnabled = false
             submenu.addItem(comingSoonItem)
 
@@ -1786,12 +1783,21 @@ final class GardenStatusMenu: NSObject {
     }
 
     private func populateFavoritePlantsSubmenu(_ submenu: NSMenu) {
-        submenu.removeAllItems()
-        favoritePlantItems.removeAll()
-
         let plants = store.state.plants
             .filter(\.isFavorite)
             .sorted { $0.nickname.localizedCaseInsensitiveCompare($1.nickname) == .orderedAscending }
+
+        // Runs on every store change while the menu is open (about once a
+        // second); rebuilding unchanged items under the cursor makes the
+        // highlighted row flicker, so only repopulate when something differs.
+        let signature = plants.map { "\($0.id)|\($0.nickname)" } + [store.selectedPlantID?.uuidString ?? "-"]
+        guard signature != lastFavoritePlantsSignature || submenu.items.isEmpty else {
+            return
+        }
+        lastFavoritePlantsSignature = signature
+
+        submenu.removeAllItems()
+        favoritePlantItems.removeAll()
 
         guard !plants.isEmpty else {
             let item = NSMenuItem(title: "No Favorites Yet", action: nil, keyEquivalent: "")
@@ -2071,12 +2077,7 @@ final class GardenStatusMenu: NSObject {
         return submenuItem(title: "Help & Data", symbol: "questionmark.circle", submenu: submenu)
     }
 
-    private enum WallpaperScenesMenuPlacement {
-        case primary
-        case tools
-    }
-
-    private func wallpaperScenesMenu(placement: WallpaperScenesMenuPlacement) -> NSMenuItem {
+    private func wallpaperScenesMenu() -> NSMenuItem {
         let item = NSMenuItem(title: "Wallpaper Scene", action: nil, keyEquivalent: "")
         if let image = NSImage(systemSymbolName: "photo.stack.fill", accessibilityDescription: item.title) {
             image.isTemplate = true
@@ -2084,12 +2085,7 @@ final class GardenStatusMenu: NSObject {
         }
 
         let submenu = NSMenu(title: item.title)
-        switch placement {
-        case .primary:
-            primaryWallpaperScenesSubmenu = submenu
-        case .tools:
-            toolsWallpaperScenesSubmenu = submenu
-        }
+        primaryWallpaperScenesSubmenu = submenu
         populateWallpaperScenesSubmenu(submenu)
         item.submenu = submenu
         return item
@@ -2239,9 +2235,6 @@ final class GardenStatusMenu: NSObject {
     private func refreshWallpaperScenesMenu() {
         if let primaryWallpaperScenesSubmenu {
             populateWallpaperScenesSubmenu(primaryWallpaperScenesSubmenu)
-        }
-        if let toolsWallpaperScenesSubmenu {
-            populateWallpaperScenesSubmenu(toolsWallpaperScenesSubmenu)
         }
         if let wallpaperVersionsSubmenu {
             populateWallpaperVersionsSubmenu(wallpaperVersionsSubmenu)
@@ -2529,7 +2522,7 @@ final class GardenStatusMenu: NSObject {
         let specimens = AlienPlantMenuCatalog.specimens(in: kind)
         let missingSpecimens = specimens.filter { !AlienPlantAssetLibrary.shared.hasDisplayableAsset(for: $0) }
         if !missingSpecimens.isEmpty {
-            let comingSoonItem = NSMenuItem(title: "Coming Soon - needs PNG assets", action: nil, keyEquivalent: "")
+            let comingSoonItem = NSMenuItem(title: "More Coming Soon", action: nil, keyEquivalent: "")
             comingSoonItem.isEnabled = false
             submenu.addItem(comingSoonItem)
         }
@@ -2616,7 +2609,7 @@ final class GardenStatusMenu: NSObject {
 
         if !placeholderEntries.isEmpty {
             submenu.addItem(NSMenuItem.separator())
-            let comingSoonItem = NSMenuItem(title: "Coming Soon - needs PNG assets", action: nil, keyEquivalent: "")
+            let comingSoonItem = NSMenuItem(title: "More Coming Soon", action: nil, keyEquivalent: "")
             comingSoonItem.isEnabled = false
             submenu.addItem(comingSoonItem)
 
@@ -2867,11 +2860,11 @@ final class GardenStatusMenu: NSObject {
             accessibilityDescription: lockInteractionItem.title
         )
         let isAILockViewEnabled = store.state.settings.useAIGeneratedLockSnapshot
-        aiLockViewItem.title = "AI Image Lock View Toggle"
+        aiLockViewItem.title = "AI Lock View"
         aiLockViewItem.state = isAILockViewEnabled ? .on : .off
         let aiLockViewTooltip = isAILockViewEnabled
-            ? "AI Image Lock View Toggle — ON. While interactions are locked, your desktop shows an AI-generated lock wallpaper (uses your OpenAI key). Pick \"Regenerate AI Lock View…\" below for a fresh one."
-            : "AI Image Lock View Toggle — OFF. Locking interactions instantly freezes your current wallpaper. Turn this on to generate a custom AI lock-screen wallpaper each time you lock."
+            ? "AI Lock View is on. While interactions are locked, your desktop shows an AI-generated lock wallpaper (uses your OpenAI key). Pick \"Regenerate AI Lock View…\" below for a fresh one."
+            : "AI Lock View is off. Locking interactions instantly freezes your current wallpaper. Turn this on to generate a custom AI lock-screen wallpaper each time you lock."
         aiLockViewItem.toolTip = aiLockViewTooltip
         aiImageLockViewHoverTooltip = aiLockViewTooltip
         aiLockViewItem.image = NSImage(
@@ -3799,7 +3792,7 @@ final class GardenStatusMenu: NSObject {
     }
 
     private func seedPouchMenu() -> NSMenuItem {
-        seedPouchItem.title = "Plant from Seeds..."
+        seedPouchItem.title = "Plant from Seeds"
         if let image = NSImage(systemSymbolName: "circle.hexagongrid.fill", accessibilityDescription: seedPouchItem.title) {
             image.isTemplate = true
             seedPouchItem.image = image
@@ -3825,8 +3818,8 @@ final class GardenStatusMenu: NSObject {
 
         seedPouchItem.isHidden = inventory.isEmpty
         seedPouchItem.title = inventory.isEmpty
-            ? "Plant from Seeds..."
-            : "Plant from Seeds... (\(insights.seeds.totalSeeds))"
+            ? "Plant from Seeds"
+            : "Plant from Seeds (\(insights.seeds.totalSeeds))"
         seedPouchItem.toolTip = insights.seeds.summary
         guard !inventory.isEmpty else {
             return
@@ -4240,6 +4233,13 @@ final class GardenStatusMenu: NSObject {
     }
 
     @objc private func clearAutoGardenerZones() {
+        guard confirmDestructiveAction(
+            title: "Clear all Auto Gardener areas?",
+            message: "The Auto Gardener stops tending this scene until you draw new areas. Plants it already placed stay.",
+            button: "Clear Areas"
+        ) else {
+            return
+        }
         if isAutoGardenerDrawingMode {
             cancelAutoGardenerDrawingMode()
         }
@@ -4310,6 +4310,13 @@ final class GardenStatusMenu: NSObject {
     }
 
     @objc private func removeAllGnomesFromScene() {
+        guard confirmDestructiveAction(
+            title: "Remove all gnomes from this scene?",
+            message: "Every gnome settlement area and the village built in it are removed. This cannot be undone.",
+            button: "Remove Gnomes"
+        ) else {
+            return
+        }
         if isGnomeZoneDrawingMode {
             cancelGnomeZoneDrawingMode()
         }
@@ -4360,6 +4367,13 @@ final class GardenStatusMenu: NSObject {
     }
 
     @objc private func removeAllBirdSkyZonesFromScene() {
+        guard confirmDestructiveAction(
+            title: "Remove all bird sky areas?",
+            message: "Birds stop visiting this scene until you draw new sky areas.",
+            button: "Remove Areas"
+        ) else {
+            return
+        }
         if isBirdSkyZoneDrawingMode {
             cancelBirdSkyZoneDrawingMode()
         }
@@ -4396,6 +4410,13 @@ final class GardenStatusMenu: NSObject {
     }
 
     @objc private func removeAllSoilPatchesFromScene() {
+        guard confirmDestructiveAction(
+            title: "Remove all soil patches?",
+            message: "Every hand-painted soil patch in this scene is erased. This cannot be undone.",
+            button: "Remove Soil"
+        ) else {
+            return
+        }
         if isSoilBrushMode {
             cancelSoilBrushMode()
         }
@@ -5139,7 +5160,7 @@ final class GardenStatusMenu: NSObject {
                         self?.restorePreviousWallpaper()
                     },
                     resetGarden: { [weak self] in
-                        self?.resetGarden()
+                        self?.performResetGarden()
                     },
                     deleteAllPlantsInScene: { [weak self] in
                         self?.deleteAllPlantsInScene()
@@ -5168,6 +5189,10 @@ final class GardenStatusMenu: NSObject {
                     },
                     confirmAILockViewCanReplaceVideoWallpaper: { [weak self] in
                         self?.confirmAILockViewCanReplaceVideoWallpaperIfNeeded() ?? true
+                    },
+                    switchExperienceMode: { [weak self] mode in
+                        // Settings has already shown its own Pro gate.
+                        self?.switchExperienceMode(to: mode, bypassingPaywall: true)
                     }
                 )
             )
@@ -6697,23 +6722,44 @@ final class GardenStatusMenu: NSObject {
         wallpaperManager.restorePreviousWallpapers()
     }
 
-    @objc private func resetGarden() {
+    /// One confirmation style for every bulk, non-undoable action, so the
+    /// menu, Settings and Miso's chat all ask the same way (once).
+    private func confirmDestructiveAction(title: String, message: String, button: String) -> Bool {
         let alert = NSAlert()
-        alert.messageText = "Reset this scene's garden?"
-        alert.informativeText = "All plants in the active scene are replaced with the default garden. This cannot be undone."
+        alert.messageText = title
+        alert.informativeText = message
         alert.alertStyle = .warning
-        alert.addButton(withTitle: "Reset Garden")
+        alert.addButton(withTitle: button)
         alert.addButton(withTitle: "Cancel")
-        guard alert.runModal() == .alertFirstButtonReturn else {
+        NSApp.activate(ignoringOtherApps: true)
+        return alert.runModal() == .alertFirstButtonReturn
+    }
+
+    @objc private func resetGarden() {
+        guard confirmDestructiveAction(
+            title: "Reset this scene's garden?",
+            message: "All plants in the active scene are replaced with the default garden. This cannot be undone.",
+            button: "Reset Garden"
+        ) else {
             return
         }
 
+        performResetGarden()
+    }
+
+    /// Settings shows its own confirmation before calling this.
+    private func performResetGarden() {
         store.resetGarden(screenCount: targetScreens().count)
         store.removePlantsWithoutDisplayableAssets()
     }
 
     @objc private func startPlantsFromSeedlings() {
-        guard store.state.settings.experienceMode == .garden else {
+        guard store.state.settings.experienceMode == .garden,
+              confirmDestructiveAction(
+                title: "Start every plant over from seedlings?",
+                message: "Plants in this scene keep their places but go back to their first growth stage. Their growth progress cannot be restored.",
+                button: "Start Over"
+              ) else {
             return
         }
 
@@ -6729,14 +6775,11 @@ final class GardenStatusMenu: NSObject {
     }
 
     @objc private func deleteAllPlantsInScene() {
-        let alert = NSAlert()
-        alert.messageText = "Delete all plants in this scene?"
-        alert.informativeText = "This only clears the active wallpaper scene. Other scenes keep their saved plant placements."
-        alert.alertStyle = .warning
-        alert.addButton(withTitle: "Delete Plants")
-        alert.addButton(withTitle: "Cancel")
-
-        guard alert.runModal() == .alertFirstButtonReturn else {
+        guard confirmDestructiveAction(
+            title: "Delete all plants in this scene?",
+            message: "This only clears the active wallpaper scene. Other scenes keep their saved plant placements.",
+            button: "Delete Plants"
+        ) else {
             return
         }
 
@@ -6774,10 +6817,9 @@ private extension GardenStatusMenu {
             || lastRenderedAssistantMenuItemEnabled != store.state.settings.isAssistantMenuItemEnabled {
             needsMenuRebuildAfterClose = true
         }
-        updateDynamicItems()
         refreshPlantingMenus()
         refreshRoomStudioMenus()
-        refreshWallpaperScenesMenu()
+        refreshWallpaperScenesMenu() // ends with updateDynamicItems()
         refreshSeedPouchMenu()
         let harvestInsight = GardenGameLoopInsights(state: store.state, sceneKey: store.activeSceneKey).harvest
         harvestCropsItem.isHidden = harvestInsight.readyCropCount == 0

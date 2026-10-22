@@ -33,23 +33,22 @@ assert(flock.pointInPolygon({ x: 120, y: 90 }, zone.points), 'inside point shoul
 assert(!flock.pointInPolygon({ x: 20, y: 90 }, zone.points), 'outside point should be outside polygon');
 
 const rebuilt = flock.rebuildBirdsForZones([zone], 500, 300);
-assert(rebuilt.length >= 2, 'zone should create a restrained small flock');
-assert(rebuilt.length <= 6, 'default zone should no longer create a crowded flock');
+assert.strictEqual(rebuilt.length, 1, 'default density should show a single hero bird');
 for (const bird of rebuilt) {
   assert(bird.mind, 'each bird should carry an individual behavior mind');
   assert(bird.waypoint, 'each bird should start with a planned waypoint');
   assert(bird.mind.lookAhead > 0, 'bird minds should include look-ahead planning');
   assert(bird.mind.personalSpace > 0, 'bird minds should include personal-space behavior');
 }
-assert.notDeepStrictEqual(
-  rebuilt[0]?.mind,
-  rebuilt[1]?.mind,
-  'birds in the same zone should not share identical minds'
-);
 const quietFlock = flock.rebuildBirdsForZones([zone], 500, 300, { countMultiplier: 0.25 });
 const livelyFlock = flock.rebuildBirdsForZones([zone], 500, 300, { countMultiplier: 2.0 });
-assert(quietFlock.length < rebuilt.length, 'bird count slider should reduce flock size');
+assert.strictEqual(quietFlock.length, 1, 'quiet density should keep the single hero bird');
 assert(livelyFlock.length > rebuilt.length, 'bird count slider should increase flock size');
+assert.notDeepStrictEqual(
+  livelyFlock[0]?.mind,
+  livelyFlock[1]?.mind,
+  'birds in the same zone should not share identical minds'
+);
 
 const outsideBird = {
   ...flock.createBirdState(zone, 0, 500, 300),

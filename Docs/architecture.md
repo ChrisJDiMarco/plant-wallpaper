@@ -11,13 +11,23 @@
 
 ## Runtime
 
-`AppDelegate` loads persisted garden state, upgrades old gardens to the current composition version, applies the calm desktop background, creates one borderless transparent `GardenWindow` per screen, and starts three timers:
+`AppDelegate` loads persisted garden state (per scene), applies the selected scene wallpaper, creates the overlay windows plus the WebKit companion layers (cat, gnomes, birds, rainbow), and runs three timers:
 
-- Simulation: advances plant hydration, health, bloom, and growth once per second.
-- Display: redraws the overlay at 30 FPS for smooth wind sway.
-- Autosave: writes state every 20 seconds.
+- Simulation (1 Hz): advances plant hydration, health, bloom and growth. Observers are only notified when `GardenStateRenderSignature` changes, not on every tick.
+- Display (adaptive, `GardenDisplayCadence`): repaints ambient sway, from 0.5 s while something is animating up to several seconds when calm, and slower still on battery or in Low Power Mode.
+- Autosave (20 s): writes the scene's garden JSON. The screen saver snapshot JSON is rewritten only when what it would draw has changed.
+
+Pointer routing polls at 25 Hz only while the cursor moves or a button is held, drops to 4 Hz when idle, and stops while the displays sleep. Screen-parameter changes rebuild windows only when display geometry actually changed.
 
 The overlay window level is `desktopWindow + 1`, so the garden reads as part of the wallpaper instead of a normal foreground app.
+
+## Data safety
+
+- An unreadable scene file is moved aside as `*.corrupt-<timestamp>` before a fallback garden is saved in its place.
+- Plants decode element by element, so one unknown species skips that plant instead of the whole garden.
+- An unreadable custom-plant manifest is preserved and never causes custom plants to be pruned.
+- Custom and AI wallpapers are never evicted automatically; removal is explicit from Settings › Scene.
+- Superseded AI Lock View renders go to the Trash; the newest two per scene are kept.
 
 ## Assets
 

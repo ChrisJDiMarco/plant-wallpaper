@@ -219,55 +219,6 @@ extension GardenCanvasView {
         NSGradient(colors: [topTint, bottomTint])?.draw(in: rect, angle: -90)
     }
 
-    func drawSceneMist(profile: GardenSceneVisualProfile) {
-        guard profile.mistOpacity > 0.01, bounds.width > 0, bounds.height > 0 else {
-            return
-        }
-
-        let alpha = CGFloat(profile.mistOpacity)
-        let baseY = bounds.height * 0.60
-        for layer in 0..<4 {
-            let fraction = CGFloat(layer) / 3
-            let height = bounds.height * (0.08 + fraction * 0.05)
-            let rect = NSRect(
-                x: -bounds.width * 0.08,
-                y: baseY + fraction * bounds.height * 0.08,
-                width: bounds.width * 1.16,
-                height: height
-            )
-            NSGradient(colors: [
-                color(red: 228, green: 235, blue: 218, alpha: 0),
-                color(red: 228, green: 235, blue: 218, alpha: alpha * (0.10 + fraction * 0.06)),
-                color(red: 228, green: 235, blue: 218, alpha: 0)
-            ])?.draw(in: rect, angle: 0)
-        }
-
-        drawAirParticles(
-            alpha: CGFloat(profile.dustMoteOpacity + profile.mistOpacity * 0.18),
-            count: max(12, Int(bounds.width / 72))
-        )
-    }
-
-    func drawAirParticles(alpha: CGFloat, count: Int) {
-        guard alpha > 0.006 else {
-            return
-        }
-
-        let now = Date().timeIntervalSinceReferenceDate
-        for index in 0..<count {
-            let phase = now * (0.035 + Double(index % 5) * 0.006)
-            let x = bounds.width * CGFloat(abs(deterministicWave(seed: 7_101 + Double(index), index: index)) * 0.96 + 0.02)
-            let y = bounds.height * CGFloat(0.14 + abs(deterministicWave(seed: 7_317 + phase, index: index)) * 0.54)
-            let length = CGFloat(2 + index % 5)
-            drawLine(
-                from: NSPoint(x: x, y: y),
-                to: NSPoint(x: x + length, y: y - length * 0.32),
-                color: color(red: 255, green: 247, blue: 206, alpha: alpha * CGFloat(0.28 + Double(index % 4) * 0.10)),
-                width: 0.65
-            )
-        }
-    }
-
     func drawForegroundSceneHaze(profile: GardenSceneVisualProfile) {
         let opacity = CGFloat(max(0, profile.mistOpacity - 0.04))
         guard opacity > 0.005 else {

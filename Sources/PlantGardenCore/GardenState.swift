@@ -173,7 +173,7 @@ public struct GardenState: Codable, Equatable, Sendable {
             isUserArranged: try container.decodeIfPresent(Bool.self, forKey: .isUserArranged) ?? false,
             createdAt: try container.decodeIfPresent(Date.self, forKey: .createdAt) ?? Date(),
             lastUpdatedAt: try container.decodeIfPresent(Date.self, forKey: .lastUpdatedAt) ?? Date(),
-            plants: try container.decodeIfPresent([Plant].self, forKey: .plants) ?? [],
+            plants: try container.decodeIfPresent(LossyDecodableList<Plant>.self, forKey: .plants)?.elements ?? [],
             ambientMoisture: try container.decodeIfPresent(Double.self, forKey: .ambientMoisture) ?? 0.36,
             windStrength: try container.decodeIfPresent(Double.self, forKey: .windStrength) ?? 0.22,
             manualPlantDarkening: try container.decodeIfPresent(Double.self, forKey: .manualPlantDarkening) ?? 0,
@@ -302,5 +302,29 @@ public struct GardenState: Codable, Equatable, Sendable {
 
     public var isEffectiveAmbientWildlifeEnabled: Bool {
         isAmbientWildlifeEnabled && settings.allowsAmbientWildlifeInExperienceMode
+    }
+}
+
+/// Decodes an array element by element, skipping any element that fails.
+/// One plant written by a newer build (an unknown species, say) used to make
+/// the whole garden file undecodable, which then got quarantined and replaced
+/// with an empty garden. Now only that plant is skipped.
+struct LossyDecodableList<Element: Decodable>: Decodable {
+    let elements: [Element]
+
+    private struct Skip: Decodable {}
+
+    init(from decoder: Decoder) throws {
+        var container = try decoder.unkeyedContainer()
+        var elements: [Element] = []
+        while !container.isAtEnd {
+            if let element = try? container.decode(Element.self) {
+                elements.append(element)
+            } else if (try? container.decode(Skip.self)) == nil {
+                // Not even an object; the container cannot advance past it.
+                break
+            }
+        }
+        self.elements = elements
     }
 }

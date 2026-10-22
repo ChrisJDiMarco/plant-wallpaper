@@ -14,6 +14,8 @@ final class PlantWallpaperScreenSaverView: ScreenSaverView, WKNavigationDelegate
     private var selectedSceneKey = ScreenSaverGardenScene.defaultKey
     private var currentSnapshot: GardenScreenSaverSnapshot?
     private var loadedSnapshotSavedAt: Date?
+    private var lastSnapshotCheckAt = Date.distantPast
+    private var lastSnapshotModifiedAt: Date?
     private var lastReloadAt = Date.distantPast
     private var startedAt = Date()
     private var configurationWindow: NSWindow?
@@ -120,8 +122,23 @@ final class PlantWallpaperScreenSaverView: ScreenSaverView, WKNavigationDelegate
             return
         }
 
-        guard Date().timeIntervalSince(lastReloadAt) > 6,
-              let snapshot = effectiveScreenSaverSnapshot(),
+        // Called every frame: throttle the check itself, and compare the
+        // file's modification date before decoding a whole garden state.
+        let now = Date()
+        guard now.timeIntervalSince(lastReloadAt) > 6,
+              now.timeIntervalSince(lastSnapshotCheckAt) > 2 else {
+            return
+        }
+        lastSnapshotCheckAt = now
+
+        let snapshotURL = GardenScreenSaverSnapshot.fileURL(directoryURL: persistence.directoryURL)
+        let modifiedAt = (try? snapshotURL.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate
+        guard modifiedAt != lastSnapshotModifiedAt else {
+            return
+        }
+        lastSnapshotModifiedAt = modifiedAt
+
+        guard let snapshot = effectiveScreenSaverSnapshot(),
               snapshot.savedAt != loadedSnapshotSavedAt else {
             return
         }

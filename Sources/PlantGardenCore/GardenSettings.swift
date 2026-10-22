@@ -546,7 +546,7 @@ public struct GardenSettings: Codable, Equatable, Sendable {
                 [String: GardenRadioStream].self,
                 forKey: .radioCompanionStationOverrides
             ) ?? [:],
-            musicSource: try container.decodeIfPresent(GardenMusicSource.self, forKey: .musicSource) ?? .chillHopRadio,
+            musicSource: (try? container.decodeIfPresent(GardenMusicSource.self, forKey: .musicSource)) ?? .chillHopRadio,
             spotifyLaunchURLString: try container.decodeIfPresent(String.self, forKey: .spotifyLaunchURLString)
                 ?? GardenSettings.defaultSpotifyLaunchURLString,
             isWeatherSyncEnabled: try container.decodeIfPresent(Bool.self, forKey: .isWeatherSyncEnabled) ?? false,
@@ -576,23 +576,23 @@ public struct GardenSettings: Codable, Equatable, Sendable {
                 Bool.self,
                 forKey: .isRoomStudioWildlifeEnabled
             ) ?? false,
-            experienceMode: try container.decodeIfPresent(GardenExperienceMode.self, forKey: .experienceMode) ?? .garden,
-            timeLapseCadence: try container.decodeIfPresent(GardenTimeLapseCadence.self, forKey: .timeLapseCadence) ?? .daily,
+            experienceMode: (try? container.decodeIfPresent(GardenExperienceMode.self, forKey: .experienceMode)) ?? .garden,
+            timeLapseCadence: (try? container.decodeIfPresent(GardenTimeLapseCadence.self, forKey: .timeLapseCadence)) ?? .daily,
             cozyModeEnabled: try container.decodeIfPresent(Bool.self, forKey: .cozyModeEnabled) ?? false,
-            performanceMode: try container.decodeIfPresent(GardenPerformanceMode.self, forKey: .performanceMode) ?? .balanced,
+            performanceMode: (try? container.decodeIfPresent(GardenPerformanceMode.self, forKey: .performanceMode)) ?? .balanced,
             autoLowPowerOnBattery: try container.decodeIfPresent(Bool.self, forKey: .autoLowPowerOnBattery) ?? true,
-            radioActivationMode: try container.decodeIfPresent(GardenRadioActivationMode.self, forKey: .radioActivationMode) ?? .singleClick,
+            radioActivationMode: (try? container.decodeIfPresent(GardenRadioActivationMode.self, forKey: .radioActivationMode)) ?? .singleClick,
             wallpaperGenerationQuality: try container.decodeIfPresent(
                 GardenWallpaperGenerationQuality.self,
                 forKey: .wallpaperGenerationQuality
             ) ?? .twoK,
-            aiEditStrength: try container.decodeIfPresent(GardenAIEditStrength.self, forKey: .aiEditStrength) ?? .subtle,
+            aiEditStrength: (try? container.decodeIfPresent(GardenAIEditStrength.self, forKey: .aiEditStrength)) ?? .subtle,
             isTimeOfDayPlantDarkeningEnabled: try container.decodeIfPresent(
                 Bool.self,
                 forKey: .isTimeOfDayPlantDarkeningEnabled
             ) ?? true,
-            rareMomentsMode: try container.decodeIfPresent(GardenRareMomentsMode.self, forKey: .rareMomentsMode) ?? .full,
-            displayBehavior: try container.decodeIfPresent(GardenDisplayBehavior.self, forKey: .displayBehavior) ?? .mirrorAllDisplays,
+            rareMomentsMode: (try? container.decodeIfPresent(GardenRareMomentsMode.self, forKey: .rareMomentsMode)) ?? .full,
+            displayBehavior: (try? container.decodeIfPresent(GardenDisplayBehavior.self, forKey: .displayBehavior)) ?? .mirrorAllDisplays,
             notifyCare: try container.decodeIfPresent(Bool.self, forKey: .notifyCare) ?? true,
             notifyWeather: try container.decodeIfPresent(Bool.self, forKey: .notifyWeather) ?? true,
             notifyRareMoments: try container.decodeIfPresent(Bool.self, forKey: .notifyRareMoments) ?? true,

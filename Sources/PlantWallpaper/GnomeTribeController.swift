@@ -130,6 +130,8 @@ final class GnomeTribeController: NSObject {
     private var storeObserver: NSObjectProtocol?
     private var navigationDelegates: [MainActorWebNavigationDelegate] = []
     private var pointerRoutingTimer: Timer?
+    private var lastHitTestScreenPoint: NSPoint?
+    private var lastHitTestUptime: TimeInterval = 0
 
     init(store: GardenStore) {
         self.store = store
@@ -333,8 +335,17 @@ final class GnomeTribeController: NSObject {
         pointerRoutingTimer = nil
     }
 
+    /// Each hit test is a round-trip into the gnome web view. A moving cursor
+    /// is tested every tick; a resting one only twice a second, which still
+    /// catches a gnome walking under it.
     private func updatePointerRouting() {
         let screenPoint = NSEvent.mouseLocation
+        let now = ProcessInfo.processInfo.systemUptime
+        if screenPoint == lastHitTestScreenPoint, now - lastHitTestUptime < 0.5 {
+            return
+        }
+        lastHitTestScreenPoint = screenPoint
+        lastHitTestUptime = now
         for (index, window) in windows.enumerated() {
             guard index < webViews.count, window.frame.contains(screenPoint) else {
                 window.ignoresMouseEvents = true

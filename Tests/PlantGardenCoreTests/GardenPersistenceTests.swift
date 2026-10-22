@@ -245,3 +245,30 @@ struct GardenPersistenceTests {
         #expect(loadedState.musicButton == nil)
     }
 }
+
+@Suite("Garden state lossy decoding")
+struct GardenStateLossyDecodingTests {
+    @Test("an unknown species skips only that plant")
+    func unknownSpeciesSkipsOnlyThatPlant() throws {
+        var state = GardenState.defaultGarden(screenCount: 1)
+        let keptCount = state.plants.count
+        #expect(keptCount > 0)
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        var object = try #require(
+            try JSONSerialization.jsonObject(with: encoder.encode(state)) as? [String: Any]
+        )
+        var plants = try #require(object["plants"] as? [[String: Any]])
+        var future = plants[0]
+        future["species"] = "speciesFromTheFuture"
+        future["id"] = UUID().uuidString
+        plants.append(future)
+        object["plants"] = plants
+        let data = try JSONSerialization.data(withJSONObject: object)
+
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        state = try decoder.decode(GardenState.self, from: data)
+        #expect(state.plants.count == keptCount)
+    }
+}
